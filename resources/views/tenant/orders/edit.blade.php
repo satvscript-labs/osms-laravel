@@ -103,7 +103,7 @@
                         </div>
 
                         <div class="table-responsive" x-cloak x-show="items.length">
-                            <table class="table align-middle mb-0">
+                            <table class="table align-top mb-0">
                                 <thead class="text-muted-foreground text-uppercase" style="font-size:.68rem;letter-spacing:.04em;">
                                     <tr>
                                         <th>Item</th>
@@ -145,11 +145,17 @@
                                                     </button>
                                                 </div>
                                             </td>
-                                            <td class="text-end font-monospace" x-text="money((Number(it.unit_price)||0)*it.quantity)"></td>
                                             <td class="text-end">
-                                                <button type="button" class="btn btn-sm btn-link text-danger p-0" @click="removeItem(it)" aria-label="Remove item">
-                                                    <i class="bi bi-trash"></i>
-                                                </button>
+                                                <div class="d-flex align-items-center justify-content-end" style="min-height:var(--space-6);">
+                                                    <span class="font-monospace" x-text="money((Number(it.unit_price)||0)*it.quantity)"></span>
+                                                </div>
+                                            </td>
+                                            <td class="text-end">
+                                                <div class="d-flex align-items-center justify-content-center" style="min-height:var(--space-6);">
+                                                    <button type="button" class="btn btn-sm btn-link text-danger p-0" @click="removeItem(it)" aria-label="Remove item">
+                                                        <i class="bi bi-trash"></i>
+                                                    </button>
+                                                </div>
                                             </td>
                                         </tr>
                                     </template>
