@@ -31,6 +31,15 @@ Settled with the product owner on 2026-07-01 (see [QA_TESTING_REPORT_3.md](QA_TE
   per-line `list_price` · D9 below-cost allow-but-warn · D10 `selling_price` = list/MRP · D11 barcode
   Print + Download PNG named by SKU.
 
+Settled with the product owner on 2026-07-02 (Task 4 — fulfillment):
+- **D-status:** an **instant** sale is created directly as `delivered` (skips `pending`/
+  `ready_for_pickup`); a **special** order keeps the unchanged `pending` start.
+- **D-date:** `estimated_ready_at` is **required** when `fulfillment_type = special`.
+- **D-payment:** the existing flexible advance/balance flow is **unchanged** for both types.
+- **D-dashboard:** add a new **"Due to prepare"** alert (not just a passive date on the card).
+- **D-instant-cancel:** **no** cancel relaxation — a `delivered` order stays closed for both types; a
+  mis-rung instant sale is corrected via manual stock adjustment, not a new return/cancel path.
+
 ---
 
 ## Build order
@@ -43,6 +52,7 @@ order money-model. Pricing semantics (Task 3.1) is folded into the order money-m
 | 1 | FT-Barcode | Printable / downloadable barcode label on Edit item (Task 3.2) | — | Low | ✅ Done |
 | 2 | FT-Customers | Unified customer entity + inline auto-register in orders (Task 1) | — | High | ✅ Done |
 | 3 | FT-OrderMoney | Order discount + custom price + advance payment method + builder redesign (Task 2, incl. 3.1 pricing semantics) | FT-Customers | High | ✅ Done |
+| 4 | FT-Fulfillment | Instant (grab & go) vs. special (prepared, estimated ready date) order fulfillment (Task 4) | FT-Customers | Medium | 🔵 Planned |
 
 ---
 
@@ -196,6 +206,55 @@ backfills existing rows). Run `php artisan optimize:clear` after deploy.
 - **Tests:** `PhaseNNOrderMoneyTest` — discount clamps (percent/amount), custom price (below-cost
   warn), advance method persisted, receipt renders discount + method, analytics net revenue +
   brand reconciliation, backward-compat (no discount → old totals), edit interaction.
+
+---
+
+## FT-Fulfillment — Instant vs. special-order fulfillment (Task 4)
+
+- **Status:** 🔵 Planned — spec locked 2026-07-02, ready to build.
+- **Priority:** Medium.
+- **Depends on:** FT-Customers (edits the same `store()`/builder).
+
+### Why
+Most walk-in customers either grab an in-stock item, pay, and leave (nothing to track), or place a
+special order needing lab time (lens grinding/fitting), for which the owner gives an estimated ready
+date. Today every order is forced through the same `pending → ready_for_pickup → delivered` pipeline
+regardless of which kind it is.
+
+### Scope
+- New `orders.fulfillment_type` (`instant | special`) + `orders.estimated_ready_at` (nullable date).
+- **Instant** → created directly as `delivered` (skips `pending`/`ready_for_pickup`); stock, discount,
+  custom price, and payment all work exactly as today — only the initial `status` differs.
+- **Special** → unchanged `pending` start, **plus a required `estimated_ready_at`** (date picker,
+  default today+3, adjustable); flows through the existing kanban pipeline unchanged.
+- New dashboard **"Due to prepare"** alert: `pending` + `special` orders whose `estimated_ready_at` is
+  today or past — alongside the existing "uncollected > 3 days" alert.
+- Kanban `pending` ("In lab") cards show the estimated date (red once overdue).
+- `estimated_ready_at` becomes editable via `update()` for still-open orders (FG-OrderEdit).
+- Receipt/order show: "Estimated ready: `DATE`" line for special orders.
+
+### Locked decisions (this feature)
+- Payments: unchanged flexible advance/balance flow for **both** types — no forced full-payment rule.
+- Cancellation: **no** relaxation — a `delivered` order stays closed for both types; a mis-rung instant
+  sale is corrected via manual stock adjustment (FG-StockLog), not a new return/cancel path.
+- `estimated_ready_at` is **required** at creation for `special`, guarded `after_or_equal:today`; freely
+  editable afterward (owner may slip the date).
+- Backfill: all historical orders default `fulfillment_type = special` (informational only — doesn't
+  retroactively change any existing order's behavior).
+
+### Interactions (verified orthogonal)
+No conflict with **FT-OrderMoney** (discount/custom price) or **FG-OrderEdit** (stock/money
+reconciliation) — `fulfillment_type` only touches the *initial status* and an *informational date*, not
+pricing or stock math.
+
+### Tests
+`PhaseNNFulfillmentTest` — instant order created as `delivered` (stock/payment/discount still apply);
+special order requires `estimated_ready_at`; special order follows the unchanged pending→ready→delivered
+path; dashboard `dueToPrepare` picks up an overdue special order and excludes a not-yet-due one; edit
+updates `estimated_ready_at` on an open order; tenant isolation. Existing `Phase14OrderEditTest` /
+`Phase18OrderMoneyTest` should need no changes (purely additive).
+
+**Impact analysis + full butterfly list:** [QA_TESTING_REPORT_3.md](QA_TESTING_REPORT_3.md) → Task 4.
 
 ---
 

@@ -292,24 +292,153 @@ default file name must be the **SKU**.
 
 ---
 
+# Task 4 — Instant vs. special-order fulfillment
+
+## Current
+- [`Order.status`](database/migrations/2026_07_01_000001_add_cancel_to_orders.php) is one of
+  `pending | ready_for_pickup | delivered | cancelled`. **Every** order is created as `pending`
+  ([OrderController::store()](app/Http/Controllers/Tenant/OrderController.php)), regardless of whether
+  the customer is taking the item immediately or it needs lab prep.
+- The kanban board ([orders/partials/kanban.blade.php](resources/views/tenant/orders/partials/kanban.blade.php))
+  labels the `pending` column **"In lab"** — the concept of a prep stage already exists in the UI, but
+  there is no estimated-completion date anywhere in the schema.
+- [`DashboardController`](app/Http/Controllers/Tenant/DashboardController.php) has one time-based alert:
+  `overduePickups` — `ready_for_pickup` orders sitting **uncollected** > 3 days (nothing tracks whether
+  an **in-lab** order is behind its promised date, because no such date exists).
+- [NB-009 cancel](app/Http/Controllers/Tenant/OrderController.php) blocks cancelling *any* `delivered`
+  order, with no distinction by how the order reached that status.
+
+## Proposed
+Most of this store's customers fall into two very different fulfillment patterns: (1) **grab an
+in-stock item, pay, and leave** (sunglasses, accessories, frames with no lens work) — there is nothing
+to track, the sale is complete on the spot; (2) **a special/prepared order** (custom lens grinding,
+fitting, anything needing shop time) — the owner gives the customer an **estimated ready date**, and
+the order genuinely needs to move through a prep → ready → collected pipeline. The order builder should
+fast-track case (1) instead of forcing every walk-in sale through the same multi-stage workflow as a
+lab job.
+
+## Approach
+- **New column `orders.fulfillment_type`**: `instant | special`. Chosen via a segmented toggle at the
+  top of the order builder — **"Take today"** vs **"Special order (needs prep)"**.
+- **`instant`** → the order is created **already `delivered`** (skips `pending`/`ready_for_pickup`
+  entirely — nothing to prepare, nothing to wait on). Stock decrements, payment records, discount/custom
+  price all work exactly as today; only the initial `status` differs.
+- **`special`** → unchanged `pending` start, **plus a new required `estimated_ready_at` date** (a date
+  picker, default **today + 3 days**, adjustable). This flows through the existing
+  `pending` ("In lab") → `ready_for_pickup` → `delivered` kanban pipeline unchanged.
+- **Payments:** unchanged for both types — the existing flexible advance/balance flow applies regardless
+  of `fulfillment_type` (D-payment, answered: no forced full-payment rule).
+- **Cancellation:** unchanged — a `delivered` order stays closed for **both** types (D-instant-cancel,
+  answered: no special-case relaxation of NB-009). A mis-rung instant sale is corrected via the existing
+  [FG-StockLog manual adjustment](BUG_TRACKER.md#fg-stocklog-no-manual-stock-adjustment-audit), same as
+  any other stock correction today — **not** a new returns/refund flow (explicitly out of scope for v1).
+- **Dashboard — new "Due to prepare" alert**: `pending` + `special` orders whose `estimated_ready_at` is
+  today or already past, surfaced alongside the existing "uncollected > 3 days" alert in the same Alerts
+  panel (distinct icon/copy: *"Due today"* / *"N days overdue to prepare"*).
+- **Kanban card**: the `pending` ("In lab") column's cards show the estimated ready date (and flip to a
+  red "overdue" tone once past), so staff can prioritize by the promise date without opening the alerts
+  panel.
+- **Order edit** ([FG-OrderEdit](BUG_TRACKER.md#fg-orderedit-orders-are-immutable-after-creation)):
+  `estimated_ready_at` becomes an editable field on `update()` for still-open (`pending`/
+  `ready_for_pickup`) orders — the owner can push the promise date without a new route. `instant` orders
+  are created already `delivered`, so they're immediately outside the existing "only open orders are
+  editable" guard — no code change needed there, it falls out naturally.
+- **Receipt / order show**: a special order's receipt/detail page shows *"Estimated ready: `DATE`"*;
+  an instant sale shows no such line (it's already complete).
+
+## Affected features (butterfly)
+**Database & models**
+- `orders`: + `fulfillment_type` (string, default `special` for backward-compat backfill — see below) and
+  `estimated_ready_at` (nullable `date`). Portable migration (plain `ALTER TABLE ADD COLUMN`, no enum
+  widening needed — no MySQL/SQLite branching required this time).
+- `Order` model: fillable + casts (`estimated_ready_at` → `date`); helper `isInstant()` /
+  `needsPrep()`; a `getFulfillmentLabelAttribute()` for display.
+
+**Controllers**
+- `OrderController::store()`: accept `fulfillment_type` (required, `in:instant,special`); when
+  `special`, require `estimated_ready_at` (`date`, `after_or_equal:today`); set `status = 'delivered'`
+  immediately for `instant` (bypassing the normal `pending` default) — the rest of `store()` (stock,
+  discount, custom price, payment) is **unchanged** and applies identically to both types.
+  `update()`: accept an optional `estimated_ready_at` update for open orders.
+- `DashboardController`: new `dueToPrepare` query (`pending` + `special` + `estimated_ready_at <=
+  today`), same shape as the existing `overduePickups` mapping.
+
+**Views**
+- `orders/create.blade.php`: new fulfillment-type toggle (Alpine state) near the top of the form;
+  conditional date picker for `special`; submit button label could reflect the choice (*"Complete
+  sale"* vs *"Create order"*) — cosmetic, decide during build.
+- `orders/edit.blade.php`: editable estimated-ready-date field when the order is `special` and still
+  open.
+- `orders/show.blade.php` + `receipt-pdf.blade.php`: estimated-ready line for `special` orders.
+- `orders/partials/kanban.blade.php`: due-date badge (+ overdue tone) on `pending`-column cards.
+- `dashboard.blade.php`: new alert-list entries for `dueToPrepare`, interleaved with the existing
+  `overduePickups` source in the same Alerts panel.
+
+**Tests**
+- `PhaseNNFulfillmentTest` — instant order created as `delivered` (stock/payment/discount all still
+  apply); special order requires `estimated_ready_at`; special order follows the unchanged
+  pending→ready→delivered path; dashboard `dueToPrepare` picks up an overdue special order and excludes
+  a not-yet-due one; edit updates `estimated_ready_at` on an open order; tenant isolation on the new
+  query. Existing `Phase14OrderEditTest` / `Phase18OrderMoneyTest` suites should need **no changes** —
+  this is additive to `store()`/`update()`, not a rework of their money/stock logic.
+
+## Edge cases / risks
+- **Backward compatibility**: existing rows have no `fulfillment_type`. Backfilling `special` for all
+  historical orders is the safe default — it doesn't retroactively claim any old order was an "instant"
+  sale, and since `fulfillment_type` only drives *new-order* behavior (initial status + date
+  requirement), a historical `delivered` order is unaffected either way.
+- **`estimated_ready_at` in the past**: guard with `after_or_equal:today` at creation; editing later
+  (e.g. the owner slipping the date) should probably still allow moving it earlier or later freely once
+  set — the guard is only for the initial promise.
+- **Instant sale return gap (flagged, decided)**: with `instant` orders landing on `delivered`
+  immediately, there is now **no cancel path** for a mis-rung counter sale (decided: acceptable for v1,
+  corrected via manual stock adjustment instead — see Approach above). Worth revisiting if returns
+  become a common real-world pain point.
+- **Kanban "In lab" column will only ever contain `special` orders** going forward (instant orders never
+  enter `pending`) — this is intentional, not a bug, but worth a one-line note in the column
+  description/copy so it doesn't read as "broken" once instant sales stop appearing there.
+- Interaction with **FT-OrderMoney** (discount/custom price) and **FG-OrderEdit** (stock/money
+  reconciliation) is orthogonal — `fulfillment_type` only touches the *initial status* and an
+  *informational date*, not pricing or stock math. No cross-feature conflict expected.
+
+## Tests
+See "Affected features → Tests" above.
+
+## Decisions
+
+### ✅ Answered (2026-07-02)
+- **D-status** — Instant sale skips straight to `delivered` at creation (never touches
+  `pending`/`ready_for_pickup`).
+- **D-date** — `estimated_ready_at` is **required** when `fulfillment_type = special`.
+- **D-payment** — Keep the existing flexible advance/balance flow for **both** types; no forced
+  full-payment rule for instant sales.
+- **D-dashboard** — Add a new **"Due to prepare"** dashboard alert (not just a passive date on the
+  card).
+- **D-instant-cancel** — **No** special-case cancel relaxation: a `delivered` order stays closed for
+  both `instant` and `special` — a wrong instant sale is corrected via manual stock adjustment, not a
+  new cancel/return path.
+
+---
+
 # Consolidated butterfly matrix
 
-| Module / file | Task 1 (Customers) | Task 2 (Order+Discount+Price+Method) | Task 3.1 (Pricing semantics) | Task 3.2 (Barcode) |
-|---|:--:|:--:|:--:|:--:|
-| `orders` migration/model | ● rename FK | ● discount/subtotal cols | — | — |
-| `order_items` model | — | ● custom price (+list_price) | ○ meaning | — |
-| `patients`→`customers` | ● core | — | — | — |
-| `eye_records` | ● FK rename | — | — | — |
-| OrderController store/edit | ● picker | ● discount/price/method | ○ | — |
-| Order builder (create/edit) | ● picker | ● UI redesign | — | — |
-| Receipt PDF | ● label | ● discount+method rows | — | — |
-| AnalyticsController | ○ name | ● revenue/brand reconcile | ● actual vs expected | — |
-| Ledger/Exports | ○ name | ○ discount col | ○ | — |
-| Dashboard | ○ name | ○ net sales | — | — |
-| Global search | ● customers | — | — | — |
-| Inventory edit view | — | — | ○ copy | ● barcode panel |
-| Sidebar / nav | ● rename | — | — | — |
-| Factories / all tests | ● large | ● totals | ○ | ○ |
+| Module / file | Task 1 (Customers) | Task 2 (Order+Discount+Price+Method) | Task 3.1 (Pricing semantics) | Task 3.2 (Barcode) | Task 4 (Fulfillment) |
+|---|:--:|:--:|:--:|:--:|:--:|
+| `orders` migration/model | ● rename FK | ● discount/subtotal cols | — | — | ● fulfillment_type + date |
+| `order_items` model | — | ● custom price (+list_price) | ○ meaning | — | — |
+| `patients`→`customers` | ● core | — | — | — | — |
+| `eye_records` | ● FK rename | — | — | — | — |
+| OrderController store/edit | ● picker | ● discount/price/method | ○ | — | ● status + date logic |
+| Order builder (create/edit) | ● picker | ● UI redesign | — | — | ● fulfillment toggle |
+| Receipt PDF | ● label | ● discount+method rows | — | — | ○ ready-date line |
+| AnalyticsController | ○ name | ● revenue/brand reconcile | ● actual vs expected | — | — |
+| Ledger/Exports | ○ name | ○ discount col | ○ | — | — |
+| Dashboard | ○ name | ○ net sales | — | — | ● due-to-prepare alert |
+| Global search | ● customers | — | — | — | — |
+| Inventory edit view | — | — | ○ copy | ● barcode panel | — |
+| Kanban board | — | — | — | — | ○ due-date badge |
+| Sidebar / nav | ● rename | — | — | — | — |
+| Factories / all tests | ● large | ● totals | ○ | ○ | ○ additive |
 
 ● = direct change · ○ = re-verify / minor · — = none
 
@@ -324,6 +453,9 @@ default file name must be the **SKU**.
    documentation + copy. Fold into Task 2's analytics work.
 4. **Task 3.2 (Barcode)** — independent, additive, low-risk. Can ship anytime as a quick win (even
    before 1–3) since it touches nothing the others touch.
+5. **Task 4 (Fulfillment)** — independent of Tasks 1–3's data model (only touches `orders` additively);
+   can be built anytime after Task 1 (needs the `customers` rename in place, since it edits the same
+   `store()`/builder). Low risk — additive columns, no money/stock math changes.
 
 ---
 
