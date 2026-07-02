@@ -43,12 +43,29 @@ class DashboardController extends Controller
                 'days' => (int) $o->updated_at->diffInDays(now()),
             ]);
 
+        // FT-Fulfillment — special orders in the lab that are due today or overdue
+        // to prepare (by their promised estimated_ready_at).
+        $dueToPrepare = Order::with('customer:id,name')
+            ->where('status', 'pending')
+            ->where('fulfillment_type', 'special')
+            ->whereNotNull('estimated_ready_at')
+            ->whereDate('estimated_ready_at', '<=', $today)
+            ->orderBy('estimated_ready_at')
+            ->limit(8)
+            ->get()
+            ->map(fn (Order $o) => [
+                'id' => $o->id,
+                'customer_name' => $o->customer?->name,
+                'total_amount' => (float) $o->total_amount,
+                'overdue_days' => (int) $o->estimated_ready_at->startOfDay()->diffInDays($today),
+            ]);
+
         $subscription = Subscription::first();
         $subscriptionPastDue = $subscription?->isPastDue() ?? false;
 
         return view('tenant.dashboard', compact(
             'todaySales', 'pendingCount', 'readyCount',
-            'lowStock', 'lowStockCount', 'overduePickups', 'subscriptionPastDue',
+            'lowStock', 'lowStockCount', 'overduePickups', 'dueToPrepare', 'subscriptionPastDue',
         ));
     }
 }

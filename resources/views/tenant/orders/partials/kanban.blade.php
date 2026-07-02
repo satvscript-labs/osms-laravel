@@ -54,6 +54,12 @@
                                 <p class="mb-0 mt-2 text-muted-foreground" style="font-size:.68rem;">
                                     Placed {{ $order->created_at->format('d M Y') }}
                                 </p>
+                                @if ($col['key'] !== 'delivered' && $order->needsPrep() && $order->estimated_ready_at)
+                                    @php $overdue = $order->estimated_ready_at->startOfDay()->lt(today()); @endphp
+                                    <span class="badge mt-2 {{ $overdue ? 'text-bg-danger' : 'text-bg-light' }}" style="font-size:.66rem;">
+                                        <i class="bi bi-clock me-1"></i>Ready {{ $order->estimated_ready_at->format('d M') }}
+                                    </span>
+                                @endif
                             </a>
                             @if ($col['key'] !== 'delivered')
                                 @php $next = $col['key'] === 'pending' ? 'ready_for_pickup' : 'delivered'; @endphp

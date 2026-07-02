@@ -21,6 +21,10 @@
                 <h1 class="h3 fw-semibold font-display mb-1">Order receipt</h1>
                 <p class="text-muted-foreground mb-0" style="font-size:.85rem;">
                     #{{ $num }} · {{ $order->created_at->format('d M Y') }}
+                    · <i class="bi {{ $order->isInstant() ? 'bi-bag-check' : 'bi-clock-history' }} me-1"></i>{{ $order->fulfillment_label }}
+                    @if ($order->needsPrep() && $order->estimated_ready_at)
+                        · <span class="fw-medium">Ready {{ $order->estimated_ready_at->format('d M Y') }}</span>
+                    @endif
                 </p>
             </div>
             <div class="d-flex align-items-center gap-2">

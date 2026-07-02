@@ -41,6 +41,9 @@
                 <div class="muted small" style="text-transform:uppercase;">Receipt</div>
                 <div class="mono" style="font-size:14px;">#{{ $num }}</div>
                 <div class="muted small">{{ $order->created_at->format('d M Y') }}</div>
+                @if ($order->needsPrep() && $order->estimated_ready_at)
+                    <div class="small" style="margin-top:4px;">Estimated ready: <b>{{ $order->estimated_ready_at->format('d M Y') }}</b></div>
+                @endif
             </td>
         </tr>
     </table>

@@ -52,7 +52,7 @@ order money-model. Pricing semantics (Task 3.1) is folded into the order money-m
 | 1 | FT-Barcode | Printable / downloadable barcode label on Edit item (Task 3.2) | — | Low | ✅ Done |
 | 2 | FT-Customers | Unified customer entity + inline auto-register in orders (Task 1) | — | High | ✅ Done |
 | 3 | FT-OrderMoney | Order discount + custom price + advance payment method + builder redesign (Task 2, incl. 3.1 pricing semantics) | FT-Customers | High | ✅ Done |
-| 4 | FT-Fulfillment | Instant (grab & go) vs. special (prepared, estimated ready date) order fulfillment (Task 4) | FT-Customers | Medium | 🔵 Planned |
+| 4 | FT-Fulfillment | Instant (grab & go) vs. special (prepared, estimated ready date) order fulfillment (Task 4) | FT-Customers | Medium | ✅ Done |
 
 ---
 
@@ -211,9 +211,34 @@ backfills existing rows). Run `php artisan optimize:clear` after deploy.
 
 ## FT-Fulfillment — Instant vs. special-order fulfillment (Task 4)
 
-- **Status:** 🔵 Planned — spec locked 2026-07-02, ready to build.
+- **Status:** ✅ Done (2026-07-02) — shipped in 3 steps (F-a…F-c).
 - **Priority:** Medium.
 - **Depends on:** FT-Customers (edits the same `store()`/builder).
+
+### Shipped
+- **F-a (`73a1ead`)** — schema + server. Migration adds `fulfillment_type`
+  (instant|special, default special backfill) + `estimated_ready_at` (nullable date);
+  additive, portable, reversible. `store()`: instant → created `delivered` (skips the
+  prep pipeline); special → pending + a required ready date (`after_or_equal:today`).
+  Stock/discount/custom-price/payment unchanged for both; defaults to special when the
+  field is absent (backward compatible). `update()`: ready date editable on open orders.
+  `Phase20FulfillmentTest` (7).
+- **F-b (`d38198e`)** — order builder: a "Fulfillment" card with two selectable tiles
+  (Take today / Special order), a revealed estimated-ready date picker for special
+  (default today+3, min today), submit label reflecting the choice, and `canSubmit`
+  gating the date. Edit exposes an editable ready date for special orders.
+- **F-c** — dashboard **"Due to prepare"** alert (pending + special + date ≤ today, with
+  overdue-day count), kanban "In lab" cards show a ready-date badge (red once overdue),
+  and the order show page + receipt PDF render the fulfillment type + estimated-ready
+  line for special orders. `Phase21FulfillmentDashboardTest` (5).
+
+### Tests
+`Phase20FulfillmentTest` (7) + `Phase21FulfillmentDashboardTest` (5) + full suite.
+**192 passed / 750 assertions.**
+
+### ⚠️ Deploy note (Hostinger / MySQL)
+`php artisan migrate` applies the additive fulfillment columns (backfills existing rows
+to `special`). Run `php artisan optimize:clear` after deploy.
 
 ### Why
 Most walk-in customers either grab an in-stock item, pay, and leave (nothing to track), or place a

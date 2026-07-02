@@ -81,6 +81,25 @@
                         </div>
                     @endif
 
+                    @forelse ($dueToPrepare as $o)
+                        <a href="{{ safe_route('tenant.orders.show', $o['id']) }}"
+                           class="list-group-item list-group-item-action d-flex gap-2 align-items-start">
+                            <i class="bi bi-tools {{ $o['overdue_days'] > 0 ? 'text-danger' : 'text-primary' }} mt-1"></i>
+                            <div class="flex-grow-1 min-w-0">
+                                <p class="mb-0 fw-medium small text-truncate">{{ $o['customer_name'] ?? 'Walk-in' }}</p>
+                                <p class="mb-0 text-muted-foreground" style="font-size:.72rem;">
+                                    @if ($o['overdue_days'] > 0)
+                                        {{ $o['overdue_days'] }} day{{ $o['overdue_days'] == 1 ? '' : 's' }} overdue to prepare
+                                    @else
+                                        Due to prepare today
+                                    @endif
+                                </p>
+                            </div>
+                            <span class="badge text-bg-light">₹{{ number_format($o['total_amount'], 0) }}</span>
+                        </a>
+                    @empty
+                    @endforelse
+
                     @forelse ($overduePickups as $o)
                         <a href="{{ safe_route('tenant.orders.show', $o['id']) }}"
                            class="list-group-item list-group-item-action d-flex gap-2 align-items-start">
@@ -109,7 +128,7 @@
                             <span class="badge text-bg-warning">{{ $item->stock_qty }} left</span>
                         </a>
                     @empty
-                        @if (! $subscriptionPastDue && $overduePickups->isEmpty())
+                        @if (! $subscriptionPastDue && $overduePickups->isEmpty() && $dueToPrepare->isEmpty())
                             <div class="list-group-item text-center text-muted-foreground py-4">
                                 <i class="bi bi-check2-circle d-block fs-3 mb-2 text-success"></i>
                                 <span class="small">All clear — nothing needs attention.</span>
