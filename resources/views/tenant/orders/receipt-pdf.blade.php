@@ -97,8 +97,15 @@
             <td style="width:60%;"></td>
             <td style="width:40%;">
                 <table class="totals">
-                    <tr><td class="muted">Subtotal</td><td class="right mono">₹ {{ number_format($order->total_amount, 2) }}</td></tr>
+                    <tr><td class="muted">Subtotal</td><td class="right mono">₹ {{ number_format($order->subtotal, 2) }}</td></tr>
+                    @if ($order->hasDiscount())
+                        <tr><td class="muted">Discount ({{ $order->discount_label }})</td><td class="right mono">− ₹ {{ number_format($order->discount_amount, 2) }}</td></tr>
+                    @endif
+                    <tr><td class="muted">Total</td><td class="right mono">₹ {{ number_format($order->total_amount, 2) }}</td></tr>
                     <tr><td class="muted">Advance paid</td><td class="right mono">₹ {{ number_format($order->advance_paid, 2) }}</td></tr>
+                    @if ($order->payments->isNotEmpty())
+                        <tr><td class="muted">Paid via</td><td class="right">{{ $order->payments->pluck('method_label')->unique()->implode(', ') }}</td></tr>
+                    @endif
                     <tr><td colspan="2"><hr style="border:none;border-top:1px solid #e2e6ec;"></td></tr>
                     <tr><td><b>Balance due</b></td><td class="right mono"><b>₹ {{ number_format($order->balance_due, 2) }}</b></td></tr>
                 </table>

@@ -161,6 +161,16 @@
                 <div class="ms-auto" style="max-width:18rem;">
                     <div class="d-flex justify-content-between mb-1" style="font-size:.9rem;">
                         <span class="text-muted-foreground">Subtotal</span>
+                        <span class="font-monospace">₹ {{ number_format($order->subtotal, 2) }}</span>
+                    </div>
+                    @if ($order->hasDiscount())
+                        <div class="d-flex justify-content-between mb-1" style="font-size:.9rem;">
+                            <span class="text-muted-foreground">Discount <span class="text-faint">({{ $order->discount_label }})</span></span>
+                            <span class="font-monospace text-success">− ₹ {{ number_format($order->discount_amount, 2) }}</span>
+                        </div>
+                    @endif
+                    <div class="d-flex justify-content-between mb-1 fw-medium" style="font-size:.9rem;">
+                        <span>Total</span>
                         <span class="font-monospace">₹ {{ number_format($order->total_amount, 2) }}</span>
                     </div>
                     <div class="d-flex justify-content-between mb-2" style="font-size:.9rem;">

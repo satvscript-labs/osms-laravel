@@ -55,6 +55,10 @@
                         value="{{ $money($stats['ordersCount'] > 0 ? $stats['revenue'] / $stats['ordersCount'] : 0) }}"
                         icon="bi-stars" />
                 </div>
+                <div class="col-6 col-lg-3">
+                    <x-metric-card label="Discounts given" value="{{ $money($stats['discounts']) }}"
+                        hint="Across delivered orders" icon="bi-tag" tone="amber" />
+                </div>
             </div>
 
             <div class="card border-0 shadow-sm rounded-4">

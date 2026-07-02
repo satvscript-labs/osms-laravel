@@ -599,7 +599,7 @@ class OrderController extends Controller
     /** Printable / downloadable PDF receipt (DomPDF). */
     public function pdf(Order $order)
     {
-        $order->load(['customer', 'eyeRecord', 'items.inventory:id,sku,brand,model_name']);
+        $order->load(['customer', 'eyeRecord', 'items.inventory:id,sku,brand,model_name', 'payments']);
         $tenant = $order->tenant;
 
         $pdf = Pdf::loadView('tenant.orders.receipt-pdf', compact('order', 'tenant'))

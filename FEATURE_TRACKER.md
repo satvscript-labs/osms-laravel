@@ -42,7 +42,7 @@ order money-model. Pricing semantics (Task 3.1) is folded into the order money-m
 | --- | --- | --- | --- | --- | --- |
 | 1 | FT-Barcode | Printable / downloadable barcode label on Edit item (Task 3.2) | — | Low | ✅ Done |
 | 2 | FT-Customers | Unified customer entity + inline auto-register in orders (Task 1) | — | High | ✅ Done |
-| 3 | FT-OrderMoney | Order discount + custom price + advance payment method + builder redesign (Task 2, incl. 3.1 pricing semantics) | FT-Customers | High | 🔵 Planned |
+| 3 | FT-OrderMoney | Order discount + custom price + advance payment method + builder redesign (Task 2, incl. 3.1 pricing semantics) | FT-Customers | High | ✅ Done |
 
 ---
 
@@ -149,9 +149,36 @@ global search returns customers, patients filter. Plus the route smoke test.
 
 ## FT-OrderMoney — Discount + custom price + advance method + redesign (Task 2 + 3.1)
 
-- **Status:** 🔵 Planned (money-model change — build after FT-Customers).
+- **Status:** ✅ Done (2026-07-02) — shipped in 3 steps (M-a…M-c).
 - **Priority:** High.
-- **Scope:**
+
+### Shipped
+- **M-a (`621e18d`)** — money model + server. Migration adds `subtotal` /
+  `discount_type` / `discount_value` / `discount_amount` to orders and `list_price`
+  to order_items (backward-compatible backfill; portable + reversible).
+  `total_amount = subtotal − discount_amount`. `store()`/`update()` accept per-line
+  custom `unit_price` (list_price snapshots MRP), an order-level discount, and the
+  advance payment method; `resolveDiscount()` clamps percent 0–100 and amount ≤
+  subtotal; advance clamps to the discounted total; edit preserves the discount when
+  not re-posted. Below-cost allowed (NB-004). `Phase18OrderMoneyTest` (12).
+- **M-b (`adac7bd`)** — premium builder redesign (create + edit): inline-editable
+  unit price with list/MRP hint + "reset to list"; segmented **% / ₹** discount with
+  live "you save"; advance + payment-method; consistent flex alignment; `x-cloak` on
+  all conditional states (kills the Alpine FOUC).
+- **M-c** — receipt PDF + order show now render Subtotal → Discount → Total →
+  Advance (+ paid-via methods) → Balance. Analytics: revenue **net** of discount, a
+  **Discounts given** KPI, and brand revenue **allocated pro-rata** to lines so it
+  reconciles to net revenue (D7). `Phase19AnalyticsMoneyTest` (4).
+
+### Tests
+`Phase18OrderMoneyTest` (12) + `Phase19AnalyticsMoneyTest` (4) + full suite.
+**180 passed / 718 assertions.**
+
+### ⚠️ Deploy note (Hostinger / MySQL)
+`php artisan migrate` applies the discount/list_price migration (portable, additive,
+backfills existing rows). Run `php artisan optimize:clear` after deploy.
+
+### Scope (original)
   - **Discount** (percent or amount) with live calc: add `subtotal`, `discount_type`, `discount_value`,
     `discount_amount` to `orders`; `total_amount = subtotal − discount_amount`.
   - **Custom selling price** per line (already stored in `order_items.unit_price`); snapshot

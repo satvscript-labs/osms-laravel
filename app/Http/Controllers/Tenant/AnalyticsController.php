@@ -46,7 +46,9 @@ class AnalyticsController extends Controller
             ->whereBetween('updated_at', [$from, $to])
             ->get();
 
+        // Revenue is net of discount (total_amount already = subtotal − discount).
         $revenue = (float) $delivered->sum('total_amount');
+        $discounts = (float) $delivered->sum('discount_amount');
 
         $cogs = (float) $delivered->sum(function (Order $o) {
             return $o->items->sum(fn ($i) => (float) ($i->inventory->cost_price ?? 0) * $i->quantity);
@@ -56,14 +58,18 @@ class AnalyticsController extends Controller
         $margin = $revenue > 0 ? ($profit / $revenue) * 100 : 0;
         $ordersCount = $delivered->count();
 
-        // Top brands by revenue
+        // Top brands by revenue. The order-level discount is allocated pro-rata to
+        // each line (factor = net total ÷ gross subtotal) so brand revenue sums back
+        // to the net total revenue instead of the pre-discount gross (D7).
         $brandMap = [];
         foreach ($delivered as $o) {
+            $sub = (float) $o->subtotal;
+            $factor = $sub > 0 ? (float) $o->total_amount / $sub : 1.0;
             foreach ($o->items as $it) {
                 $brand = trim((string) ($it->inventory->brand ?? '')) ?: '—';
                 $brandMap[$brand] ??= ['quantity' => 0, 'revenue' => 0.0];
                 $brandMap[$brand]['quantity'] += $it->quantity;
-                $brandMap[$brand]['revenue'] += (float) $it->unit_price * $it->quantity;
+                $brandMap[$brand]['revenue'] += (float) $it->unit_price * $it->quantity * $factor;
             }
         }
         $topBrands = collect($brandMap)
@@ -87,7 +93,7 @@ class AnalyticsController extends Controller
             ->limit($showAllDues ? self::MAX_ROWS : 50)
             ->get();
 
-        $stats = compact('revenue', 'cogs', 'profit', 'margin', 'ordersCount');
+        $stats = compact('revenue', 'discounts', 'cogs', 'profit', 'margin', 'ordersCount');
         $fromStr = $from->format('Y-m-d');
         $toStr = $to->format('Y-m-d');
 
