@@ -353,6 +353,44 @@ body {
 // Applied by default to page content (see layouts/app.blade.php)
 .page-enter { animation: fade-up var(--duration-slow) var(--ease-spring) backwards; }
 
+// Smooth height reveal for conditionally-shown sections (no JS plugin needed).
+// Toggle `.reveal-open` to animate height; the inner wrapper clips the overflow.
+// Falls back to simply collapsed on browsers without grid-row animation.
+.reveal {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--duration-base) var(--ease-spring);
+  &.reveal-open { grid-template-rows: 1fr; }
+  > .reveal-inner { overflow: hidden; min-height: 0; }
+}
+
+// iOS-style segmented control (sliding-highlight toggle).
+.segmented {
+  display: inline-flex;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  background: var(--surface-sunken);
+  border-radius: var(--radius-pill);
+  .segmented-item {
+    border: 0;
+    background: transparent;
+    color: var(--osms-muted);
+    border-radius: var(--radius-pill);
+    padding: 0.35rem 0.85rem;
+    font-size: var(--text-sm);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    transition: all var(--duration-base) var(--ease-spring);
+    &.active {
+      background: var(--surface-card);
+      color: var(--osms-primary);
+      font-weight: 600;
+      box-shadow: var(--shadow-sm);
+    }
+  }
+}
+
 // ============================================================
 // 12. FORMS
 // ============================================================

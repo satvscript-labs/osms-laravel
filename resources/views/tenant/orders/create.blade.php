@@ -43,39 +43,49 @@
                 {{-- Fulfillment type --}}
                 <div class="card border-0 shadow-sm rounded-4">
                     <div class="card-body p-4">
-                        <h2 class="section-label mb-3">Fulfillment</h2>
-                        <div class="row g-2">
-                            @php
-                                $tiles = [
-                                    ['key' => 'instant', 'icon' => 'bi-bag-check', 'title' => 'Take today', 'desc' => 'Pay &amp; walk out — done'],
-                                    ['key' => 'special', 'icon' => 'bi-clock-history', 'title' => 'Special order', 'desc' => 'Needs prep — set a date'],
-                                ];
-                            @endphp
-                            @foreach ($tiles as $t)
-                                <div class="col-sm-6">
-                                    <button type="button" @click="fulfillmentType = '{{ $t['key'] }}'"
-                                            class="w-100 text-start border rounded-3 p-3 d-flex align-items-center gap-3"
-                                            style="transition: border-color var(--duration-base) var(--ease-spring), background var(--duration-base) var(--ease-spring);"
-                                            :class="fulfillmentType === '{{ $t['key'] }}' ? 'border-primary bg-primary-subtle' : 'bg-white'">
-                                        <span class="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
-                                              style="width:2.5rem;height:2.5rem;transition: all var(--duration-base) var(--ease-spring);"
-                                              :class="fulfillmentType === '{{ $t['key'] }}' ? 'bg-primary text-white' : 'bg-primary-subtle text-primary'">
-                                            <i class="bi {{ $t['icon'] }} fs-5"></i>
-                                        </span>
-                                        <span class="min-w-0">
-                                            <span class="d-block fw-medium">{{ $t['title'] }}</span>
-                                            <span class="d-block text-muted-foreground text-truncate" style="font-size:.75rem;">{!! $t['desc'] !!}</span>
-                                        </span>
+                        <div class="d-flex align-items-center justify-content-between gap-3 flex-wrap">
+                            <div>
+                                <h2 class="section-label mb-1">Fulfillment</h2>
+                                <p class="text-muted-foreground mb-0" style="font-size:.75rem;"
+                                   x-text="fulfillmentType === 'instant' ? 'Pay & walk out — completed on the spot' : 'Needs prep — set an estimated ready date'"></p>
+                            </div>
+                            <div class="segmented" role="tablist" aria-label="Fulfillment type">
+                                @php
+                                    $tiles = [
+                                        ['key' => 'instant', 'icon' => 'bi-bag-check', 'title' => 'Take today'],
+                                        ['key' => 'special', 'icon' => 'bi-clock-history', 'title' => 'Special order'],
+                                    ];
+                                @endphp
+                                @foreach ($tiles as $t)
+                                    <button type="button" class="segmented-item" role="tab"
+                                            @click="fulfillmentType = '{{ $t['key'] }}'"
+                                            :aria-selected="fulfillmentType === '{{ $t['key'] }}'"
+                                            :class="fulfillmentType === '{{ $t['key'] }}' ? 'active' : ''">
+                                        <i class="bi {{ $t['icon'] }}"></i>{{ $t['title'] }}
                                     </button>
-                                </div>
-                            @endforeach
+                                @endforeach
+                            </div>
                         </div>
 
-                        {{-- Estimated ready date (special only) --}}
-                        <div x-cloak x-show="fulfillmentType === 'special'" x-transition.opacity class="mt-3" style="max-width:16rem;">
-                            <label for="estimatedReadyAt" class="form-label small fw-medium mb-1">Estimated ready date</label>
-                            <input id="estimatedReadyAt" type="date" class="form-control" x-model="estimatedReadyAt"
-                                   min="{{ now()->toDateString() }}">
+                        {{-- Estimated ready date (special only) — smooth height reveal --}}
+                        <div class="reveal" :class="fulfillmentType === 'special' ? 'reveal-open' : ''">
+                            <div class="reveal-inner">
+                                <div class="pt-3">
+                                    <label for="estimatedReadyAt" class="form-label small fw-medium mb-2">Estimated ready date</label>
+                                    <div class="d-flex align-items-center justify-content-between gap-2">
+                                        <div class="d-flex gap-1 flex-shrink-0">
+                                            <button type="button" class="btn btn-sm btn-light" @click="setReady(0)"
+                                                    :class="isReady(0) ? 'border-primary text-primary fw-medium' : ''">Today</button>
+                                            <button type="button" class="btn btn-sm btn-light" @click="setReady(1)"
+                                                    :class="isReady(1) ? 'border-primary text-primary fw-medium' : ''">Tomorrow</button>
+                                            <button type="button" class="btn btn-sm btn-light" @click="setReady(2)"
+                                                    :class="isReady(2) ? 'border-primary text-primary fw-medium' : ''">In 2 days</button>
+                                        </div>
+                                        <input id="estimatedReadyAt" type="date" class="form-control flex-shrink-0"
+                                               style="width:auto;min-width:9.5rem;" x-model="estimatedReadyAt" min="{{ now()->toDateString() }}">
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -111,7 +121,7 @@
                         </div>
 
                         {{-- Inline new-customer form --}}
-                        <div x-cloak x-show="newMode" class="rounded-3 p-3" style="background: var(--surface-sunken);">
+                        <div x-cloak x-show="newMode" x-transition class="rounded-3 p-3" style="background: var(--surface-sunken);">
                             <div class="d-flex align-items-center justify-content-between mb-2">
                                 <span class="fw-medium small">New customer</span>
                                 <button type="button" class="btn btn-sm btn-link text-muted-foreground p-0 text-decoration-none" @click="cancelNew()">Cancel</button>
@@ -137,7 +147,7 @@
                         </div>
 
                         {{-- Chosen existing customer --}}
-                        <div x-cloak x-show="customerId">
+                        <div x-cloak x-show="customerId" x-transition>
                             <div class="d-flex align-items-center justify-content-between gap-3">
                                 <div class="d-flex align-items-center gap-3">
                                     <span class="d-inline-flex align-items-center justify-content-center rounded-3 bg-primary-subtle text-primary flex-shrink-0"
@@ -172,7 +182,7 @@
                             <span class="badge text-bg-light"><i class="bi bi-upc-scan me-1"></i>Scanner ready</span>
                         </div>
 
-                        <p x-show="scanFlash" x-text="scanFlash"
+                        <p x-show="scanFlash" x-text="scanFlash" x-transition.opacity.duration.200ms
                            class="bg-primary-subtle text-primary rounded-3 px-3 py-2 small mb-3"></p>
 
                         <div class="position-relative mb-3">
@@ -215,7 +225,7 @@
                                 </thead>
                                 <tbody>
                                     <template x-for="it in items" :key="it.inventory_id">
-                                        <tr>
+                                        <tr class="animate-fade-up">
                                             <td>
                                                 <span class="fw-medium d-block" x-text="it.label"></span>
                                                 <span class="text-faint" style="font-size:.7rem;" x-text="'List ' + money(it.list_price)"></span>
@@ -247,7 +257,7 @@
                                             </td>
                                             <td class="text-end">
                                                 <div class="d-flex align-items-center justify-content-end" style="min-height:var(--space-6);">
-                                                    <span class="font-monospace" x-text="money((Number(it.unit_price)||0)*it.quantity)"></span>
+                                                    <span class="font-monospace" x-animate-number="(Number(it.unit_price)||0)*it.quantity"></span>
                                                 </div>
                                             </td>
                                             <td class="text-end">
@@ -273,11 +283,11 @@
 
                     <div class="d-flex justify-content-between align-items-center mb-2">
                         <span class="text-muted-foreground">Items</span>
-                        <span class="fw-medium" x-text="itemCount()"></span>
+                        <span class="fw-medium" x-animate-number.int="itemCount()">0</span>
                     </div>
                     <div class="d-flex justify-content-between align-items-center mb-3">
                         <span class="text-muted-foreground">Subtotal</span>
-                        <span class="fw-medium font-monospace" x-text="money(subtotal())"></span>
+                        <span class="fw-medium font-monospace" x-animate-number="subtotal()">₹ 0.00</span>
                     </div>
 
                     {{-- Discount --}}
@@ -299,7 +309,7 @@
 
                     <div class="d-flex justify-content-between align-items-center border-top pt-3 mt-3">
                         <span class="fw-semibold">Total</span>
-                        <span class="h5 fw-semibold font-display font-monospace mb-0" x-text="money(total())"></span>
+                        <span class="h5 fw-semibold font-display font-monospace mb-0" x-animate-number="total()">₹ 0.00</span>
                     </div>
 
                     {{-- Advance + method --}}
@@ -320,7 +330,7 @@
 
                     <div class="bg-primary-subtle rounded-3 p-3 mt-3">
                         <p class="text-uppercase text-primary mb-1" style="font-size:.68rem;letter-spacing:.05em;">Balance due</p>
-                        <p class="h4 fw-semibold font-display mb-0" x-text="money(balance())"></p>
+                        <p class="h4 fw-semibold font-display mb-0" x-animate-number="balance()">₹ 0.00</p>
                     </div>
                     <button type="submit" class="btn btn-primary w-100 mt-3" :disabled="!canSubmit()">
                         <i class="bi me-1" :class="fulfillmentType === 'instant' ? 'bi-bag-check' : 'bi-plus-lg'"></i>
@@ -336,6 +346,36 @@
 @include('partials.barcode-listener', ['onScan' => 'orderScan'])
 <script>
     window.orderScan = (code) => window.dispatchEvent(new CustomEvent('osms-barcode', { detail: code }));
+
+    // iOS-style count-up: tweens an element's number toward its computed value.
+    // Usage: x-animate-number="expr" (money) or x-animate-number.int="expr" (integer).
+    // Registered on alpine:init (fires before Alpine.start() in the deferred bundle).
+    document.addEventListener('alpine:init', () => {
+        const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        Alpine.directive('animate-number', (el, { modifiers, expression }, { evaluateLater, effect }) => {
+            const isInt = modifiers.includes('int');
+            const fmt = (n) => isInt
+                ? String(Math.round(n))
+                : '₹ ' + Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            const getValue = evaluateLater(expression);
+            let current = null, raf = null;
+            effect(() => getValue((t) => {
+                const target = Number(t) || 0;
+                if (current === null || reduce) { current = target; el.textContent = fmt(target); return; }
+                cancelAnimationFrame(raf);
+                const start = current, delta = target - start, dur = 350, t0 = performance.now();
+                if (Math.abs(delta) < (isInt ? 0.5 : 0.005)) { current = target; el.textContent = fmt(target); return; }
+                const tick = (now) => {
+                    const p = Math.min((now - t0) / dur, 1);
+                    current = start + delta * (1 - Math.pow(1 - p, 3)); // easeOutCubic
+                    el.textContent = fmt(current);
+                    if (p < 1) raf = requestAnimationFrame(tick);
+                    else { current = target; el.textContent = fmt(target); }
+                };
+                raf = requestAnimationFrame(tick);
+            }));
+        });
+    });
 
     function orderBuilder() {
         return {
@@ -376,6 +416,13 @@
             clearCustomer() { this.customerId=''; this.selectedCustomer=null; this.eyeRecords=[]; this.eyeRecordId=''; },
             startNew() { this.newName = this.customerSearch.trim(); this.customerSearch = ''; this.newMode = true; },
             cancelNew() { this.newMode = false; this.newName = ''; this.newPhone = ''; },
+            localDate(daysAhead) {
+                const d = new Date(); d.setDate(d.getDate() + daysAhead);
+                const m = String(d.getMonth() + 1).padStart(2, '0'), day = String(d.getDate()).padStart(2, '0');
+                return `${d.getFullYear()}-${m}-${day}`;
+            },
+            setReady(daysAhead) { this.estimatedReadyAt = this.localDate(daysAhead); },
+            isReady(daysAhead) { return this.estimatedReadyAt === this.localDate(daysAhead); },
             addItem(inv, qty=1) {
                 const ex = this.items.find(i => i.inventory_id === inv.id);
                 if (ex) { ex.quantity = Math.min(ex.max_stock, ex.quantity + qty); return; }
