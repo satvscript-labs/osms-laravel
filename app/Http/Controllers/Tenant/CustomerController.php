@@ -6,6 +6,7 @@ use App\Exports\CustomersExport;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreCustomerRequest;
 use App\Models\Customer;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -14,7 +15,7 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class CustomerController extends Controller
 {
-    public function index(Request $request): View
+    public function index(Request $request): View|JsonResponse
     {
         $search = trim((string) $request->query('q', ''));
         // "patients" = the derived role: customers who have at least one eye record.
@@ -32,6 +33,24 @@ class CustomerController extends Controller
             ->latest()
             ->paginate(50)
             ->withQueryString();
+
+        // Live search/filter (fetched by Alpine) — return lightweight JSON rows.
+        if ($request->wantsJson()) {
+            return response()->json([
+                'customers' => $customers->getCollection()->map(fn (Customer $c) => [
+                    'id' => $c->id,
+                    'name' => $c->name,
+                    'phone' => $c->phone,
+                    'age' => $c->age,
+                    'gender' => $c->gender,
+                    'is_patient' => $c->eye_records_count > 0,
+                    'added' => $c->created_at->format('d M Y'),
+                    'url' => route('tenant.customers.show', $c),
+                ])->values(),
+                'total' => $customers->total(),
+                'has_more' => $customers->hasMorePages(),
+            ]);
+        }
 
         return view('tenant.customers.index', compact('customers', 'search', 'filter'));
     }
