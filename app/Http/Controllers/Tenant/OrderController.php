@@ -117,6 +117,9 @@ class OrderController extends Controller
             'customer_name'  => ['nullable', 'required_without:customer_id', 'string', 'max:255'],
             'customer_phone' => ['nullable', 'required_with:customer_name', 'string', 'max:30', 'regex:/^\+\d{1,4}\s\d{7,15}$/'],
             'eye_record_id' => ['nullable', 'exists:eye_records,id'],
+            'fulfillment_type' => ['nullable', 'in:instant,special'],
+            // Required only for a special order (a prepared job needs a promised date).
+            'estimated_ready_at' => ['nullable', 'date', 'after_or_equal:today', 'required_if:fulfillment_type,special'],
             'advance_paid' => ['nullable', 'numeric', 'min:0'],
             'payment_method' => ['nullable', 'in:cash,card,upi,other'],
             'discount_type' => ['nullable', 'in:none,percent,amount'],
@@ -127,6 +130,7 @@ class OrderController extends Controller
             'items.*.unit_price' => ['nullable', 'numeric', 'min:0', 'max:99999999'],
         ], [
             'customer_phone.regex' => 'Enter a valid phone number (7–15 digits).',
+            'estimated_ready_at.required_if' => 'A special order needs an estimated ready date.',
         ]);
 
         $order = DB::transaction(function () use ($validated) {
@@ -207,10 +211,20 @@ class OrderController extends Controller
 
             $advance = min((float) ($validated['advance_paid'] ?? 0), $total);
 
+            // Fulfillment: an instant sale is complete on the spot (created already
+            // delivered, never enters the prep pipeline); a special order starts
+            // pending and carries its promised ready date. Default to special so a
+            // programmatic create without the field keeps today's behavior.
+            $fulfillmentType = ($validated['fulfillment_type'] ?? 'special') === 'instant' ? 'instant' : 'special';
+            $status = $fulfillmentType === 'instant' ? 'delivered' : 'pending';
+            $estimatedReadyAt = $fulfillmentType === 'special' ? ($validated['estimated_ready_at'] ?? null) : null;
+
             $order = Order::create([
                 'customer_id' => $customer->id,
                 'eye_record_id' => $validated['eye_record_id'] ?? null,
-                'status' => 'pending',
+                'status' => $status,
+                'fulfillment_type' => $fulfillmentType,
+                'estimated_ready_at' => $estimatedReadyAt,
                 'subtotal' => $subtotal,
                 'discount_type' => $discountType,
                 'discount_value' => $discountValue,
@@ -322,6 +336,8 @@ class OrderController extends Controller
 
         $validated = $request->validate([
             'eye_record_id' => ['nullable', 'exists:eye_records,id'],
+            // Owner may slip the promised date on an open order (no past-date guard here).
+            'estimated_ready_at' => ['nullable', 'date'],
             'discount_type' => ['nullable', 'in:none,percent,amount'],
             'discount_value' => ['nullable', 'numeric', 'min:0'],
             'items' => ['required', 'array', 'min:1'],
@@ -450,6 +466,7 @@ class OrderController extends Controller
             $order->items()->createMany($lines);
             $order->update([
                 'eye_record_id' => $validated['eye_record_id'] ?? null,
+                'estimated_ready_at' => $validated['estimated_ready_at'] ?? $order->estimated_ready_at,
                 'subtotal' => $subtotal,
                 'discount_type' => $discountType,
                 'discount_value' => $discountValue,

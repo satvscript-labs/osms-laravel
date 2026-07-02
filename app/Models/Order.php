@@ -14,12 +14,14 @@ class Order extends Model
 
     protected $fillable = [
         'tenant_id', 'customer_id', 'eye_record_id', 'status',
+        'fulfillment_type', 'estimated_ready_at',
         'subtotal', 'discount_type', 'discount_value', 'discount_amount',
         'total_amount', 'advance_paid', 'balance_due',
         'cancelled_at', 'cancel_reason',
     ];
 
     protected $casts = [
+        'estimated_ready_at' => 'date',
         'subtotal' => 'decimal:2',
         'discount_value' => 'decimal:2',
         'discount_amount' => 'decimal:2',
@@ -71,6 +73,27 @@ class Order extends Model
     public function isCancelled(): bool
     {
         return $this->status === 'cancelled';
+    }
+
+    /** An instant "grab & go" counter sale (created already delivered). */
+    public function isInstant(): bool
+    {
+        return $this->fulfillment_type === 'instant';
+    }
+
+    /** A special/prepared order that moves through the prep pipeline. */
+    public function needsPrep(): bool
+    {
+        return $this->fulfillment_type === 'special';
+    }
+
+    public function getFulfillmentLabelAttribute(): string
+    {
+        return match ($this->fulfillment_type) {
+            'instant' => 'Instant sale',
+            'special' => 'Special order',
+            default   => ucfirst((string) $this->fulfillment_type),
+        };
     }
 
     /** Whether an order-level discount was applied. */
