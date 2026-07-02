@@ -289,6 +289,7 @@ class OrderController extends Controller
             'inventory_id' => $it->inventory_id,
             'label' => trim(($it->inventory?->brand ?? '—') . ' · ' . ($it->inventory?->model_name ?? '')),
             'unit_price' => (float) $it->unit_price,
+            'list_price' => (float) ($it->list_price ?? $it->unit_price),
             'quantity' => (int) $it->quantity,
             'max_stock' => (int) ($it->inventory?->stock_qty ?? 0) + (int) $it->quantity,
         ])->values();
