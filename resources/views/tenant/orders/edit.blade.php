@@ -24,6 +24,9 @@
         <input type="hidden" name="eye_record_id" :value="eyeRecordId">
         <input type="hidden" name="discount_type" :value="discountType()">
         <input type="hidden" name="discount_value" :value="discountValue || 0">
+        @if ($order->needsPrep())
+            <input type="hidden" name="estimated_ready_at" :value="estimatedReadyAt">
+        @endif
         <template x-for="(it, idx) in items" :key="it.inventory_id">
             <span>
                 <input type="hidden" :name="`items[${idx}][inventory_id]`" :value="it.inventory_id">
@@ -61,6 +64,14 @@
                                 </template>
                             </select>
                         </div>
+
+                        {{-- Estimated ready date (special orders) --}}
+                        @if ($order->needsPrep())
+                            <div class="mt-3" style="max-width:16rem;">
+                                <label for="estimatedReadyAt" class="form-label small fw-medium mb-1">Estimated ready date</label>
+                                <input id="estimatedReadyAt" type="date" class="form-control" x-model="estimatedReadyAt">
+                            </div>
+                        @endif
                     </div>
                 </div>
 
@@ -240,6 +251,7 @@
             advancePaid: {{ (float) $order->advance_paid }},
             unit: @json($order->discount_type === 'amount' ? '₹' : '%'),
             discountValue: @json($order->discount_type === 'none' ? '' : (float) $order->discount_value),
+            estimatedReadyAt: @json(optional($order->estimated_ready_at)->toDateString() ?? ''),
             itemSearch: '', scanFlash: null,
 
             init() {

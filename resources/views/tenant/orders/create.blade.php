@@ -27,6 +27,8 @@
         <input type="hidden" name="payment_method" :value="paymentMethod">
         <input type="hidden" name="discount_type" :value="discountType()">
         <input type="hidden" name="discount_value" :value="discountValue || 0">
+        <input type="hidden" name="fulfillment_type" :value="fulfillmentType">
+        <input type="hidden" name="estimated_ready_at" :value="fulfillmentType === 'special' ? estimatedReadyAt : ''">
         <template x-for="(it, idx) in items" :key="it.inventory_id">
             <span>
                 <input type="hidden" :name="`items[${idx}][inventory_id]`" :value="it.inventory_id">
@@ -38,6 +40,46 @@
         <div class="row g-4">
             {{-- Left column --}}
             <div class="col-lg-8 d-flex flex-column gap-4">
+                {{-- Fulfillment type --}}
+                <div class="card border-0 shadow-sm rounded-4">
+                    <div class="card-body p-4">
+                        <h2 class="section-label mb-3">Fulfillment</h2>
+                        <div class="row g-2">
+                            @php
+                                $tiles = [
+                                    ['key' => 'instant', 'icon' => 'bi-bag-check', 'title' => 'Take today', 'desc' => 'Pay &amp; walk out — done'],
+                                    ['key' => 'special', 'icon' => 'bi-clock-history', 'title' => 'Special order', 'desc' => 'Needs prep — set a date'],
+                                ];
+                            @endphp
+                            @foreach ($tiles as $t)
+                                <div class="col-sm-6">
+                                    <button type="button" @click="fulfillmentType = '{{ $t['key'] }}'"
+                                            class="w-100 text-start border rounded-3 p-3 d-flex align-items-center gap-3"
+                                            style="transition: border-color var(--duration-base) var(--ease-spring), background var(--duration-base) var(--ease-spring);"
+                                            :class="fulfillmentType === '{{ $t['key'] }}' ? 'border-primary bg-primary-subtle' : 'bg-white'">
+                                        <span class="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
+                                              style="width:2.5rem;height:2.5rem;transition: all var(--duration-base) var(--ease-spring);"
+                                              :class="fulfillmentType === '{{ $t['key'] }}' ? 'bg-primary text-white' : 'bg-primary-subtle text-primary'">
+                                            <i class="bi {{ $t['icon'] }} fs-5"></i>
+                                        </span>
+                                        <span class="min-w-0">
+                                            <span class="d-block fw-medium">{{ $t['title'] }}</span>
+                                            <span class="d-block text-muted-foreground text-truncate" style="font-size:.75rem;">{!! $t['desc'] !!}</span>
+                                        </span>
+                                    </button>
+                                </div>
+                            @endforeach
+                        </div>
+
+                        {{-- Estimated ready date (special only) --}}
+                        <div x-cloak x-show="fulfillmentType === 'special'" x-transition.opacity class="mt-3" style="max-width:16rem;">
+                            <label for="estimatedReadyAt" class="form-label small fw-medium mb-1">Estimated ready date</label>
+                            <input id="estimatedReadyAt" type="date" class="form-control" x-model="estimatedReadyAt"
+                                   min="{{ now()->toDateString() }}">
+                        </div>
+                    </div>
+                </div>
+
                 {{-- Customer picker --}}
                 <div class="card border-0 shadow-sm rounded-4">
                     <div class="card-body p-4">
@@ -281,7 +323,8 @@
                         <p class="h4 fw-semibold font-display mb-0" x-text="money(balance())"></p>
                     </div>
                     <button type="submit" class="btn btn-primary w-100 mt-3" :disabled="!canSubmit()">
-                        <i class="bi bi-plus-lg me-1"></i> Create order
+                        <i class="bi me-1" :class="fulfillmentType === 'instant' ? 'bi-bag-check' : 'bi-plus-lg'"></i>
+                        <span x-text="fulfillmentType === 'instant' ? 'Complete sale' : 'Create order'"></span>
                     </button>
                 </div>
             </div>
@@ -305,6 +348,7 @@
             items: [], itemSearch: '', scanFlash: null,
             advancePaid: '0', paymentMethod: 'cash',
             unit: '%', discountValue: '',
+            fulfillmentType: 'instant', estimatedReadyAt: @json(now()->addDays(3)->toDateString()),
 
             init() {
                 const pre = @json($selectedCustomerId);
@@ -374,7 +418,10 @@
             itemCount() { return this.items.reduce((s,i)=> s + i.quantity, 0); },
             balance() { return Math.max(this.total() - (Number(this.advancePaid)||0), 0); },
             hasCustomer() { return this.customerId !== '' || (this.newMode && this.newName.trim() !== '' && this.newPhone.trim() !== ''); },
-            canSubmit() { return this.hasCustomer() && this.items.length > 0; },
+            canSubmit() {
+                return this.hasCustomer() && this.items.length > 0
+                    && (this.fulfillmentType !== 'special' || !!this.estimatedReadyAt);
+            },
             validateForm(e) {
                 if (!this.canSubmit()) { e.preventDefault(); return false; }
                 return true;
