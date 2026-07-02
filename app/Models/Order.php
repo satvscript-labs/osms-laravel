@@ -14,11 +14,15 @@ class Order extends Model
 
     protected $fillable = [
         'tenant_id', 'customer_id', 'eye_record_id', 'status',
+        'subtotal', 'discount_type', 'discount_value', 'discount_amount',
         'total_amount', 'advance_paid', 'balance_due',
         'cancelled_at', 'cancel_reason',
     ];
 
     protected $casts = [
+        'subtotal' => 'decimal:2',
+        'discount_value' => 'decimal:2',
+        'discount_amount' => 'decimal:2',
         'total_amount' => 'decimal:2',
         'advance_paid' => 'decimal:2',
         'balance_due' => 'decimal:2',
@@ -67,5 +71,21 @@ class Order extends Model
     public function isCancelled(): bool
     {
         return $this->status === 'cancelled';
+    }
+
+    /** Whether an order-level discount was applied. */
+    public function hasDiscount(): bool
+    {
+        return $this->discount_type !== 'none' && (float) $this->discount_amount > 0;
+    }
+
+    /** Human label for the applied discount, e.g. "10% off" / "₹ 150.00 off". */
+    public function getDiscountLabelAttribute(): ?string
+    {
+        return match ($this->discount_type) {
+            'percent' => rtrim(rtrim(number_format((float) $this->discount_value, 2), '0'), '.') . '% off',
+            'amount'  => '₹ ' . number_format((float) $this->discount_value, 2) . ' off',
+            default   => null,
+        };
     }
 }

@@ -118,9 +118,13 @@ class OrderController extends Controller
             'customer_phone' => ['nullable', 'required_with:customer_name', 'string', 'max:30', 'regex:/^\+\d{1,4}\s\d{7,15}$/'],
             'eye_record_id' => ['nullable', 'exists:eye_records,id'],
             'advance_paid' => ['nullable', 'numeric', 'min:0'],
+            'payment_method' => ['nullable', 'in:cash,card,upi,other'],
+            'discount_type' => ['nullable', 'in:none,percent,amount'],
+            'discount_value' => ['nullable', 'numeric', 'min:0'],
             'items' => ['required', 'array', 'min:1'],
             'items.*.inventory_id' => ['required', 'exists:inventory,id'],
             'items.*.quantity' => ['required', 'integer', 'min:1', 'max:10000'],
+            'items.*.unit_price' => ['nullable', 'numeric', 'min:0', 'max:99999999'],
         ], [
             'customer_phone.regex' => 'Enter a valid phone number (7–15 digits).',
         ]);
@@ -173,16 +177,33 @@ class OrderController extends Controller
                 }
             }
 
-            // Build line items with the price resolved server-side (never trust the client).
-            $total = 0;
+            // Build line items: list_price = the item's current list/MRP; unit_price
+            // = a per-line custom override when supplied, else the list price (both
+            // resolved server-side — never trust a client total). Subtotal is gross.
+            $subtotal = 0;
             $lines = [];
             foreach ($validated['items'] as $line) {
                 $inv = $inventories->get($line['inventory_id']);
                 $qty = (int) $line['quantity'];
-                $unit = (float) $inv->selling_price;
-                $total += $unit * $qty;
-                $lines[] = ['inventory_id' => $inv->id, 'quantity' => $qty, 'unit_price' => $unit];
+                $list = (float) $inv->selling_price;
+                $unit = isset($line['unit_price']) ? round((float) $line['unit_price'], 2) : $list;
+                $subtotal += $unit * $qty;
+                $lines[] = [
+                    'inventory_id' => $inv->id,
+                    'quantity' => $qty,
+                    'unit_price' => $unit,
+                    'list_price' => $list,
+                ];
             }
+            $subtotal = round($subtotal, 2);
+
+            // Resolve the order-level discount, clamped so the total never goes negative.
+            [$discountType, $discountValue, $discountAmount] = $this->resolveDiscount(
+                $validated['discount_type'] ?? 'none',
+                (float) ($validated['discount_value'] ?? 0),
+                $subtotal,
+            );
+            $total = round($subtotal - $discountAmount, 2);
 
             $advance = min((float) ($validated['advance_paid'] ?? 0), $total);
 
@@ -190,6 +211,10 @@ class OrderController extends Controller
                 'customer_id' => $customer->id,
                 'eye_record_id' => $validated['eye_record_id'] ?? null,
                 'status' => 'pending',
+                'subtotal' => $subtotal,
+                'discount_type' => $discountType,
+                'discount_value' => $discountValue,
+                'discount_amount' => $discountAmount,
                 'total_amount' => $total,
                 'advance_paid' => $advance,
             ]);
@@ -217,7 +242,7 @@ class OrderController extends Controller
                 Payment::create([
                     'order_id' => $order->id,
                     'amount' => $advance,
-                    'method' => 'cash',
+                    'method' => $validated['payment_method'] ?? 'cash',
                     'note' => 'Initial advance',
                     'recorded_by' => auth()->id(),
                 ]);
@@ -296,9 +321,12 @@ class OrderController extends Controller
 
         $validated = $request->validate([
             'eye_record_id' => ['nullable', 'exists:eye_records,id'],
+            'discount_type' => ['nullable', 'in:none,percent,amount'],
+            'discount_value' => ['nullable', 'numeric', 'min:0'],
             'items' => ['required', 'array', 'min:1'],
             'items.*.inventory_id' => ['required', 'exists:inventory,id'],
             'items.*.quantity' => ['required', 'integer', 'min:1', 'max:10000'],
+            'items.*.unit_price' => ['nullable', 'numeric', 'min:0', 'max:99999999'],
         ]);
 
         // A re-attached prescription must belong to this order's customer (the
@@ -309,20 +337,27 @@ class OrderController extends Controller
         }
 
         DB::transaction(function () use ($order, $validated) {
-            // Requested quantity per item (collapse duplicate lines).
+            // Requested quantity + any posted custom unit price per item (collapse
+            // duplicate lines; the builder emits one line per inventory_id).
             $wanted = [];
+            $postedPrice = [];
             foreach ($validated['items'] as $line) {
                 $id = $line['inventory_id'];
                 $wanted[$id] = ($wanted[$id] ?? 0) + (int) $line['quantity'];
+                if (isset($line['unit_price'])) {
+                    $postedPrice[$id] = round((float) $line['unit_price'], 2);
+                }
             }
 
-            // Existing quantities + captured prices, keyed by inventory_id.
+            // Existing quantities + captured unit/list prices, keyed by inventory_id.
             $order->loadMissing('items');
             $oldQty = [];
-            $oldPrice = [];
+            $oldUnit = [];
+            $oldList = [];
             foreach ($order->items as $it) {
                 $oldQty[$it->inventory_id] = ($oldQty[$it->inventory_id] ?? 0) + (int) $it->quantity;
-                $oldPrice[$it->inventory_id] = (float) $it->unit_price;
+                $oldUnit[$it->inventory_id] = (float) $it->unit_price;
+                $oldList[$it->inventory_id] = $it->list_price !== null ? (float) $it->list_price : (float) $it->unit_price;
             }
 
             // Lock every item this edit touches (old ∪ new). Open-order items can
@@ -346,15 +381,34 @@ class OrderController extends Controller
                 }
             }
 
-            // Recompute the total: existing items keep their captured unit_price;
-            // newly-added items price at the item's current selling_price.
-            $total = 0;
+            // Recompute the subtotal. Per line: unit_price = a posted custom override,
+            // else the existing captured price (existing line) or the item's current
+            // list price (newly-added line — untouched lines never silently reprice);
+            // list_price = the existing snapshot, or current list for a new line.
+            $subtotal = 0;
             $lines = [];
             foreach ($wanted as $id => $qty) {
-                $unit = $oldPrice[$id] ?? (float) $inventories->get($id)->selling_price;
-                $total += $unit * $qty;
-                $lines[] = ['inventory_id' => $id, 'quantity' => $qty, 'unit_price' => $unit];
+                $inv = $inventories->get($id);
+                $list = $oldList[$id] ?? (float) $inv->selling_price;
+                $unit = round((float) ($postedPrice[$id] ?? $oldUnit[$id] ?? $inv->selling_price), 2);
+                $subtotal += $unit * $qty;
+                $lines[] = [
+                    'inventory_id' => $id,
+                    'quantity' => $qty,
+                    'unit_price' => $unit,
+                    'list_price' => $list,
+                ];
             }
+            $subtotal = round($subtotal, 2);
+
+            // Discount: use the posted type/value, else preserve the order's existing
+            // discount. Re-resolve against the new subtotal so it stays clamped.
+            [$discountType, $discountValue, $discountAmount] = $this->resolveDiscount(
+                $validated['discount_type'] ?? $order->discount_type,
+                (float) ($validated['discount_value'] ?? $order->discount_value),
+                $subtotal,
+            );
+            $total = round($subtotal - $discountAmount, 2);
 
             // Can't shrink the order below what has already been paid — there's no
             // refund flow. The user must reconcile payments first.
@@ -395,6 +449,10 @@ class OrderController extends Controller
             $order->items()->createMany($lines);
             $order->update([
                 'eye_record_id' => $validated['eye_record_id'] ?? null,
+                'subtotal' => $subtotal,
+                'discount_type' => $discountType,
+                'discount_value' => $discountValue,
+                'discount_amount' => $discountAmount,
                 'total_amount' => $total,
             ]);
         });
@@ -406,6 +464,28 @@ class OrderController extends Controller
     private function isEditable(Order $order): bool
     {
         return in_array($order->status, ['pending', 'ready_for_pickup'], true);
+    }
+
+    /**
+     * Resolve an order-level discount to a clamped [type, value, amount] triple.
+     * Percent is capped 0–100; a flat amount is capped at the subtotal, so the
+     * total can never go negative. All amounts are rounded to 2dp.
+     */
+    private function resolveDiscount(string $type, float $value, float $subtotal): array
+    {
+        if ($type === 'percent') {
+            $value = max(0.0, min($value, 100.0));
+
+            return ['percent', round($value, 2), round($subtotal * $value / 100, 2)];
+        }
+
+        if ($type === 'amount') {
+            $value = max(0.0, min($value, $subtotal));
+
+            return ['amount', round($value, 2), round($value, 2)];
+        }
+
+        return ['none', 0.0, 0.0];
     }
 
     /** Advance an order to the next workflow status. */
