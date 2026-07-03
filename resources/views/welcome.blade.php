@@ -137,6 +137,12 @@
                 <span class="fw-medium font-display">OSMS</span>
                 <span>· The premium optical SaaS.</span>
             </div>
+            <div class="d-flex flex-wrap align-items-center gap-3">
+                <a href="{{ route('legal.terms') }}" class="text-muted-foreground text-decoration-none">Terms</a>
+                <a href="{{ route('legal.privacy') }}" class="text-muted-foreground text-decoration-none">Privacy</a>
+                <a href="{{ route('legal.refund') }}" class="text-muted-foreground text-decoration-none">Refunds</a>
+                <a href="{{ route('legal.contact') }}" class="text-muted-foreground text-decoration-none">Contact</a>
+            </div>
             <span>&copy; {{ date('Y') }} OSMS. All rights reserved.</span>
         </div>
     </footer>

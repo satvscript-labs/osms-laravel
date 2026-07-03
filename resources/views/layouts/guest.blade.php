@@ -29,9 +29,15 @@
                 </div>
             </div>
 
-            <p class="text-center text-muted-foreground mt-4 mb-0" style="font-size:.8rem;">
+            <p class="text-center text-muted-foreground mt-4 mb-2" style="font-size:.8rem;">
                 Optical Store Management System
             </p>
+            <div class="text-center d-flex flex-wrap justify-content-center gap-3 text-muted-foreground" style="font-size:.75rem;">
+                <a href="{{ route('legal.terms') }}" class="text-decoration-none text-muted-foreground">Terms</a>
+                <a href="{{ route('legal.privacy') }}" class="text-decoration-none text-muted-foreground">Privacy</a>
+                <a href="{{ route('legal.refund') }}" class="text-decoration-none text-muted-foreground">Refunds</a>
+                <a href="{{ route('legal.contact') }}" class="text-decoration-none text-muted-foreground">Contact</a>
+            </div>
         </div>
     </main>
 </body>

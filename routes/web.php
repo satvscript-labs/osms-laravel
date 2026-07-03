@@ -11,6 +11,12 @@ use Illuminate\Support\Facades\Route;
 // Public marketing / landing page
 Route::get('/', fn () => view('welcome'))->name('home');
 
+// Public legal & compliance pages (ST-Legal / S6)
+Route::view('/legal/terms', 'legal.terms')->name('legal.terms');
+Route::view('/legal/privacy', 'legal.privacy')->name('legal.privacy');
+Route::view('/legal/refund', 'legal.refund')->name('legal.refund');
+Route::view('/legal/contact', 'legal.contact')->name('legal.contact');
+
 // Generic "dashboard" entry — routes the user to the right home by role/state.
 Route::get('/dashboard', fn () => redirect(Navigation::homeFor(request()->user())))
     ->middleware('auth')->name('dashboard');
@@ -35,11 +41,11 @@ Route::middleware('auth')->group(function () {
 | Tenant workspace (auth + onboarded)
 |--------------------------------------------------------------------------
 */
-// For production (Hostinger), add 'verified' middleware here (ST-Email).
-// Local/testing environments typically lack a configured mail driver.
+// 'verified.optional' (ST-Email) enforces email verification only when
+// SAAS_REQUIRE_EMAIL_VERIFICATION=true (enable in production once SMTP is live).
 // 'subscribed' hard-locks the workspace when the subscription is inactive
 // (ST-Enforce); billing routes self-exempt so a locked store can still pay.
-Route::middleware(['auth', 'onboarded', 'subscribed'])
+Route::middleware(['auth', 'verified.optional', 'onboarded', 'subscribed'])
     ->prefix('tenant')
     ->name('tenant.')
     ->group(function () {

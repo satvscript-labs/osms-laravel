@@ -65,8 +65,8 @@ fully in parallel with Bunch 1**.
 |:--:|:--:|---|---|---|:--:|:--:|
 | **1 · Foundation** | 1 | ST-Enforce | Subscription lifecycle & access enforcement (S1) | — | 🔴 | ✅ Done |
 | **1 · Foundation** | 2 | ST-Infra | Queue + scheduler + branded error pages + `APP_DEBUG=false` (S8a) | — | 🔴 | ✅ Done |
-| **2 · Comms & compliance** | 3 | ST-Email | Transactional email, `verified`, queued lifecycle mailables (S5) | ST-Infra (queue) | 🔴 | ⬜ Planned |
-| **2 · Comms & compliance** | 4 | ST-Legal | Legal & compliance pages + landing footer links (S6) | — | 🔴 | ⬜ Planned |
+| **2 · Comms & compliance** | 3 | ST-Email | Transactional email, `verified`, queued lifecycle mailables (S5) | ST-Infra (queue) | 🔴 | ✅ Done |
+| **2 · Comms & compliance** | 4 | ST-Legal | Legal & compliance pages + landing footer links (S6) | — | 🔴 | ✅ Done |
 | **3 · Money path** | 5 | ST-Billing | Single-plan subscribe / cancel / invoices + Razorpay go-live + webhook hardening (S4) | ST-Enforce, ST-Email, ST-Legal | 🔴 | ⬜ Planned |
 | **4 · People & data** | 6 | ST-Staff | Staff management + global staff cap (S3 + S2-lite) | ST-Email | 🟠 | ⬜ Planned |
 | **4 · People & data** | 7 | ST-Lifecycle | Account/tenant data lifecycle (last-admin guard, close-store, export) (S10) | ST-Billing (cancel-on-close) | 🟠 | ⬜ Planned |
@@ -175,7 +175,27 @@ can trail.
 ## Bunch 2 · Comms & compliance *(parallel with Bunch 1)*
 
 ### ST-Email — Transactional email + verification + lifecycle mailables (S5) 🔴
-- **Status:** ⬜ Planned. **Depends on:** ST-Infra (queued mail).
+- **Status:** ✅ Done (2026-07-03). **Depends on:** ST-Infra (queued mail).
+
+#### Shipped
+
+- **`User implements MustVerifyEmail`** — verification was inert before (no email was ever sent);
+  now the `Registered` event issues a verification mail and the gate is meaningful.
+- **`verified.optional` middleware** on the tenant group — runtime-gated by
+  `config('saas.require_email_verification')` (env `SAAS_REQUIRE_EMAIL_VERIFICATION`, default off).
+  Flip on in production once SMTP is confirmed — no code change, no test breakage.
+- **Trial lifecycle mail:** `TrialStatusMail` (queued markdown mailable) dispatched by
+  `subscriptions:reconcile` — reminders at **3 and 1 days** left, and a **"trial ended"** mail on
+  expiry, to the store's admin(s). `trialDaysLeft()` fixed to a calendar-day count (was off-by-one).
+- **`config/saas.php`** created (verification flag + business identity for legal/invoices).
+- **`.env.example`:** Hostinger SMTP production block + SAAS_* vars.
+- **Tests:** `Phase23SaaSCommsTest` verification gate (on/off × verified/unverified) + reconcile mail
+  (reminder at 3d, silent at 6d, ended+canceled on expiry). Suite **216 passed**.
+- **Deferred to their bunches:** staff-invite mail (ST-Staff), invoice/receipt mail (ST-Billing);
+  built-in verification/reset notifications are not yet queued (fine on SMTP; note for ST-Harden).
+
+#### Original plan
+
 - **Scope**
   - Production mail = **Hostinger SMTP** via `.env` (keep `log` local/tests); `MAIL_*` in `.env.example`
     + README; note SPF/DKIM/DMARC for deliverability.
@@ -190,7 +210,23 @@ can trail.
   staff-add, receipt on charge); password-reset + verification flows green with `verified` on.
 
 ### ST-Legal — Legal & compliance pages (S6) 🔴
-- **Status:** ⬜ Planned. **Depends on:** — (independent; **blocks Razorpay go-live**).
+- **Status:** ✅ Done (2026-07-03, pending owner copy). **Depends on:** — (**blocks Razorpay go-live**).
+
+#### Shipped
+
+- **Public pages** `/legal/{terms,privacy,refund,contact}` (named routes) on a shared `legal.layout`
+  (spotlight + glass, design tokens). Privacy is DPDP-aware (store = fiduciary, OSMS = processor,
+  Razorpay sub-processor, 30-day retention); Refund covers the trial + cancel-at-period-end + grace.
+- **Footer links** on the landing page and the guest/auth layout (login/register/reset).
+- **Draft-safe:** a non-production banner flags placeholders; business identity comes from
+  `config('saas.*')` (env), so real copy = filling env vars + owner/counsel review before go-live.
+- **Tests:** `Phase23SaaSCommsTest` — all four pages 200, landing links present.
+- **⚠️ Owner action before go-live:** fill `SAAS_LEGAL_ENTITY`, `SAAS_GST_NUMBER`,
+  `SAAS_SUPPORT_EMAIL`, `SAAS_CONTACT_ADDRESS`; name a DPDP Grievance Officer; have counsel review the
+  refund stance, liability cap, and jurisdiction.
+
+#### Original plan
+
 - **Scope**
   - Public `/legal/{terms,privacy,refund,contact}` routes + design-system Blade pages; footer links on
     the landing page ([welcome.blade.php](resources/views/welcome.blade.php)), register, and billing/

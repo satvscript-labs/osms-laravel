@@ -75,19 +75,18 @@ class Subscription extends Model
         return $this->accessState() === 'grace';
     }
 
-    /** Whole days left in a trial (null when not trialing). */
+    /** Whole calendar days left in a trial (null when not trialing). */
     public function trialDaysLeft(): ?int
     {
-        if ($this->status !== 'trialing') {
+        if ($this->status !== 'trialing' || ! $this->current_period_end) {
             return null;
         }
 
-        $boundary = $this->periodEndBoundary();
-        if (! $boundary) {
-            return null;
-        }
+        $tz = config('billing.timezone', 'Asia/Kolkata');
+        $today = Carbon::today($tz);
+        $end = Carbon::parse($this->current_period_end->toDateString(), $tz);
 
-        return max(0, (int) ceil(Carbon::now()->diffInDays($boundary, false)));
+        return max(0, (int) $today->diffInDays($end, false));
     }
 
     private function graceDays(): int
