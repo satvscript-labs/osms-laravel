@@ -51,7 +51,7 @@
                     data-bs-toggle="modal" data-bs-target="#globalSearchModal" style="font-size:.82rem;">
                 <i class="bi bi-search"></i>
                 <span>Search…</span>
-                <kbd class="ms-auto bg-light text-muted-foreground border" style="font-size:.65rem;">Ctrl K</kbd>
+                <kbd class="kbd-chip ms-auto">Ctrl K</kbd>
             </button>
         </div>
     @endunless

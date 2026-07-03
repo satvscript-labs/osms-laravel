@@ -546,7 +546,8 @@ body {
   flex-shrink: 0;
   transition: transform var(--duration-base) var(--ease-spring), color var(--duration-base) var(--ease-spring);
 }
-.person-row:hover .person-chevron { transform: translateX(4px); color: var(--osms-primary); }
+.person-row:hover .person-chevron,
+.search-result-item:hover .person-chevron { transform: translateX(4px); color: var(--osms-primary); }
 
 // Meta chip (age · gender) — subtle sunken pill
 .meta-chip {
@@ -579,13 +580,51 @@ body {
 }
 
 // ============================================================
-// 18. MODALS (premium backdrop tint)
+// 18. MODALS (premium backdrop tint + spring entrance)
 // ============================================================
 // A slightly softer, cooler scrim than Bootstrap's flat black to match the
 // design system. Stacking is handled correctly because `.page-enter` no longer
 // retains a transform (see the fade-up note above), so the backdrop sits behind
 // the modal as intended — no z-index or pointer-events overrides needed.
-.modal-backdrop { background-color: rgba(16, 24, 40, 0.5); }
+.modal-backdrop {
+  background-color: rgba(16, 24, 40, 0.5);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+
+// Every modal opens with the same gentle scale + settle instead of Bootstrap's
+// default slide-down — one motion contract, applied globally (section 7).
+.modal.fade .modal-dialog {
+  transition: transform var(--duration-base) var(--ease-spring), opacity var(--duration-base) var(--ease-out);
+  transform: scale(0.95) translateY(-6px);
+  opacity: 0;
+}
+.modal.show .modal-dialog { transform: scale(1) translateY(0); opacity: 1; }
+
+// Keycap chip for keyboard-shortcut hints (Ctrl K, Esc) — a subtle physical
+// "key" look (thicker bottom edge) instead of a flat bootstrap <kbd>.
+.kbd-chip {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 1.4rem; padding: 0.15rem 0.4rem;
+  font-family: inherit; font-size: var(--text-2xs); font-weight: 600;
+  color: var(--osms-muted); background: var(--surface-sunken);
+  border: 1px solid var(--osms-border-strong);
+  border-bottom-width: 2px;
+  border-radius: var(--radius-sm);
+  line-height: 1.3;
+}
+
+// ------------------------------------------------------------
+// Search palette (Ctrl/Cmd+K) — crisp opaque surface, positioned so it
+// appears vertically centered when fully expanded (60vh results + header).
+// ------------------------------------------------------------
+.search-palette { margin-top: 18vh; }
+.search-palette .modal-content {
+  background: var(--surface-card);
+  border: 1px solid var(--osms-border);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-overlay);
+}
 
 // ============================================================
 // 19. PRINT  (thermal receipt + A4)

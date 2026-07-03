@@ -1,13 +1,13 @@
 {{-- Global search palette (Cmd+K). Tenant users only. --}}
 <div class="modal fade" id="globalSearchModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content glass border-0 rounded-4">
+    <div class="modal-dialog search-palette">
+        <div class="modal-content border-0">
             <div class="modal-body p-0">
                 <div class="d-flex align-items-center gap-2 px-3 py-2 border-bottom">
                     <i class="bi bi-search text-muted-foreground"></i>
                     <input type="text" id="globalSearchInput" class="form-control border-0 shadow-none"
                            placeholder="Search customers, inventory, orders…" autocomplete="off" data-barcode-target>
-                    <kbd class="bg-light text-muted-foreground border small">Esc</kbd>
+                    <kbd class="kbd-chip">Esc</kbd>
                 </div>
                 <div id="globalSearchResults" class="p-2" style="max-height:60vh;overflow-y:auto;">
                     <p class="text-center text-muted-foreground py-4 mb-0 small">Type to search across your store.</p>
@@ -49,8 +49,9 @@
     function row(url, icon, left, right) {
         return `<a href="${url}" class="search-result-item d-flex align-items-center gap-2 px-3 py-2 rounded-3 text-decoration-none text-reset">
             <i class="bi ${icon} text-muted-foreground"></i>
-            <span class="flex-grow-1">${left}</span>
-            <span class="text-muted-foreground small">${right}</span></a>`;
+            <span class="flex-grow-1 min-w-0 text-truncate">${left}</span>
+            <span class="text-muted-foreground text-xs text-nowrap">${right}</span>
+            <i class="bi bi-chevron-right person-chevron"></i></a>`;
     }
 
     function render(data, loading, q) {
@@ -67,7 +68,7 @@
             html += '<p class="section-label px-3 pt-2 mb-1">Inventory</p>';
             data.inventory.forEach(i => html += row(i.url, 'bi-box-seam',
                 `<span class="fw-medium">${esc(i.brand)||'—'}</span> <span class="text-muted-foreground">${esc(i.model_name)}</span>`,
-                `<span class="font-monospace" style="font-size:.7rem;">${esc(i.sku)} · stock ${i.stock_qty}</span>`));
+                `<span class="font-monospace text-2xs">${esc(i.sku)} · stock ${i.stock_qty}</span>`));
         }
         if (data.orders.length) {
             html += '<p class="section-label px-3 pt-2 mb-1">Orders</p>';
