@@ -462,6 +462,29 @@ body {
 .sidebar-link i { font-size: 1.05rem; }
 
 // ------------------------------------------------------------
+// Dashboard — quick actions + alert rows
+// ------------------------------------------------------------
+// Quick-action card: the trailing arrow slides on hover (matches the
+// person-row chevron language).
+.quick-action-arrow {
+  color: var(--osms-faint);
+  transition: transform var(--duration-base) var(--ease-spring), color var(--duration-base) var(--ease-spring);
+}
+.card-lift:hover .quick-action-arrow { transform: translateX(4px); color: var(--osms-primary); }
+
+// Small circular tone icon for alert rows.
+.alert-icon {
+  width: 2.1rem; height: 2.1rem; flex-shrink: 0;
+  border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 0.95rem;
+}
+.alert-icon-red     { background: var(--tone-red-bg);     color: var(--tone-red); }
+.alert-icon-amber   { background: var(--tone-amber-bg);   color: var(--tone-amber); }
+.alert-icon-blue    { background: var(--tone-blue-bg);    color: var(--tone-blue); }
+.alert-icon-green   { background: var(--tone-green-bg);   color: var(--tone-green); }
+
+// ------------------------------------------------------------
 // Settings hub — in-page section nav (sticky rail)
 // ------------------------------------------------------------
 .settings-nav {
