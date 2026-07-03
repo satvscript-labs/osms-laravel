@@ -13,8 +13,6 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
-use Maatwebsite\Excel\Facades\Excel;
-use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class InventoryController extends Controller
 {
@@ -147,18 +145,6 @@ class InventoryController extends Controller
 
         return redirect()->route('tenant.inventory.edit', $inventory)
             ->with('status', 'Stock adjusted and logged.');
-    }
-
-    /** FG-Export — download the (filtered) inventory list as an XLSX file. */
-    public function export(Request $request): BinaryFileResponse
-    {
-        $export = new InventoryExport(
-            trim((string) $request->query('q', '')),
-            (string) $request->query('type', ''),
-            (string) $request->query('stock', ''),
-        );
-
-        return Excel::download($export, 'inventory-' . now()->format('Ymd-His') . '.xlsx');
     }
 
     /** FG-Delete — archived (soft-deleted) items, restorable for 30 days. */

@@ -66,17 +66,4 @@ class Phase5AnalyticsTest extends TestCase
         $this->actingAs($this->admin)->get(route('tenant.analytics.index'))
             ->assertOk()->assertSee('Debtor')->assertSee('600.00'); // balance due
     }
-
-    public function test_ledger_excel_export(): void
-    {
-        $this->actingAs($this->admin);
-        $this->deliveredOrder(100, 50, 1);
-
-        $res = $this->actingAs($this->admin)->get(route('tenant.analytics.ledger.export'));
-        $res->assertOk();
-        $this->assertStringContainsString(
-            'spreadsheetml',
-            $res->headers->get('content-type')
-        );
-    }
 }

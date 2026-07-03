@@ -90,11 +90,35 @@ It drives `subscriptions:reconcile` (02:15, expires lapsed trials) and `model:pu
 (02:00). Without it, the SaaS access enforcement still works live (it's derived), but stored
 subscription state and the trash purge won't advance.
 
-**Queue worker.** Mail and exports run on the `database` queue. Run a worker (cron-restarted):
+**Queue worker.** Transactional mail runs on the `database` queue. Run a worker (cron-restarted):
 
 ```bash
 php artisan queue:work --stop-when-empty   # or a supervised long-running worker
 ```
+
+### Backups, monitoring & security (ST-Harden)
+
+**Backups (required before launch).** Nightly off-box backup of the MySQL DB and the `storage/app/public`
+uploads (logos). On Hostinger the simplest reliable approach is a cron `mysqldump` piped to a dated file
+plus a `tar` of the uploads, synced off the server (Hostinger's own backups are a fallback, not a
+substitute). **Run a restore drill before go-live** — an untested backup is not a backup.
+
+```text
+30 2 * * *  mysqldump -u USER -pPASS DBNAME | gzip > /backups/osms-$(date +\%F).sql.gz
+```
+
+**Monitoring (recommended).** Add Sentry for error visibility:
+
+```bash
+composer require sentry/sentry-laravel
+php artisan sentry:publish --dsn=YOUR_DSN   # sets SENTRY_LARAVEL_DSN in .env
+```
+
+Wire the health endpoint `/up` to an uptime pinger (UptimeRobot or similar).
+
+**Security headers** are applied to every web response by `App\Http\Middleware\SecurityHeaders`
+(nosniff, SAMEORIGIN, Referrer-Policy; HSTS over HTTPS). Ensure the server forces HTTPS and
+`APP_DEBUG=false` in production.
 
 ## Tests
 

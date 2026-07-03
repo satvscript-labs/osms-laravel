@@ -5,8 +5,8 @@
 <div class="p-4 p-md-5">
     <div class="mb-4">
         <p class="section-label mb-1">Account</p>
-        <h1 class="h3 fw-semibold font-display mb-1">Billing &amp; plans</h1>
-        <p class="text-muted-foreground mb-0" style="font-size:.9rem;">Manage your OSMS subscription.</p>
+        <h1 class="h3 fw-semibold font-display mb-1">Subscription</h1>
+        <p class="text-muted-foreground mb-0" style="font-size:.9rem;">View your plan, billing cycle, and payment history.</p>
     </div>
 
     @if (session('status'))
@@ -19,6 +19,10 @@
     @php
         $s = $subscription?->status;
         $state = $subscription?->accessState();
+        $interval = $subscription?->interval;
+        $basic = $plans['basic'];
+        $otherInterval = $interval === 'yearly' ? 'monthly' : 'yearly';
+        $yearlySave = (int) round((1 - $basic['yearly_price'] / ($basic['monthly_price'] * 12)) * 100);
     @endphp
 
     {{-- Current subscription --}}
@@ -28,7 +32,7 @@
                 <p class="section-label mb-1">Current plan</p>
                 <div class="d-flex align-items-center gap-2">
                     <span class="h4 fw-semibold font-display mb-0 text-capitalize">
-                        {{ $subscription?->tier ?? 'None' }}
+                        {{ $subscription?->tier ?? 'None' }}@if ($interval)<span class="text-muted-foreground fw-normal"> · {{ ucfirst($interval) }}</span>@endif
                     </span>
                     <span class="badge {{ in_array($s, ['active','trialing']) ? 'text-bg-success' : ($s === 'past_due' ? 'text-bg-warning' : 'text-bg-secondary') }}">
                         {{ $s ?? 'inactive' }}
@@ -41,23 +45,40 @@
                     </p>
                 @elseif ($subscription?->current_period_end)
                     <p class="text-muted-foreground mb-0 mt-1" style="font-size:.82rem;">
-                        {{ $subscription->status === 'trialing' ? 'Trial ends' : 'Renews' }}
+                        {{ $subscription->status === 'trialing' ? 'Trial ends' : 'Next billing' }}
                         {{ $subscription->current_period_end->format('d M Y') }}
+                    </p>
+                @endif
+                @if ($subscription?->pending_interval)
+                    <p class="text-primary mb-0 mt-1" style="font-size:.82rem;">
+                        <i class="bi bi-arrow-repeat me-1"></i>
+                        Switching to {{ ucfirst($subscription->pending_interval) }} at your next renewal.
                     </p>
                 @endif
             </div>
 
             @if ($s === 'active' && ! $subscription?->cancel_at_period_end)
-                <form method="POST" action="{{ route('tenant.billing.cancel') }}">
-                    @csrf
-                    <button type="button" class="btn btn-light"
-                            data-confirm="Your subscription stays active until the end of the current billing period, then it won't renew. You can resubscribe anytime."
-                            data-confirm-title="Cancel subscription?"
-                            data-confirm-label="Cancel subscription"
-                            data-confirm-tone="danger">
-                        Cancel subscription
-                    </button>
-                </form>
+                <div class="d-flex flex-wrap gap-2">
+                    @unless ($subscription?->pending_interval)
+                        <form method="POST" action="{{ route('tenant.billing.change-interval') }}">
+                            @csrf
+                            <input type="hidden" name="interval" value="{{ $otherInterval }}">
+                            <button type="submit" class="btn btn-light">
+                                Switch to {{ ucfirst($otherInterval) }}@if ($otherInterval === 'yearly' && $yearlySave > 0)<span class="badge text-bg-success ms-1">Save {{ $yearlySave }}%</span>@endif
+                            </button>
+                        </form>
+                    @endunless
+                    <form method="POST" action="{{ route('tenant.billing.cancel') }}">
+                        @csrf
+                        <button type="button" class="btn btn-light text-danger"
+                                data-confirm="Your subscription stays active until the end of the current billing period, then it won't renew. You can resubscribe anytime."
+                                data-confirm-title="Cancel subscription?"
+                                data-confirm-label="Cancel subscription"
+                                data-confirm-tone="danger">
+                            Cancel
+                        </button>
+                    </form>
+                </div>
             @endif
         </div>
     </div>

@@ -24,6 +24,40 @@
         </a>
     </div>
 
+    {{-- First-run getting-started (ST-Onboard) --}}
+    @if ($isFirstRun)
+        <div class="card card-lift border-0 shadow-sm rounded-4 mb-4 animate-fade-up bg-spotlight">
+            <div class="card-body p-4">
+                <p class="section-label mb-1">Welcome to OSMS</p>
+                <h2 class="h5 fw-semibold font-display mb-1">Let's get your store ready</h2>
+                <p class="text-muted-foreground mb-4" style="font-size:.88rem;">Three quick steps to your first sale.</p>
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <a href="{{ route('tenant.inventory.create') }}" class="d-block text-decoration-none card h-100 border rounded-4 p-3 card-lift">
+                            <i class="bi bi-box-seam fs-4 text-primary"></i>
+                            <p class="fw-semibold mb-1 mt-2">1. Add products</p>
+                            <p class="text-muted-foreground mb-0" style="font-size:.82rem;">Stock your frames, lenses, and accessories.</p>
+                        </a>
+                    </div>
+                    <div class="col-md-4">
+                        <a href="{{ route('tenant.customers.create') }}" class="d-block text-decoration-none card h-100 border rounded-4 p-3 card-lift">
+                            <i class="bi bi-people fs-4 text-primary"></i>
+                            <p class="fw-semibold mb-1 mt-2">2. Add a customer</p>
+                            <p class="text-muted-foreground mb-0" style="font-size:.82rem;">Or add them on the fly while creating an order.</p>
+                        </a>
+                    </div>
+                    <div class="col-md-4">
+                        <a href="{{ route('tenant.orders.create') }}" class="d-block text-decoration-none card h-100 border rounded-4 p-3 card-lift">
+                            <i class="bi bi-cart3 fs-4 text-primary"></i>
+                            <p class="fw-semibold mb-1 mt-2">3. Make your first sale</p>
+                            <p class="text-muted-foreground mb-0" style="font-size:.82rem;">Ring up an order and print the receipt.</p>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    @endif
+
     {{-- Metrics --}}
     <div class="row g-3 mb-4 stagger">
         <div class="col-6 col-lg-3">

@@ -3,9 +3,14 @@
 
 @section('content')
     <h1 class="h4 fw-semibold font-display mb-1">Set up your store</h1>
-    <p class="text-muted-foreground mb-4" style="font-size:.875rem;">
+    <p class="text-muted-foreground mb-3" style="font-size:.875rem;">
         A few details to get your workspace ready.
     </p>
+
+    <div class="alert alert-info d-flex align-items-center gap-2 py-2 px-3 rounded-3" style="font-size:.82rem;">
+        <i class="bi bi-stars"></i>
+        <div>Your <strong>{{ config('billing.trial_days', 14) }}-day free trial</strong> starts now — no card required.</div>
+    </div>
 
     @if ($errors->any())
         <div class="alert alert-danger py-2 px-3 small rounded-3">

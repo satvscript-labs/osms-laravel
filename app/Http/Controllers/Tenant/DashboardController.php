@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Tenant;
 
 use App\Http\Controllers\Controller;
+use App\Models\Customer;
 use App\Models\Inventory;
 use App\Models\Order;
 use App\Models\Subscription;
@@ -63,9 +64,13 @@ class DashboardController extends Controller
         $subscription = Subscription::first();
         $subscriptionPastDue = $subscription?->isPastDue() ?? false;
 
+        // First-run guidance: a brand-new store with nothing entered yet.
+        $isFirstRun = ! Inventory::exists() && ! Customer::exists() && ! Order::exists();
+
         return view('tenant.dashboard', compact(
             'todaySales', 'pendingCount', 'readyCount',
             'lowStock', 'lowStockCount', 'overduePickups', 'dueToPrepare', 'subscriptionPastDue',
+            'isFirstRun',
         ));
     }
 }

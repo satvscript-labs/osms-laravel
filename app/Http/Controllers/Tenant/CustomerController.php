@@ -10,8 +10,6 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
-use Maatwebsite\Excel\Facades\Excel;
-use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class CustomerController extends Controller
 {
@@ -81,14 +79,6 @@ class CustomerController extends Controller
         return redirect()
             ->route('tenant.customers.show', $customer)
             ->with('status', 'Customer updated.');
-    }
-
-    /** FG-Export — download the (filtered) customer list as an XLSX file. */
-    public function export(Request $request): BinaryFileResponse
-    {
-        $export = new CustomersExport(trim((string) $request->query('q', '')));
-
-        return Excel::download($export, 'customers-' . now()->format('Ymd-His') . '.xlsx');
     }
 
     /** FG-Delete — archived (soft-deleted) customers, restorable for 30 days. */

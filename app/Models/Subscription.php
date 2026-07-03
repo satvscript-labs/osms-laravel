@@ -13,7 +13,8 @@ class Subscription extends Model
 
     protected $fillable = [
         'tenant_id', 'razorpay_subscription_id', 'razorpay_customer_id',
-        'status', 'tier', 'current_period_end', 'cancel_at_period_end',
+        'status', 'tier', 'interval', 'pending_interval',
+        'current_period_end', 'cancel_at_period_end',
     ];
 
     protected $casts = [

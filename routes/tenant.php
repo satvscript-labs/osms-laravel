@@ -26,7 +26,6 @@ Route::middleware('throttle:120,1')->get('search', SearchController::class)->nam
 Route::get('customers', [CustomerController::class, 'index'])->name('customers.index');
 Route::get('customers/create', [CustomerController::class, 'create'])->name('customers.create');
 Route::get('customers/trash', [CustomerController::class, 'trash'])->name('customers.trash'); // FG-Delete archive
-Route::get('customers/export', [CustomerController::class, 'export'])->name('customers.export'); // FG-Export
 Route::post('customers', [CustomerController::class, 'store'])->name('customers.store');
 Route::get('customers/{customer}', [CustomerController::class, 'show'])->name('customers.show');
 Route::get('customers/{customer}/edit', [CustomerController::class, 'edit'])->name('customers.edit');
@@ -47,7 +46,6 @@ Route::get('inventory', [InventoryController::class, 'index'])->name('inventory.
 Route::middleware('throttle:120,1')->get('inventory/scan', [InventoryController::class, 'scan'])->name('inventory.scan');
 Route::get('inventory/create', [InventoryController::class, 'create'])->name('inventory.create');
 Route::get('inventory/trash', [InventoryController::class, 'trash'])->name('inventory.trash'); // FG-Delete archive
-Route::get('inventory/export', [InventoryController::class, 'export'])->name('inventory.export'); // FG-Export
 Route::post('inventory', [InventoryController::class, 'store'])->name('inventory.store');
 Route::get('inventory/{inventory}/edit', [InventoryController::class, 'edit'])->name('inventory.edit');
 Route::put('inventory/{inventory}', [InventoryController::class, 'update'])->name('inventory.update');
@@ -72,7 +70,6 @@ Route::middleware('throttle:120,1')->get('customers/{customer}/eye-records', [Or
 // ---- Analytics (store admins + superadmin only) ----
 Route::middleware('role:store_admin,superadmin')->group(function () {
     Route::get('analytics', [AnalyticsController::class, 'index'])->name('analytics.index');
-    Route::get('analytics/ledger/export', [AnalyticsController::class, 'exportLedger'])->name('analytics.ledger.export');
 });
 
 // ---- Billing / subscriptions (store admins + superadmin only) ----
@@ -80,6 +77,7 @@ Route::middleware('role:store_admin,superadmin')->group(function () {
     Route::get('billing', [BillingController::class, 'index'])->name('billing.index');
     Route::post('billing/subscribe', [BillingController::class, 'subscribe'])->name('billing.subscribe');
     Route::post('billing/cancel', [BillingController::class, 'cancel'])->name('billing.cancel');
+    Route::post('billing/change-interval', [BillingController::class, 'changeInterval'])->name('billing.change-interval');
     Route::get('billing/success', [BillingController::class, 'success'])->name('billing.success');
     Route::get('billing/invoices/{invoice}/pdf', [BillingController::class, 'invoicePdf'])->name('billing.invoices.pdf');
 });

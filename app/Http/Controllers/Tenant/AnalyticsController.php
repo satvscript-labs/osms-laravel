@@ -8,7 +8,6 @@ use App\Models\Order;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
-use Maatwebsite\Excel\Facades\Excel;
 
 class AnalyticsController extends Controller
 {
@@ -102,14 +101,4 @@ class AnalyticsController extends Controller
         ));
     }
 
-    /** Export the ledger for the current range to Excel. */
-    public function exportLedger(Request $request)
-    {
-        [$from, $to] = $this->range($request);
-
-        return Excel::download(
-            new LedgerExport($from, $to),
-            'ledger-' . $from->format('Ymd') . '-' . $to->format('Ymd') . '.xlsx',
-        );
-    }
 }

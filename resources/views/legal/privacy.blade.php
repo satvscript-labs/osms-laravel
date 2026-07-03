@@ -39,9 +39,9 @@
     deleted, unless a longer period is required by law.</p>
 
     <h2 class="h5 font-display mt-4">7. Your rights</h2>
-    <p>Subject to the DPDP Act, you may access, correct, or request deletion of your account data, and
-    export your store's data. Store customers should direct such requests to the store; we assist the
-    store in fulfilling them.</p>
+    <p>Subject to the DPDP Act, you may access or correct your account data, and request a copy or
+    deletion of your store's data by <a href="{{ route('legal.contact') }}">contacting us</a>. Store
+    customers should direct such requests to the store; we assist the store in fulfilling them.</p>
 
     <h2 class="h5 font-display mt-4">8. Security</h2>
     <p>We use industry-standard measures (encryption in transit, hashed passwords, access controls). No

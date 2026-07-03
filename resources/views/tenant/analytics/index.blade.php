@@ -104,8 +104,6 @@
         {{-- Ledger --}}
         <div class="tab-pane fade" id="tab-ledger" role="tabpanel">
             <div class="d-flex justify-content-end gap-2 mb-2">
-                <a href="{{ route('tenant.analytics.ledger.export', ['from' => $fromStr, 'to' => $toStr]) }}"
-                   class="btn btn-light btn-sm"><i class="bi bi-file-earmark-excel me-1"></i> Export Excel</a>
                 @if ($ledger->count() >= 50 && ! $showAllLedger)
                     <a href="{{ route('tenant.analytics.index', ['from' => $fromStr, 'to' => $toStr, 'ledger_all' => 1]) }}"
                        class="btn btn-light btn-sm"><i class="bi bi-arrow-repeat me-1"></i> Show all</a>

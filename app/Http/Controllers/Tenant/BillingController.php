@@ -64,6 +64,8 @@ class BillingController extends Controller
             [
                 'razorpay_subscription_id' => $result['subscription_id'],
                 'tier' => $validated['tier'],
+                'interval' => $validated['interval'],
+                'pending_interval' => null,
                 'status' => 'trialing',
                 'cancel_at_period_end' => false,
             ],
@@ -76,6 +78,38 @@ class BillingController extends Controller
             'interval' => $validated['interval'],
             'user' => $request->user(),
         ]);
+    }
+
+    /** Switch billing cycle (monthly <-> yearly), effective at the next renewal. */
+    public function changeInterval(Request $request, BillingService $billing): RedirectResponse
+    {
+        $validated = $request->validate(['interval' => ['required', 'in:monthly,yearly']]);
+
+        $subscription = Subscription::first();
+
+        if (! $subscription || $subscription->status !== 'active') {
+            return back()->with('error', 'You can change your billing cycle once your subscription is active.');
+        }
+
+        if ($validated['interval'] === $subscription->interval) {
+            return back()->with('error', "You're already on the {$validated['interval']} billing cycle.");
+        }
+
+        if ($billing->isConfigured() && $subscription->razorpay_subscription_id) {
+            try {
+                $billing->changeInterval(
+                    $subscription->razorpay_subscription_id,
+                    $subscription->tier ?? 'basic',
+                    $validated['interval'],
+                );
+            } catch (\Throwable $e) {
+                return back()->with('error', 'Could not change your billing cycle: ' . $e->getMessage());
+            }
+        }
+
+        $subscription->update(['pending_interval' => $validated['interval']]);
+
+        return back()->with('status', "Your billing cycle will switch to {$validated['interval']} at your next renewal.");
     }
 
     /** Cancel at the end of the current billing period (access continues until then). */

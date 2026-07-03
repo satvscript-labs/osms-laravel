@@ -136,17 +136,6 @@
                 </div>
             </div>
 
-            {{-- Data export (DPDP portability) --}}
-            <div class="card border-0 shadow-sm rounded-4 mt-4">
-                <div class="card-body p-4">
-                    <p class="section-label mb-2">Your data</p>
-                    <p class="text-muted-foreground mb-3" style="font-size:.85rem;">Download your store's records anytime.</p>
-                    <div class="d-flex flex-wrap gap-2">
-                        <a href="{{ route('tenant.customers.export') }}" class="btn btn-sm btn-light"><i class="bi bi-download me-1"></i> Customers</a>
-                        <a href="{{ route('tenant.inventory.export') }}" class="btn btn-sm btn-light"><i class="bi bi-download me-1"></i> Inventory</a>
-                    </div>
-                </div>
-            </div>
         </div>
     </div>
 </div>

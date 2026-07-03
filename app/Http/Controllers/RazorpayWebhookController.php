@@ -74,6 +74,14 @@ class RazorpayWebhookController extends Controller
             $subscription->current_period_end = Carbon::createFromTimestamp($sub['current_end']);
         }
 
+        // Reflect the billing interval from the charged plan; clear a pending switch once applied.
+        if ($interval = $billing->planInterval($sub['plan_id'] ?? null)) {
+            $subscription->interval = $interval;
+            if ($subscription->pending_interval === $interval) {
+                $subscription->pending_interval = null;
+            }
+        }
+
         $subscription->save();
 
         return response()->json(['ok' => true]);

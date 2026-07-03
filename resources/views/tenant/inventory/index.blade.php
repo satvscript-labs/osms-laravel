@@ -16,7 +16,6 @@
 <div class="p-4 p-md-5"
      x-data="inventoryIndex({
         endpoint: @js(route('tenant.inventory.index')),
-        exportBase: @js(route('tenant.inventory.export')),
         query: @js($q),
         type: @js($type),
         stock: @js($stock),
@@ -34,9 +33,6 @@
             </p>
         </div>
         <div class="d-flex gap-2">
-            <a :href="exportUrl()" href="{{ route('tenant.inventory.export', ['q' => $q, 'type' => $type, 'stock' => $stock]) }}" class="btn btn-light">
-                <i class="bi bi-download me-1"></i> Export
-            </a>
             <a href="{{ route('tenant.inventory.trash') }}" class="btn btn-light">
                 <i class="bi bi-archive me-1"></i> Archive
             </a>
@@ -223,7 +219,6 @@
     function inventoryIndex(config) {
         return {
             endpoint: config.endpoint,
-            exportBase: config.exportBase,
             query: config.query || '',
             type: config.type || '',
             stock: config.stock || '',
@@ -260,14 +255,6 @@
 
             get isDefaultView() {
                 return this.query.trim() === '' && this.type === '' && this.stock === '';
-            },
-
-            exportUrl() {
-                const u = new URL(this.exportBase, window.location.origin);
-                if (this.query.trim()) u.searchParams.set('q', this.query.trim());
-                if (this.type) u.searchParams.set('type', this.type);
-                if (this.stock) u.searchParams.set('stock', this.stock);
-                return u.toString();
             },
 
             _url() {

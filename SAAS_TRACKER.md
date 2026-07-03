@@ -31,6 +31,13 @@ Settled with the product owner:
   role values `store_admin` / `staff`). **Multi-branch is deferred** but the schema is designed so a
   `branches` table + `branch_id` slots in later without rework. Seat cap resolves through
   `Tenant::seatLimit()` so it becomes **tier-based** in future with no caller changes.
+- **No self-serve data export (2026-07-03).** Stores use their data *inside* OSMS; they cannot
+  download/export customers, inventory, or the analytics ledger (retention/lock-in). All export
+  routes/UI/classes removed. A copy is available **on request** (privacy policy softened accordingly).
+- **Subscription self-service (2026-07-03).** A dedicated **Subscription** nav item (its own section
+  above the account footer) → a page to view plan/status/next-billing, **cancel**, and **switch
+  billing cycle** (monthly ↔ yearly, effective next renewal). Basic plan = **₹499/mo or ₹4999/yr**
+  (yearly = a discount); two Razorpay plans, switched via subscription update (no proration).
 - **Payments are in scope for this update.** Razorpay goes **live** as part of this work — the automated
   purchase path is the whole point. (External dependency: a live Razorpay merchant account, which
   itself requires the **S6 legal pages** + business/GST identity — see risks.)
@@ -74,8 +81,8 @@ fully in parallel with Bunch 1**.
 | **3 · Money path** | 5 | ST-Billing | Basic monthly/yearly subscribe / cancel / invoices + Razorpay go-live + webhook hardening (S4) | ST-Enforce, ST-Email, ST-Legal | 🔴 | ✅ Code done · ⚠️ create 2 plans |
 | **4 · People & data** | 6 | ST-Staff | Staff management + global staff cap (S3 + S2-lite) | ST-Email | 🟠 | ✅ Done |
 | **4 · People & data** | 7 | ST-Lifecycle | Account/tenant data lifecycle (last-admin guard, export) (S10) | ST-Billing | 🟠 | ✅ Guard+export · ⚠️ close-store deferred |
-| **5 · Polish & harden** | 8 | ST-Onboard | Trial messaging + empty states (S7-lite, no plan picker) | ST-Enforce | 🟡 | ⬜ Planned |
-| **5 · Polish & harden** | 9 | ST-Harden | Backups + monitoring + restore drill (S8b) | ST-Infra | 🟡 | ⬜ Planned |
+| **5 · Polish & harden** | 8 | ST-Onboard | Trial messaging + empty states (S7-lite, no plan picker) | ST-Enforce | 🟡 | ✅ Done |
+| **5 · Polish & harden** | 9 | ST-Harden | Security headers (code) + backups/monitoring/restore (docs) (S8b) | ST-Infra | 🟡 | ✅ Code+docs · ⚠️ owner ops |
 
 Status legend: ⬜ Planned · 🟨 In progress · ✅ Done. Priority: 🔴 launch-blocker · 🟠 launch-important · 🟡 fast-follow.
 
@@ -390,7 +397,18 @@ can trail.
 ## Bunch 5 · Polish & harden
 
 ### ST-Onboard — Trial messaging + empty states (S7-lite) 🟡
-- **Status:** ⬜ Planned. **Depends on:** ST-Enforce.
+- **Status:** ✅ Done (2026-07-03). **Depends on:** ST-Enforce.
+
+#### Shipped
+
+- **Trial terms** callout on the onboarding form ("your N-day free trial starts now — no card").
+- **First-run getting-started** card on the dashboard (a fresh store with no inventory/customers/
+  orders sees a 3-step "add products → add customer → first sale" guide; it disappears once any data
+  exists). No plan picker (single plan).
+- **Tests:** in `Phase27HardenOnboardTest` (trial terms shown; first-run shows/hides on data).
+
+#### Original plan
+
 - **Simplified by single-plan:** **no plan picker** — onboarding stays fast (store name/logo →
   14-day trial). Adds trial-terms clarity + a first-run that teaches value.
 - **Scope** trial-terms note on onboarding; liquid **empty states** with primary CTAs on inventory /
@@ -399,7 +417,22 @@ can trail.
 - **Tests** empty states render for a fresh tenant; demo-data seeder is tenant-scoped + purgeable.
 
 ### ST-Harden — Backups + monitoring + restore drill (S8b) 🟡
-- **Status:** ⬜ Planned. **Depends on:** ST-Infra.
+- **Status:** ✅ Code + docs done (2026-07-03); **backups/monitoring are owner ops**. **Depends on:** ST-Infra.
+
+#### Shipped
+
+- **Security headers** middleware (`SecurityHeaders`) on every web response — nosniff, SAMEORIGIN,
+  Referrer-Policy, cross-domain-policies none, and **HSTS over HTTPS only** (safe for local http).
+- **README ops guide** — nightly `mysqldump` + uploads backup with a **restore-drill** reminder,
+  Sentry setup steps, `/up` uptime wiring, and the HTTPS/`APP_DEBUG=false` reminder.
+- **Tests:** security headers asserted in `Phase27HardenOnboardTest`.
+
+#### Owner ops (before launch)
+
+- Set up the backup cron + **run a restore drill**; add Sentry DSN; force HTTPS at the server.
+
+#### Original plan
+
 - **Scope** `spatie/laravel-backup` (DB + `storage/app/public`) daily to off-box storage + documented
   restore; **Sentry** (free tier) for exceptions; wire `/up` to an uptime pinger; **do a real
   backup→restore drill** before go-live (untested backups = false confidence).

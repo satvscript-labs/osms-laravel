@@ -28,9 +28,6 @@
             </p>
         </div>
         <div class="d-flex gap-2">
-            <a :href="exportUrl()" href="{{ route('tenant.customers.export', ['q' => $search]) }}" class="btn btn-light">
-                <i class="bi bi-download me-1"></i> Export
-            </a>
             <a href="{{ route('tenant.customers.trash') }}" class="btn btn-light">
                 <i class="bi bi-archive me-1"></i> Archive
             </a>
@@ -250,12 +247,6 @@
                 if (this.filter === f) return;
                 this.filter = f;
                 this.refresh();
-            },
-
-            exportUrl() {
-                const u = new URL('{{ route('tenant.customers.export') }}', window.location.origin);
-                if (this.query.trim()) u.searchParams.set('q', this.query.trim());
-                return u.toString();
             },
 
             _url(forFetch) {

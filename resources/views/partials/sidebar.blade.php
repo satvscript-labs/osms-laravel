@@ -70,6 +70,17 @@
         @endforeach
     </nav>
 
+    {{-- Subscription (its own section, above the account) --}}
+    @if ($user?->isStoreAdmin())
+        <div class="border-top px-2 py-2">
+            <a href="{{ safe_route('tenant.billing.index') }}"
+               class="sidebar-link {{ request()->routeIs('tenant.billing.*') ? 'active' : '' }}">
+                <i class="bi bi-credit-card"></i>
+                Subscription
+            </a>
+        </div>
+    @endif
+
     {{-- User footer --}}
     <div class="border-top px-2 py-2">
         <div class="d-flex align-items-center gap-2 px-2 py-1">

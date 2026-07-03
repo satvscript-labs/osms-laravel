@@ -11,6 +11,11 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // ST-Harden (S8) — baseline security headers on every web response.
+        $middleware->web(append: [
+            \App\Http\Middleware\SecurityHeaders::class,
+        ]);
+
         $middleware->alias([
             'role' => \App\Http\Middleware\EnsureUserRole::class,
             'onboarded' => \App\Http\Middleware\EnsureTenantOnboarded::class,

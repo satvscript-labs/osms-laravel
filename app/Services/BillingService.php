@@ -53,6 +53,42 @@ class BillingService
     }
 
     /**
+     * Switch an active subscription to a different billing interval, effective at
+     * the next renewal (no mid-cycle proration). The webhook confirms it.
+     */
+    public function changeInterval(string $razorpaySubscriptionId, string $tier, string $interval): void
+    {
+        $planId = config("services.razorpay.plans.$tier.$interval");
+        if (! $planId) {
+            throw new RuntimeException("No Razorpay plan configured for [$tier / $interval].");
+        }
+
+        $this->api()->subscription->update($razorpaySubscriptionId, [
+            'plan_id' => $planId,
+            'schedule_change_at' => 'cycle_end',
+            'customer_notify' => 1,
+        ]);
+    }
+
+    /** Reverse-map a Razorpay plan id back to its billing interval (for webhooks). */
+    public function planInterval(?string $planId): ?string
+    {
+        if (! $planId) {
+            return null;
+        }
+
+        foreach ((array) config('services.razorpay.plans') as $intervals) {
+            foreach ((array) $intervals as $interval => $configuredId) {
+                if ($configuredId === $planId) {
+                    return $interval;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * Cancel a Razorpay subscription at the end of the current billing cycle
      * (access continues until then; the webhook flips status when it ends).
      */
