@@ -1,17 +1,6 @@
 @extends('layouts.app')
 @section('title', 'Orders')
 
-@php
-    // Status presentation: dot colour + badge classes + human label.
-    $statusMeta = [
-        'pending'          => ['label' => 'In lab',   'badge' => 'osms-badge-amber',   'dot' => '#b45309'],
-        'ready_for_pickup' => ['label' => 'Ready',    'badge' => 'osms-badge-blue',    'dot' => '#004f75'],
-        'delivered'        => ['label' => 'Delivered','badge' => 'osms-badge-green',   'dot' => '#15803d'],
-        'cancelled'        => ['label' => 'Cancelled','badge' => 'osms-badge-red',     'dot' => '#b91c1c'],
-    ];
-
-@endphp
-
 @section('content')
 <div class="p-4 p-md-5">
     {{-- Header --}}
@@ -19,20 +8,20 @@
         <div>
             <p class="section-label mb-1">Workspace</p>
             <h1 class="h3 fw-semibold font-display mb-1">Orders</h1>
-            <p class="text-muted-foreground mb-0" style="font-size:.9rem;">
+            <p class="text-muted-foreground mb-0 text-md">
                 Find, filter, and advance orders through the lab workflow.
             </p>
         </div>
         <div class="d-flex align-items-center gap-2">
-            {{-- View toggle --}}
-            <div class="btn-group" role="group" aria-label="View mode">
+            {{-- View toggle (iOS segmented control) --}}
+            <div class="segmented" role="group" aria-label="View mode">
                 <a href="{{ route('tenant.orders.index') }}"
-                   class="btn btn-sm {{ $view === 'table' ? 'btn-primary' : 'btn-secondary' }}">
-                    <i class="bi bi-table me-1"></i> Table
+                   class="segmented-item {{ $view === 'table' ? 'active' : '' }}">
+                    <i class="bi bi-table"></i> Table
                 </a>
                 <a href="{{ route('tenant.orders.index', ['view' => 'kanban']) }}"
-                   class="btn btn-sm {{ $view === 'kanban' ? 'btn-primary' : 'btn-secondary' }}">
-                    <i class="bi bi-kanban me-1"></i> Board
+                   class="segmented-item {{ $view === 'kanban' ? 'active' : '' }}">
+                    <i class="bi bi-kanban"></i> Board
                 </a>
             </div>
             <a href="{{ route('tenant.orders.create') }}" class="btn btn-primary btn-sm">
@@ -42,8 +31,7 @@
     </div>
 
     {{-- KPI stat cards (clickable → filter the table) --}}
-    @php $statBase = ['view' => null]; @endphp
-    <div class="row g-3 mb-4">
+    <div class="row g-3 mb-4 stagger">
         <div class="col-6 col-lg-3">
             <a href="{{ route('tenant.orders.index') }}"
                class="osms-stat card border-0 shadow-sm rounded-4 h-100 text-reset text-decoration-none {{ $view==='table' && empty($status) && empty($payment) ? 'osms-stat-active' : '' }}">
@@ -95,9 +83,9 @@
     </div>
 
     @if ($view === 'kanban')
-        @include('tenant.orders.partials.kanban', ['statusMeta' => $statusMeta])
+        @include('tenant.orders.partials.kanban')
     @else
-        @include('tenant.orders.partials.table', ['statusMeta' => $statusMeta])
+        @include('tenant.orders.partials.table')
     @endif
 </div>
 
@@ -113,38 +101,49 @@
             body: JSON.stringify({ status }),
         });
     }
+    window.updateStatus = updateStatus;
 
-    // Inline quick-advance (table + kanban share this).
-    document.querySelectorAll('.advance-btn').forEach((btn) => {
-        btn.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            btn.disabled = true;
-            btn.querySelector('.spinner-border')?.classList.remove('d-none');
-            updateStatus(btn.dataset.id, btn.dataset.next).then(() => window.location.reload());
-        });
-    });
-
-    // Keyboard: "/" focuses search (when present, table view).
-    const searchInput = document.getElementById('orderSearch');
-    if (searchInput) {
-        document.addEventListener('keydown', (e) => {
-            if (e.key === '/' && document.activeElement !== searchInput
-                && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) {
+    // Bind inline quick-advance. Called on load and again after the live table
+    // swaps its rows in (new buttons need binding). Idempotent per-button.
+    function bindAdvanceButtons(root) {
+        (root || document).querySelectorAll('.advance-btn').forEach((btn) => {
+            if (btn._advBound) return;
+            btn._advBound = true;
+            btn.addEventListener('click', (e) => {
                 e.preventDefault();
-                searchInput.focus();
-            }
+                e.stopPropagation();
+                btn.disabled = true;
+                btn.querySelector('.spinner-border')?.classList.remove('d-none');
+                // Reload after a status change so the KPI stats + row placement stay
+                // correct; the page-enter fade keeps it from feeling like a snap.
+                updateStatus(btn.dataset.id, btn.dataset.next).then(() => window.location.reload());
+            });
         });
     }
+    window.bindAdvanceButtons = bindAdvanceButtons;
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => bindAdvanceButtons(document));
+    } else {
+        bindAdvanceButtons(document);
+    }
 
-    // Kanban drag-and-drop (only present in board view). Wait for DOMContentLoaded so the
-    // deferred Vite ESM bundle has defined window.Sortable — an inline classic script runs
-    // during parse, before deferred modules, so touching Sortable synchronously would throw.
+    // Keyboard: "/" focuses the orders search (table view only).
+    document.addEventListener('keydown', (e) => {
+        const searchInput = document.getElementById('orderSearch');
+        if (searchInput && e.key === '/' && document.activeElement !== searchInput
+            && !['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) {
+            e.preventDefault();
+            searchInput.focus();
+        }
+    });
+
+    // Kanban drag-and-drop (board view only). Wait for the deferred Vite ESM bundle
+    // to define window.Sortable before instantiating.
     function initKanbanDnd() {
         if (!window.Sortable) return;
         document.querySelectorAll('.kanban-column').forEach((col) => {
             new Sortable(col, {
-                group: 'orders', animation: 150, ghostClass: 'sortable-ghost',
+                group: 'orders', animation: 180, ghostClass: 'sortable-ghost',
                 onEnd(evt) {
                     const newStatus = evt.to.dataset.status;
                     const id = evt.item.dataset.id;

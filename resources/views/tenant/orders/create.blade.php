@@ -298,8 +298,8 @@
                                   x-text="discountAmount() > 0 ? '− ' + money(discountAmount()) : '—'"></span>
                         </div>
                         <div class="input-group input-group-sm">
-                            <button type="button" class="btn" :class="unit === '%' ? 'btn-primary' : 'btn-light'" @click="unit = '%'" style="width:2.75rem;">%</button>
                             <button type="button" class="btn" :class="unit === '₹' ? 'btn-primary' : 'btn-light'" @click="unit = '₹'" style="width:2.75rem;">₹</button>
+                            <button type="button" class="btn" :class="unit === '%' ? 'btn-primary' : 'btn-light'" @click="unit = '%'" style="width:2.75rem;">%</button>
                             <input type="number" min="0" step="0.01" class="form-control text-end font-monospace"
                                    x-model.number="discountValue" placeholder="0" aria-label="Discount value">
                         </div>
@@ -387,7 +387,7 @@
             eyeRecords: [], eyeRecordId: '',
             items: [], itemSearch: '', scanFlash: null,
             advancePaid: '0', paymentMethod: 'cash',
-            unit: '%', discountValue: '',
+            unit: '₹', discountValue: '',
             fulfillmentType: 'instant', estimatedReadyAt: @json(now()->addDays(3)->toDateString()),
 
             init() {

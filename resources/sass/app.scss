@@ -382,6 +382,8 @@ body {
     align-items: center;
     gap: 0.4rem;
     transition: all var(--duration-base) var(--ease-spring);
+    text-decoration: none;
+    &:hover:not(.active) { color: var(--osms-primary); background: rgba(0, 79, 117, 0.06); }
     &.active {
       background: var(--surface-card);
       color: var(--osms-primary);
@@ -581,6 +583,42 @@ body {
 .stock-pill-ok    { background: var(--tone-green-bg); color: var(--tone-green); }
 .stock-pill-low   { background: var(--tone-amber-bg); color: var(--tone-amber); }
 .stock-pill-out   { background: var(--tone-red-bg);   color: var(--tone-red); }
+
+// Danger variant of the meta-chip (overdue ready-by dates).
+.meta-chip-danger { background: var(--tone-red-bg); color: var(--tone-red); }
+
+// ------------------------------------------------------------
+// Row action icon buttons (orders: WhatsApp / call / PDF)
+// ------------------------------------------------------------
+.action-icon-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 2rem; height: 2rem; flex-shrink: 0;
+  border-radius: var(--radius-sm);
+  background: var(--surface-card);
+  border: 1px solid var(--osms-border);
+  color: var(--osms-muted);
+  font-size: 0.95rem;
+  transition: all var(--duration-base) var(--ease-spring);
+}
+.action-icon-btn:hover {
+  color: var(--osms-primary);
+  border-color: var(--osms-border-strong);
+  background: var(--surface-sunken);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+.action-icon-btn:active { transform: scale(0.94); }
+// Brand-tinted hovers so the temp WhatsApp / call affordances read at a glance.
+.action-whatsapp:hover { color: #128c4b; border-color: #b7e4c7; background: #e9f9ef; }
+.action-call:hover     { color: var(--osms-primary); border-color: var(--osms-primary-soft); background: var(--osms-primary-soft); }
+
+// Live results swap — dim + lock while the next partial is fetching, so the
+// content cross-fades instead of flickering to blank.
+.results-loading {
+  opacity: 0.45;
+  pointer-events: none;
+  transition: opacity var(--duration-base) var(--ease-out);
+}
 
 // ------------------------------------------------------------
 // Skeleton shimmer (premium loading state)

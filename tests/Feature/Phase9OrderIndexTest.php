@@ -80,6 +80,22 @@ class Phase9OrderIndexTest extends TestCase
             ->assertOk()->assertSee('Board Person')->assertSee('kanban-column', false);
     }
 
+    public function test_partial_request_returns_only_the_results_fragment(): void
+    {
+        $this->makeOrder('Fragment Fran', '908');
+
+        $res = $this->actingAs($this->user)
+            ->get(route('tenant.orders.index', ['q' => 'Fragment', 'partial' => 1]))
+            ->assertOk()
+            ->assertSee('Fragment Fran')
+            ->assertSee('osms-orders-table', false);
+
+        // The fragment must NOT carry the full page chrome (no layout/sidebar),
+        // and pagination/sort links must not leak the internal partial flag.
+        $res->assertDontSee('app-sidebar', false);
+        $res->assertDontSee('partial=1', false);
+    }
+
     public function test_index_only_shows_current_tenants_orders(): void
     {
         $this->makeOrder('Mine', '906');

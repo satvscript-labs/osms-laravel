@@ -12,6 +12,7 @@ use App\Models\StockMovement;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
@@ -23,7 +24,7 @@ class OrderController extends Controller
      * Orders workspace. Defaults to a scalable, searchable/filterable/sortable
      * table; `?view=kanban` falls back to the drag-and-drop workflow board.
      */
-    public function index(Request $request): View
+    public function index(Request $request): View|Response
     {
         $view = $request->query('view') === 'kanban' ? 'kanban' : 'table';
 
@@ -53,6 +54,12 @@ class OrderController extends Controller
         }
 
         // ---- Table: search + filter + sort + paginate ----
+        // Capture the live-swap flag, then drop it so it never leaks into the
+        // sort/pagination URLs baked by withQueryString() (a JS-disabled click
+        // would otherwise serve a bare, layout-less partial).
+        $isPartial = $request->boolean('partial');
+        $request->query->remove('partial');
+
         $search  = trim((string) $request->query('q', ''));
         $status  = $request->query('status', '');
         $payment = $request->query('payment', '');
@@ -76,6 +83,21 @@ class OrderController extends Controller
             ->orderBy($sort, $dir)
             ->paginate(25)
             ->withQueryString();
+
+        // Live search/filter/sort/paginate (fetched by Alpine) — re-render just the
+        // results partial and swap it in. Keeps one Blade source of truth for the
+        // table (sort headers, pagination, row actions) instead of a parallel JS
+        // template, while staying reload-free per the liquid-motion standard.
+        if ($isPartial) {
+            return response()->view('tenant.orders.partials._results', [
+                'orders'  => $orders,
+                'search'  => $search,
+                'status'  => $status,
+                'payment' => $payment,
+                'sort'    => $sort,
+                'dir'     => $dir,
+            ]);
+        }
 
         return view('tenant.orders.index', [
             'view'    => 'table',
