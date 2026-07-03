@@ -71,7 +71,7 @@ class Phase8QaFixesTest extends TestCase
             ->where('tenant_id', $tenant->id)
             ->update(['status' => 'active', 'tier' => 'pro']);
 
-        $this->actingAs($user)->post(route('tenant.billing.subscribe'), ['tier' => 'enterprise'])
+        $this->actingAs($user)->post(route('tenant.billing.subscribe'), ['tier' => 'basic', 'interval' => 'monthly'])
             ->assertRedirect()
             ->assertSessionHas('error');
 

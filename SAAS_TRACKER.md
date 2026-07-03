@@ -67,7 +67,7 @@ fully in parallel with Bunch 1**.
 | **1 · Foundation** | 2 | ST-Infra | Queue + scheduler + branded error pages + `APP_DEBUG=false` (S8a) | — | 🔴 | ✅ Done |
 | **2 · Comms & compliance** | 3 | ST-Email | Transactional email, `verified`, queued lifecycle mailables (S5) | ST-Infra (queue) | 🔴 | ✅ Done |
 | **2 · Comms & compliance** | 4 | ST-Legal | Legal & compliance pages + landing footer links (S6) | — | 🔴 | ✅ Done |
-| **3 · Money path** | 5 | ST-Billing | Single-plan subscribe / cancel / invoices + Razorpay go-live + webhook hardening (S4) | ST-Enforce, ST-Email, ST-Legal | 🔴 | ⬜ Planned |
+| **3 · Money path** | 5 | ST-Billing | Basic monthly/yearly subscribe / cancel / invoices + Razorpay go-live + webhook hardening (S4) | ST-Enforce, ST-Email, ST-Legal | 🔴 | ✅ Code done · ⚠️ create 2 plans |
 | **4 · People & data** | 6 | ST-Staff | Staff management + global staff cap (S3 + S2-lite) | ST-Email | 🟠 | ⬜ Planned |
 | **4 · People & data** | 7 | ST-Lifecycle | Account/tenant data lifecycle (last-admin guard, close-store, export) (S10) | ST-Billing (cancel-on-close) | 🟠 | ⬜ Planned |
 | **5 · Polish & harden** | 8 | ST-Onboard | Trial messaging + empty states (S7-lite, no plan picker) | ST-Enforce | 🟡 | ⬜ Planned |
@@ -243,7 +243,41 @@ can trail.
 ## Bunch 3 · Money path
 
 ### ST-Billing — Single-plan subscribe / cancel / invoices + Razorpay go-live (S4) 🔴
-- **Status:** ⬜ Planned. **Depends on:** ST-Enforce, ST-Email, ST-Legal.
+- **Status:** ✅ Code done (2026-07-03), all tests green. Live keys now **authenticate** (verified via
+  read-only `plan.fetch`). **⚠️ Owner must create two Basic plans** (monthly ₹499 + yearly ₹4999) — the
+  friend's existing plan is ₹5000/**yearly**, which mismatches the app; and **use test keys for local
+  dev** (live keys are prod-only). **Depends on:** ST-Enforce, ST-Email, ST-Legal.
+
+#### Shipped
+
+- **Basic plan, two billing intervals** — a Monthly/Yearly `.segmented` toggle (Alpine) on the billing
+  page: ₹499/mo or ₹4999/yr with an auto-computed "Save N%" badge; each interval maps to its own
+  Razorpay plan id (`services.razorpay.plans.basic.{monthly,yearly}`) and cycle count
+  (`billing.cycles`). No tiers.
+- **Current-plan card** with status + renew/trial date; **Cancel subscription** (confirm-modal) →
+  `cancel_at_period_end`, access continues to period end; **payment-history** table with per-invoice
+  **PDF** download.
+- **Timezone fix** — trial end dates are now created in the billing timezone (IST) to match how
+  `trialDaysLeft`/`accessState` measure them (was a UTC/IST off-by-one near day boundaries).
+- **Trial-conversion fix** — `subscribe` previously blocked *trialing* stores (`isActive()` includes
+  trialing); now it blocks only a genuinely `active` (paid) subscription, so trials can convert.
+- **Cancel** — `BillingController::cancel` + `BillingService::cancelSubscription()`
+  (`cancel_at_cycle_end`); the webhook flips to `canceled` when the period actually ends.
+- **Webhook hardening** — idempotency via a `webhook_events` ledger (dedupe by
+  `X-Razorpay-Event-Id`); `subscription.charged` → a `subscription_invoices` row (idempotent by
+  `razorpay_payment_id`); status/`current_period_end` updates as before.
+- **Invoices** — `SubscriptionInvoice` model (tenant-owned) + GST tax-invoice **PDF** (dompdf) with an
+  18%-inclusive CGST/SGST split; tenant-scoped route binding (cross-tenant → 404).
+- **Migration** `add_billing_management` — `cancel_at_period_end`, `subscription_invoices`,
+  `webhook_events` (additive, portable, reversible).
+- **Tests:** `Phase24BillingManagementTest` (9) — charge→invoice+activate, event-id idempotency,
+  payment-id idempotency, cancel (mark + keep access), cancel-rejected-when-not-active, trial can
+  subscribe, invoice PDF download + tenant isolation. Full suite **225 passed**.
+- **Deferred:** GST split assumes intra-state 18% inclusive — have a CA confirm before go-live; plan
+  upgrade/downgrade/proration is out of scope (single plan).
+
+#### Original plan
+
 - **Simplified by single-plan:** no upgrade/downgrade/proration — just **subscribe (Basic), cancel, and
   invoices**. Builds on today's [BillingController](app/Http/Controllers/Tenant/BillingController.php)
   (which only has `subscribe`).

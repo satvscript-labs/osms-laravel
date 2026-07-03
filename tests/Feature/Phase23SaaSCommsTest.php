@@ -82,9 +82,13 @@ class Phase23SaaSCommsTest extends TestCase
         $tenant = Tenant::create(['store_name' => 'Trial Optical']);
         User::factory()->create(['tenant_id' => $tenant->id, 'role' => 'store_admin']);
 
+        // Dates are measured in the billing timezone — create them there too.
         Subscription::withoutGlobalScopes()
             ->where('tenant_id', $tenant->id)
-            ->update(['status' => 'trialing', 'current_period_end' => now()->addDays($daysFromNow)]);
+            ->update([
+                'status' => 'trialing',
+                'current_period_end' => now(config('billing.timezone'))->addDays($daysFromNow),
+            ]);
 
         return $tenant;
     }

@@ -39,11 +39,12 @@ return [
         'key' => env('RAZORPAY_KEY'),
         'secret' => env('RAZORPAY_SECRET'),
         'webhook_secret' => env('RAZORPAY_WEBHOOK_SECRET'),
-        // Razorpay Plan IDs created in the Razorpay dashboard (one per tier).
+        // Razorpay Plan IDs — single Basic tier, one plan per billing interval.
         'plans' => [
-            'basic' => env('RAZORPAY_PLAN_BASIC'),
-            'pro' => env('RAZORPAY_PLAN_PRO'),
-            'enterprise' => env('RAZORPAY_PLAN_ENTERPRISE'),
+            'basic' => [
+                'monthly' => env('RAZORPAY_PLAN_BASIC_MONTHLY'),
+                'yearly' => env('RAZORPAY_PLAN_BASIC_YEARLY'),
+            ],
         ],
     ],
 

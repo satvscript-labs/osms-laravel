@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\Subscription;
+use App\Models\SubscriptionInvoice;
+use App\Models\WebhookEvent;
 use App\Services\BillingService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -19,12 +21,30 @@ class RazorpayWebhookController extends Controller
             return response()->json(['ok' => false], 400);
         }
 
+        // Idempotency — process each Razorpay event at most once.
+        $eventId = $request->header('X-Razorpay-Event-Id');
+        if ($eventId) {
+            $record = WebhookEvent::firstOrCreate(
+                ['id' => $eventId],
+                ['type' => $request->input('event')],
+            );
+
+            if (! $record->wasRecentlyCreated) {
+                return response()->json(['ok' => true]); // already handled
+            }
+        }
+
         $event = $request->input('event');
         $sub = $request->input('payload.subscription.entity', []);
         $razorpayId = $sub['id'] ?? null;
 
+        // Record a payment receipt on every successful charge.
+        if ($event === 'subscription.charged') {
+            $this->recordInvoice($request, $razorpayId);
+        }
+
         if (! $razorpayId) {
-            return response()->json(['ok' => true]); // nothing actionable
+            return response()->json(['ok' => true]); // nothing else actionable
         }
 
         // Find the subscription without the tenant scope (webhook is unauthenticated).
@@ -45,6 +65,9 @@ class RazorpayWebhookController extends Controller
 
         if ($status) {
             $subscription->status = $status;
+            if ($status === 'canceled') {
+                $subscription->cancel_at_period_end = false; // the cancel has taken effect
+            }
         }
 
         if (! empty($sub['current_end'])) {
@@ -54,5 +77,38 @@ class RazorpayWebhookController extends Controller
         $subscription->save();
 
         return response()->json(['ok' => true]);
+    }
+
+    /** Persist a subscription payment as an invoice (idempotent by payment id). */
+    private function recordInvoice(Request $request, ?string $razorpaySubId): void
+    {
+        $payment = $request->input('payload.payment.entity', []);
+        $paymentId = $payment['id'] ?? null;
+
+        if (! $paymentId || ! $razorpaySubId) {
+            return;
+        }
+
+        $subscription = Subscription::withoutGlobalScopes()
+            ->where('razorpay_subscription_id', $razorpaySubId)
+            ->first();
+
+        if (! $subscription) {
+            return;
+        }
+
+        SubscriptionInvoice::withoutGlobalScopes()->firstOrCreate(
+            ['razorpay_payment_id' => $paymentId],
+            [
+                'tenant_id' => $subscription->tenant_id,
+                'razorpay_subscription_id' => $razorpaySubId,
+                'amount' => ($payment['amount'] ?? 0) / 100, // paise → rupees
+                'currency' => $payment['currency'] ?? 'INR',
+                'status' => 'paid',
+                'paid_at' => ! empty($payment['created_at'])
+                    ? Carbon::createFromTimestamp($payment['created_at'])
+                    : now(),
+            ],
+        );
     }
 }

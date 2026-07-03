@@ -28,28 +28,37 @@ class BillingService
     }
 
     /**
-     * Create a Razorpay subscription for a tenant on a given tier.
+     * Create a Razorpay subscription for a tenant on a tier + billing interval.
      * Returns ['subscription_id' => ..., 'short_url' => ...].
      */
-    public function createSubscription(Tenant $tenant, string $tier): array
+    public function createSubscription(Tenant $tenant, string $tier, string $interval = 'monthly'): array
     {
-        $planId = config("services.razorpay.plans.$tier");
+        $planId = config("services.razorpay.plans.$tier.$interval");
         if (! $planId) {
-            throw new RuntimeException("No Razorpay plan configured for tier [$tier].");
+            throw new RuntimeException("No Razorpay plan configured for [$tier / $interval].");
         }
 
         $subscription = $this->api()->subscription->create([
             'plan_id' => $planId,
-            'total_count' => 12,        // 12 monthly cycles
+            'total_count' => (int) config("billing.cycles.$interval", 12),
             'quantity' => 1,
             'customer_notify' => 1,
-            'notes' => ['tenant_id' => $tenant->id, 'tier' => $tier],
+            'notes' => ['tenant_id' => $tenant->id, 'tier' => $tier, 'interval' => $interval],
         ]);
 
         return [
             'subscription_id' => $subscription['id'],
             'short_url' => $subscription['short_url'] ?? null,
         ];
+    }
+
+    /**
+     * Cancel a Razorpay subscription at the end of the current billing cycle
+     * (access continues until then; the webhook flips status when it ends).
+     */
+    public function cancelSubscription(string $razorpaySubscriptionId): void
+    {
+        $this->api()->subscription->cancel($razorpaySubscriptionId, ['cancel_at_cycle_end' => 1]);
     }
 
     /** Verify a Razorpay webhook signature. */

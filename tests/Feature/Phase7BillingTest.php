@@ -25,15 +25,16 @@ class Phase7BillingTest extends TestCase
 
     public function test_billing_page_renders_with_plans(): void
     {
+        // Single-plan launch: only Basic is offered.
         $this->actingAs($this->user)->get(route('tenant.billing.index'))
-            ->assertOk()->assertSee('Basic')->assertSee('Pro')->assertSee('Enterprise');
+            ->assertOk()->assertSee('Basic')->assertDontSee('Enterprise');
     }
 
     public function test_subscribe_without_keys_shows_friendly_error(): void
     {
         config(['services.razorpay.key' => null, 'services.razorpay.secret' => null]);
 
-        $this->actingAs($this->user)->post(route('tenant.billing.subscribe'), ['tier' => 'pro'])
+        $this->actingAs($this->user)->post(route('tenant.billing.subscribe'), ['tier' => 'basic', 'interval' => 'monthly'])
             ->assertRedirect()->assertSessionHas('error');
     }
 

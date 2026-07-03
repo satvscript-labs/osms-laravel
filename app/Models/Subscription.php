@@ -13,11 +13,12 @@ class Subscription extends Model
 
     protected $fillable = [
         'tenant_id', 'razorpay_subscription_id', 'razorpay_customer_id',
-        'status', 'tier', 'current_period_end',
+        'status', 'tier', 'current_period_end', 'cancel_at_period_end',
     ];
 
     protected $casts = [
         'current_period_end' => 'date',
+        'cancel_at_period_end' => 'boolean',
     ];
 
     public function isPastDue(): bool

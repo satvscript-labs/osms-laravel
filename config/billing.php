@@ -27,38 +27,32 @@ return [
 
     'timezone' => 'Asia/Kolkata',
 
+    // GST rate (%) used to split subscription invoices for the PDF (India).
+    'gst_rate' => env('BILLING_GST_RATE', 18),
+
+    // Number of billing cycles a new subscription runs before it ends. Razorpay
+    // requires a total_count; these are long enough to be effectively ongoing.
+    'cycles' => [
+        'monthly' => 120, // 10 years of monthly charges
+        'yearly' => 10,   // 10 years of annual charges
+    ],
+
+    /*
+    | Single "Basic" tier at launch, billable monthly or yearly (annual = a
+    | discount vs 12× monthly). Each interval maps to its own Razorpay plan id
+    | in config('services.razorpay.plans.basic.<interval>').
+    */
     'plans' => [
         'basic' => [
             'name' => 'Basic',
-            'price' => 499,
+            'monthly_price' => 499,
+            'yearly_price' => 4999,
             'features' => [
-                'Up to 2 staff users',
                 'Patients & prescriptions',
                 'Inventory + barcode POS',
                 'Order kanban & receipts',
-            ],
-        ],
-        'pro' => [
-            'name' => 'Pro',
-            'price' => 999,
-            'popular' => true,
-            'features' => [
-                'Up to 8 staff users',
-                'Everything in Basic',
                 'Analytics & profit reports',
                 'Excel export',
-                'Priority support',
-            ],
-        ],
-        'enterprise' => [
-            'name' => 'Enterprise',
-            'price' => 2499,
-            'features' => [
-                'Unlimited staff users',
-                'Everything in Pro',
-                'Multi-branch ready',
-                'Dedicated onboarding',
-                'SMS / WhatsApp add-ons',
             ],
         ],
     ],

@@ -27,10 +27,14 @@ class Tenant extends Model
     protected static function booted(): void
     {
         static::created(function (Tenant $tenant) {
+            // Trial end is a calendar date measured in the billing timezone, so
+            // create it there too (avoids a UTC/IST off-by-one at day boundaries).
+            $tz = config('billing.timezone', 'Asia/Kolkata');
+
             $tenant->subscription()->create([
                 'status' => 'trialing',
                 'tier' => 'basic',
-                'current_period_end' => now()->addDays((int) config('billing.trial_days', 14)),
+                'current_period_end' => now($tz)->addDays((int) config('billing.trial_days', 14)),
             ]);
         });
     }
