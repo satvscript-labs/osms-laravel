@@ -18,6 +18,23 @@ class Tenant extends Model
         'address',
     ];
 
+    /**
+     * ST-Enforce (S1): creating a store starts its free trial. Keeping this a
+     * model invariant guarantees every tenant — from onboarding, seeders, or
+     * tests — always has a subscription, so access enforcement is never bypassed
+     * by a missing row.
+     */
+    protected static function booted(): void
+    {
+        static::created(function (Tenant $tenant) {
+            $tenant->subscription()->create([
+                'status' => 'trialing',
+                'tier' => 'basic',
+                'current_period_end' => now()->addDays((int) config('billing.trial_days', 14)),
+            ]);
+        });
+    }
+
     public function users(): HasMany
     {
         return $this->hasMany(User::class);
@@ -26,6 +43,12 @@ class Tenant extends Model
     public function subscription(): HasOne
     {
         return $this->hasOne(Subscription::class);
+    }
+
+    /** True when this store has a live subscription (trial in-window, paid, or in grace). */
+    public function hasActiveAccess(): bool
+    {
+        return (bool) $this->subscription?->hasAccess();
     }
 
     public function customers(): HasMany

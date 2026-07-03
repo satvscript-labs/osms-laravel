@@ -33,12 +33,11 @@ class DatabaseSeeder extends Seeder
             'address' => '123 Market Road, Mumbai',
         ]);
 
-        Subscription::create([
-            'tenant_id' => $tenant->id,
-            'status' => 'trialing',
-            'tier' => 'pro',
-            'current_period_end' => now()->addDays(14),
-        ]);
+        // The trial subscription is auto-created by the Tenant `created` hook
+        // (ST-Enforce); bump the demo store to the 'pro' tier for a fuller demo.
+        Subscription::withoutGlobalScopes()
+            ->where('tenant_id', $tenant->id)
+            ->update(['tier' => 'pro']);
 
         $owner = User::create([
             'name' => 'Riya Shah',

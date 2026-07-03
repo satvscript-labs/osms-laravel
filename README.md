@@ -67,6 +67,35 @@ a global query scope that constrains all reads/writes to the authenticated user'
 `tenant_id` (superadmins bypass it). This replaces Supabase Row-Level Security at the
 application layer. Verified by the test suite.
 
+## Production deploy & operations (Hostinger)
+
+After `git pull` on the server:
+
+```bash
+php artisan migrate --force
+php artisan optimize          # cache config/routes/views
+php artisan storage:link      # once, for logo uploads on the public disk
+```
+
+Set in the production `.env`: `APP_ENV=production`, `APP_DEBUG=false`, `APP_URL=https://…`.
+
+**Scheduler (required).** Subscription trials only expire and archived records only purge
+if the Laravel scheduler runs. Add one cron entry:
+
+```text
+* * * * * cd /path/to/osms && php artisan schedule:run >> /dev/null 2>&1
+```
+
+It drives `subscriptions:reconcile` (02:15, expires lapsed trials) and `model:purge-trashed`
+(02:00). Without it, the SaaS access enforcement still works live (it's derived), but stored
+subscription state and the trash purge won't advance.
+
+**Queue worker.** Mail and exports run on the `database` queue. Run a worker (cron-restarted):
+
+```bash
+php artisan queue:work --stop-when-empty   # or a supervised long-running worker
+```
+
 ## Tests
 
 ```bash

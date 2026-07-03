@@ -45,6 +45,8 @@
                 </div>
             @endif
 
+            @include('partials.subscription-banner')
+
             <div class="page-enter">
                 @yield('content')
             </div>

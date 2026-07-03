@@ -23,3 +23,6 @@
 Homestead.json
 Homestead.yaml
 Thumbs.db
+
+# Contains Razorpay secret keys — keep out of version control
+SAAS_Payment_Prompt.md

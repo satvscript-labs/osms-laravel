@@ -66,7 +66,10 @@ class Phase8QaFixesTest extends TestCase
 
         $tenant = $this->tenant();
         $user = $this->storeUser($tenant);
-        Subscription::create(['tenant_id' => $tenant->id, 'status' => 'active', 'tier' => 'pro']);
+        // A trial sub already exists (Tenant `created` hook); make it an active 'pro'.
+        Subscription::withoutGlobalScopes()
+            ->where('tenant_id', $tenant->id)
+            ->update(['status' => 'active', 'tier' => 'pro']);
 
         $this->actingAs($user)->post(route('tenant.billing.subscribe'), ['tier' => 'enterprise'])
             ->assertRedirect()

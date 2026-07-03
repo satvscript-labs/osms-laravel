@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Subscription;
 use App\Models\Tenant;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
@@ -73,12 +72,8 @@ class OnboardingController extends Controller
 
             $locked->forceFill(['tenant_id' => $tenant->id])->save();
 
-            Subscription::create([
-                'tenant_id' => $tenant->id,
-                'status' => 'trialing',
-                'tier' => 'basic',
-                'current_period_end' => now()->addDays(14),
-            ]);
+            // The trial subscription is created by the Tenant model's `created`
+            // hook (ST-Enforce) — no explicit creation needed here.
         });
 
         return redirect()->route('tenant.dashboard')

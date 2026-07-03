@@ -14,6 +14,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'role' => \App\Http\Middleware\EnsureUserRole::class,
             'onboarded' => \App\Http\Middleware\EnsureTenantOnboarded::class,
+            'subscribed' => \App\Http\Middleware\EnsureSubscriptionActive::class,
         ]);
 
         // Razorpay posts webhooks without a CSRF token.

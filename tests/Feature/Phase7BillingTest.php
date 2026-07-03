@@ -20,7 +20,7 @@ class Phase7BillingTest extends TestCase
         parent::setUp();
         $this->tenant = Tenant::create(['store_name' => 'Test Optical']);
         $this->user = User::factory()->create(['tenant_id' => $this->tenant->id, 'role' => 'store_admin']);
-        Subscription::create(['tenant_id' => $this->tenant->id, 'status' => 'trialing', 'tier' => 'basic']);
+        // The trial subscription is auto-created by the Tenant `created` hook (ST-Enforce).
     }
 
     public function test_billing_page_renders_with_plans(): void

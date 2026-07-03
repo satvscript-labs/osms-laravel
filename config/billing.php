@@ -13,6 +13,20 @@ return [
 
     'trial_days' => 14,
 
+    /*
+    |--------------------------------------------------------------------------
+    | Access enforcement (ST-Enforce / S1)
+    |--------------------------------------------------------------------------
+    | grace_days — how long a `past_due` sub (or a paid `active` sub whose
+    | renewal webhook is late) keeps working before the workspace hard-locks.
+    | timezone — the day-boundary a trial/period expiry is measured against.
+    | current_period_end is a pure date; expiry is end-of-day in this timezone.
+    */
+
+    'grace_days' => 7,
+
+    'timezone' => 'Asia/Kolkata',
+
     'plans' => [
         'basic' => [
             'name' => 'Basic',

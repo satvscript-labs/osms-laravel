@@ -35,9 +35,11 @@ Route::middleware('auth')->group(function () {
 | Tenant workspace (auth + onboarded)
 |--------------------------------------------------------------------------
 */
-// For production (Hostinger), add 'verified' middleware here.
+// For production (Hostinger), add 'verified' middleware here (ST-Email).
 // Local/testing environments typically lack a configured mail driver.
-Route::middleware(['auth', 'onboarded'])
+// 'subscribed' hard-locks the workspace when the subscription is inactive
+// (ST-Enforce); billing routes self-exempt so a locked store can still pay.
+Route::middleware(['auth', 'onboarded', 'subscribed'])
     ->prefix('tenant')
     ->name('tenant.')
     ->group(function () {
