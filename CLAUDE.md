@@ -122,6 +122,32 @@ wraps in `p-4 p-md-5`; cards use `rounded-4 shadow-sm`; grid gaps `g-3`/`g-4` fo
 - **Entrance:** page content is wrapped in `.page-enter` (fade-up) by `layouts/app.blade.php`;
   use `.animate-fade-up` for ad-hoc slide-in sections. `prefers-reduced-motion` is respected globally.
 
+### [LIQUID MOTION STANDARD] — the bar for every page & element
+
+**Non-negotiable:** every OSMS surface must feel absolutely stunning and premium — the tactile,
+liquid fluidity of Apple iOS. This is the acceptance bar for any new view, module, or feature,
+not an optional polish pass. Build to it from the first commit.
+
+- **Nothing toggles on/off.** State changes are never abrupt. An element must never pop, snap, or
+  hard-swap between shown/hidden, active/inactive, or one value and the next. Everything eases
+  (`--ease-spring`) between states — fade, scale, slide, or height-reveal. Treat an instant
+  `display` flip as a bug.
+- **Animate the whole page and every element in it.** Page sections enter with `.page-enter` /
+  `.animate-fade-up`; lists cascade in with `.stagger` (staggered `fade-up`); rows, chips,
+  avatars, prices, chevrons all have their own hover/enter/press micro-motion. Reach for the
+  liquid primitives already built: `.stagger`, `.skeleton` (shimmer loading, never a bare
+  spinner-and-blank), `.reveal`/`.reveal-open` (height-animated show/hide instead of `x-show`
+  snapping), `.segmented` (sliding-highlight toggle), the global `.modal` scale-in entrance.
+- **Elegant hover on everything interactive.** Rows tint to `--osms-primary-soft`, lift or nudge
+  a sub-pixel, and reveal a chevron that slides right; avatars scale `1.06`; the motion is
+  identical everywhere so the whole app feels like one instrument.
+- **Live, not round-trip.** List/search pages filter live via Alpine + a JSON endpoint (debounced
+  ~220ms) — results update as the user types, with a `.skeleton` state, staggered result
+  entrance, and URL kept in sync via `history.replaceState`. Full-page GET reloads for search are
+  not acceptable. **Reference implementations: `customers/index.blade.php` and
+  `inventory/index.blade.php` — copy their structure for any new list page.**
+- **Reduced motion is honored** globally; never fight it.
+
 ### Component classes (reuse, don't reinvent)
 
 - **Cards:** `.card card-lift rounded-4 shadow-sm` — lifts `-3px` with `--shadow-raised` on hover.

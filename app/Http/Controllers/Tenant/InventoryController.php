@@ -18,7 +18,7 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class InventoryController extends Controller
 {
-    public function index(Request $request): View
+    public function index(Request $request): View|JsonResponse
     {
         $q = trim((string) $request->query('q', ''));
         $type = (string) $request->query('type', '');
@@ -39,6 +39,34 @@ class InventoryController extends Controller
             ->orderBy('brand')
             ->paginate(50)
             ->withQueryString();
+
+        // Live search/filter (fetched by Alpine) — return lightweight JSON rows.
+        if ($request->wantsJson()) {
+            return response()->json([
+                'items' => $items->getCollection()->map(function (Inventory $i) {
+                    $isOut = $i->stock_qty === 0;
+                    $isLow = ! $isOut && $i->stock_qty <= $i->min_alert_qty;
+
+                    return [
+                        'id' => $i->id,
+                        'brand' => $i->brand,
+                        'model_name' => $i->model_name,
+                        'item_type' => $i->item_type,
+                        'type_label' => $i->type_label,
+                        'sku' => $i->sku,
+                        'barcode' => $i->barcode,
+                        'cost_price' => (float) $i->cost_price,
+                        'selling_price' => (float) $i->selling_price,
+                        'stock_qty' => $i->stock_qty,
+                        'is_out' => $isOut,
+                        'is_low' => $isLow,
+                        'url' => route('tenant.inventory.edit', $i),
+                    ];
+                })->values(),
+                'total' => $items->total(),
+                'has_more' => $items->hasMorePages(),
+            ]);
+        }
 
         return view('tenant.inventory.index', compact('items', 'q', 'type', 'stock'));
     }
