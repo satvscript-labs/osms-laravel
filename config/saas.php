@@ -14,6 +14,11 @@ return [
     // Keep false until production SMTP is confirmed, then flip on (D-S5b).
     'require_email_verification' => env('SAAS_REQUIRE_EMAIL_VERIFICATION', false),
 
+    // ST-Staff (S3): max users per store (owner + staff). Flat cap at launch;
+    // becomes tier-based later via Tenant::seatLimit(). Invitations expire after N days.
+    'max_staff' => env('SAAS_MAX_STAFF', 5),
+    'invite_days' => env('SAAS_INVITE_DAYS', 7),
+
     // ST-Legal (S6) / invoices: the registered business behind OSMS.
     'legal_entity' => env('SAAS_LEGAL_ENTITY', '[Your Registered Business Name]'),
     'gst_number' => env('SAAS_GST_NUMBER', '[Your GSTIN]'),

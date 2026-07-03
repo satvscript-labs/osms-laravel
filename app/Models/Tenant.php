@@ -69,4 +69,38 @@ class Tenant extends Model
     {
         return $this->hasMany(Order::class);
     }
+
+    public function invitations(): HasMany
+    {
+        return $this->hasMany(StaffInvitation::class);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Seat management (ST-Staff / S3)
+    |--------------------------------------------------------------------------
+    | Single flat cap at launch. Kept behind these methods so it can later become
+    | tier-based (read from $this->subscription->tier) without touching callers.
+    */
+
+    public function seatLimit(): int
+    {
+        return (int) config('saas.max_staff', 5);
+    }
+
+    /** Seats consumed = current members + still-pending invitations. */
+    public function seatsUsed(): int
+    {
+        $pending = $this->invitations()
+            ->whereNull('accepted_at')
+            ->where(fn ($q) => $q->whereNull('expires_at')->orWhere('expires_at', '>', now()))
+            ->count();
+
+        return $this->users()->count() + $pending;
+    }
+
+    public function canAddSeat(): bool
+    {
+        return $this->seatsUsed() < $this->seatLimit();
+    }
 }

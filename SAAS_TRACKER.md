@@ -27,6 +27,10 @@ Settled with the product owner:
 - **Global staff cap (cost control).** A single configurable cap on users-per-store guards our cost
   (each staff seat = more usage). Default **`saas.max_staff = 5`** total users per tenant (owner + 4).
   🟠 *Confirm-to-change — one config line.* Over-cap → friendly "seat limit reached" message, not a 500.
+- **Hierarchy (2026-07-03).** superadmin (us) → store (Tenant) → **admin + staff** (two roles;
+  role values `store_admin` / `staff`). **Multi-branch is deferred** but the schema is designed so a
+  `branches` table + `branch_id` slots in later without rework. Seat cap resolves through
+  `Tenant::seatLimit()` so it becomes **tier-based** in future with no caller changes.
 - **Payments are in scope for this update.** Razorpay goes **live** as part of this work — the automated
   purchase path is the whole point. (External dependency: a live Razorpay merchant account, which
   itself requires the **S6 legal pages** + business/GST identity — see risks.)
@@ -68,8 +72,8 @@ fully in parallel with Bunch 1**.
 | **2 · Comms & compliance** | 3 | ST-Email | Transactional email, `verified`, queued lifecycle mailables (S5) | ST-Infra (queue) | 🔴 | ✅ Done |
 | **2 · Comms & compliance** | 4 | ST-Legal | Legal & compliance pages + landing footer links (S6) | — | 🔴 | ✅ Done |
 | **3 · Money path** | 5 | ST-Billing | Basic monthly/yearly subscribe / cancel / invoices + Razorpay go-live + webhook hardening (S4) | ST-Enforce, ST-Email, ST-Legal | 🔴 | ✅ Code done · ⚠️ create 2 plans |
-| **4 · People & data** | 6 | ST-Staff | Staff management + global staff cap (S3 + S2-lite) | ST-Email | 🟠 | ⬜ Planned |
-| **4 · People & data** | 7 | ST-Lifecycle | Account/tenant data lifecycle (last-admin guard, close-store, export) (S10) | ST-Billing (cancel-on-close) | 🟠 | ⬜ Planned |
+| **4 · People & data** | 6 | ST-Staff | Staff management + global staff cap (S3 + S2-lite) | ST-Email | 🟠 | ✅ Done |
+| **4 · People & data** | 7 | ST-Lifecycle | Account/tenant data lifecycle (last-admin guard, export) (S10) | ST-Billing | 🟠 | ✅ Guard+export · ⚠️ close-store deferred |
 | **5 · Polish & harden** | 8 | ST-Onboard | Trial messaging + empty states (S7-lite, no plan picker) | ST-Enforce | 🟡 | ⬜ Planned |
 | **5 · Polish & harden** | 9 | ST-Harden | Backups + monitoring + restore drill (S8b) | ST-Infra | 🟡 | ⬜ Planned |
 
@@ -303,7 +307,30 @@ can trail.
 ## Bunch 4 · People & data
 
 ### ST-Staff — Staff management + global staff cap (S3 + S2-lite) 🟠
-- **Status:** ⬜ Planned. **Depends on:** ST-Email (invite mail).
+- **Status:** ✅ Done (2026-07-03). **Depends on:** ST-Email (invite mail).
+
+#### Shipped
+
+- **Hierarchy (locked):** superadmin (us) → store (Tenant) → **admin (`store_admin`) + staff (`staff`)**.
+  Two roles at launch; **branches deferred** but designed for (see note). Role value is `staff` (the
+  existing users enum), not `store_staff`.
+- **`staff_invitations`** table (tenant-owned) + model; `StaffController` (index/invite/resend/revoke/
+  updateRole/remove) on the admin-only Team page; public `InvitationController` (show/accept) that
+  creates the user (email pre-verified by the emailed link) and logs them in.
+- **`StaffInvitationMail`** (queued) with a tokenised accept link (7-day expiry).
+- **Seat cap** — `Tenant::seatLimit()/seatsUsed()/canAddSeat()` (members + pending invites);
+  `config('saas.max_staff', 5)`. **Scalable:** the limit resolves through `seatLimit()`, so it becomes
+  tier-based later by reading `subscription->tier` — no caller changes.
+- **Guards:** can't invite an existing member, can't exceed the cap, can't demote/remove the **last
+  admin**, can't remove yourself, cross-tenant invitation/member actions 404 (tenant-scoped binding).
+- **Team nav** link (admin-only) + **data export** links (customers/inventory) on the page.
+- **Tests:** `Phase25StaffTest` (14). Full suite **239 passed**.
+- **Branch-ready note:** when multi-branch lands, add a `branches` table + nullable `branch_id` on
+  `staff_invitations`/`users` and (optionally) operational tables, layered *under* the tenant scope —
+  nothing built here blocks it.
+
+#### Original plan
+
 - **Today:** only the first registered user (`store_admin`) can ever exist — no invite/add path
   ([RegisteredUserController](app/Http/Controllers/Auth/RegisteredUserController.php)).
 - **Scope**
@@ -322,7 +349,27 @@ can trail.
   accept into the wrong tenant (isolation).
 
 ### ST-Lifecycle — Account & tenant data lifecycle (S10) 🟠
-- **Status:** ⬜ Planned. **Depends on:** ST-Billing (cancel-on-close).
+- **Status:** ✅ Guard + export done (2026-07-03); **close-store deferred**. **Depends on:** ST-Billing.
+
+#### Shipped
+
+- **Last-admin self-delete guard** — `ProfileController::destroy` now blocks the sole `store_admin`
+  from deleting their account (the exact "delete owner → orphaned tenant + billing keeps running"
+  hole). A non-last member self-deletes normally. Mirrors the Team page's last-admin guards.
+- **Data export** — customers/inventory export links on the Team page (DPDP portability, reusing the
+  existing Excel exports).
+- **Tests:** covered in `Phase25StaffTest` (last-admin cannot self-delete; non-last can).
+
+#### Deferred (fast-follow)
+
+- **Self-service "Close store"** (cancel subscription → delete users → cascade-delete tenant) is
+  **not shipped**. Rationale: it's destructive, the report wants a 30-day soft-retention design, and
+  for 5 launch stores an owner-initiated close can be handled via support. Data model is ready
+  (all tenant FKs cascade; `users` need explicit deletion — no FK). Build when a real close request
+  appears.
+
+#### Original plan
+
 - **Today:** [ProfileController::destroy](app/Http/Controllers/ProfileController.php#L46) deletes the
   user only — the sole admin deleting their account **orphans the tenant + all data while billing keeps
   running**.

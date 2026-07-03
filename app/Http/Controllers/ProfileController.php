@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\ProfileUpdateRequest;
+use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -50,6 +51,18 @@ class ProfileController extends Controller
         ]);
 
         $user = $request->user();
+
+        // ST-Lifecycle (S10): the last admin can't self-delete — it would orphan
+        // the store (and keep billing running with no one able to manage it).
+        if ($user->role === 'store_admin' && $user->tenant_id) {
+            $adminCount = User::where('tenant_id', $user->tenant_id)
+                ->where('role', 'store_admin')->count();
+
+            if ($adminCount <= 1) {
+                return back()->with('error',
+                    'You are the last admin of your store. Promote another member to admin first, or contact support to close the store.');
+            }
+        }
 
         Auth::logout();
 

@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\InvitationController;
 use App\Http\Controllers\OnboardingController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\RazorpayWebhookController;
@@ -16,6 +17,10 @@ Route::view('/legal/terms', 'legal.terms')->name('legal.terms');
 Route::view('/legal/privacy', 'legal.privacy')->name('legal.privacy');
 Route::view('/legal/refund', 'legal.refund')->name('legal.refund');
 Route::view('/legal/contact', 'legal.contact')->name('legal.contact');
+
+// Public staff-invitation accept flow (ST-Staff / S3) — invitee has no session yet.
+Route::get('/invitations/{token}', [InvitationController::class, 'show'])->name('invitations.show');
+Route::post('/invitations/{token}', [InvitationController::class, 'accept'])->name('invitations.accept');
 
 // Generic "dashboard" entry — routes the user to the right home by role/state.
 Route::get('/dashboard', fn () => redirect(Navigation::homeFor(request()->user())))

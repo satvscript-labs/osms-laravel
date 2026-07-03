@@ -16,6 +16,7 @@ use App\Http\Controllers\Tenant\CustomerController;
 use App\Http\Controllers\Tenant\OrderController;
 use App\Http\Controllers\Tenant\SearchController;
 use App\Http\Controllers\Tenant\SettingsController;
+use App\Http\Controllers\Tenant\StaffController;
 use Illuminate\Support\Facades\Route;
 
 // ---- Global search (Cmd+K) ----
@@ -87,4 +88,14 @@ Route::middleware('role:store_admin,superadmin')->group(function () {
 Route::middleware('role:store_admin,superadmin')->group(function () {
     Route::get('settings', [SettingsController::class, 'edit'])->name('settings.edit');
     Route::put('settings', [SettingsController::class, 'update'])->name('settings.update');
+});
+
+// ---- Team / staff management (store admins + superadmin only) ----
+Route::middleware('role:store_admin,superadmin')->group(function () {
+    Route::get('staff', [StaffController::class, 'index'])->name('staff.index');
+    Route::post('staff/invite', [StaffController::class, 'invite'])->name('staff.invite');
+    Route::post('staff/invitations/{invitation}/resend', [StaffController::class, 'resend'])->name('staff.invitations.resend');
+    Route::delete('staff/invitations/{invitation}', [StaffController::class, 'revoke'])->name('staff.invitations.revoke');
+    Route::patch('staff/{member}/role', [StaffController::class, 'updateRole'])->name('staff.role');
+    Route::delete('staff/{member}', [StaffController::class, 'remove'])->name('staff.remove');
 });
