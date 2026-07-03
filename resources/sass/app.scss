@@ -353,6 +353,21 @@ body {
 // Applied by default to page content (see layouts/app.blade.php)
 .page-enter { animation: fade-up var(--duration-slow) var(--ease-spring) backwards; }
 
+// Bootstrap pill/tab panes: slide-fade in on activation (not a hard swap).
+.tab-content > .tab-pane.active {
+  animation: fade-up var(--duration-base) var(--ease-spring);
+}
+
+// Progress-bar fill grows in from the left instead of snapping to width.
+.bar-animate {
+  transform-origin: left center;
+  animation: bar-grow var(--duration-slow) var(--ease-spring) both;
+}
+@keyframes bar-grow {
+  from { transform: scaleX(0); }
+  to   { transform: scaleX(1); }
+}
+
 // Smooth height reveal for conditionally-shown sections (no JS plugin needed).
 // Toggle `.reveal-open` to animate height; the inner wrapper clips the overflow.
 // Falls back to simply collapsed on browsers without grid-row animation.

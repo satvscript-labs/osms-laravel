@@ -10,7 +10,7 @@
         <div>
             <p class="section-label mb-1">Store admin</p>
             <h1 class="h3 fw-semibold font-display mb-1">Analytics</h1>
-            <p class="text-muted-foreground mb-0" style="font-size:.9rem;">
+            <p class="text-muted-foreground mb-0 text-md">
                 Revenue, COGS, gross profit, and outstanding balances.
             </p>
         </div>
@@ -27,17 +27,26 @@
         </form>
     </div>
 
-    {{-- Tabs --}}
-    <ul class="nav nav-pills mb-4 gap-1" role="tablist">
-        <li class="nav-item"><button class="nav-link active" data-bs-toggle="pill" data-bs-target="#tab-overview" type="button">Overview</button></li>
-        <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" data-bs-target="#tab-ledger" type="button">Ledger</button></li>
-        <li class="nav-item"><button class="nav-link" data-bs-toggle="pill" data-bs-target="#tab-dues" type="button">Pending dues</button></li>
-    </ul>
+    {{-- Tabs (iOS segmented control) --}}
+    <div class="nav segmented mb-4" role="tablist">
+        <button class="segmented-item active" data-bs-toggle="pill" data-bs-target="#tab-overview"
+                type="button" role="tab" aria-selected="true">
+            <i class="bi bi-bar-chart-line"></i> Overview
+        </button>
+        <button class="segmented-item" data-bs-toggle="pill" data-bs-target="#tab-ledger"
+                type="button" role="tab" aria-selected="false">
+            <i class="bi bi-journal-text"></i> Ledger
+        </button>
+        <button class="segmented-item" data-bs-toggle="pill" data-bs-target="#tab-dues"
+                type="button" role="tab" aria-selected="false">
+            <i class="bi bi-cash-stack"></i> Pending dues
+        </button>
+    </div>
 
     <div class="tab-content">
         {{-- Overview --}}
-        <div class="tab-pane fade show active" id="tab-overview">
-            <div class="row g-3 mb-4">
+        <div class="tab-pane fade show active" id="tab-overview" role="tabpanel">
+            <div class="row g-3 mb-4 stagger">
                 <div class="col-6 col-lg-3">
                     <x-metric-card label="Revenue" value="{{ $money($stats['revenue']) }}"
                         hint="{{ $stats['ordersCount'] }} delivered {{ Str::plural('order', $stats['ordersCount']) }}"
@@ -68,20 +77,20 @@
                         <p class="text-center text-muted-foreground border border-2 border-dashed rounded-3 py-4 mb-0">No sales data yet.</p>
                     @else
                         @php $max = $topBrands->first()['revenue'] ?: 1; @endphp
-                        <div class="d-flex flex-column gap-3">
+                        <div class="d-flex flex-column gap-3 stagger">
                             @foreach ($topBrands as $i => $b)
                                 <div class="d-flex align-items-center gap-3">
-                                    <span class="font-monospace text-muted-foreground" style="font-size:.78rem;width:1.5rem;">{{ str_pad($i+1, 2, '0', STR_PAD_LEFT) }}</span>
+                                    <span class="font-monospace text-muted-foreground text-xs" style="width:1.5rem;">{{ str_pad($i+1, 2, '0', STR_PAD_LEFT) }}</span>
                                     <div class="flex-grow-1">
                                         <div class="d-flex justify-content-between align-items-baseline mb-1">
-                                            <span class="fw-medium" style="font-size:.9rem;">{{ $b['brand'] }}</span>
-                                            <span class="text-muted-foreground" style="font-size:.78rem;">
+                                            <span class="fw-medium text-md">{{ $b['brand'] }}</span>
+                                            <span class="text-muted-foreground text-xs">
                                                 <span class="font-monospace text-dark">{{ $b['quantity'] }}</span> sold ·
                                                 <span class="font-monospace text-dark">{{ $money($b['revenue']) }}</span>
                                             </span>
                                         </div>
                                         <div class="progress" style="height:.4rem;">
-                                            <div class="progress-bar bg-primary" style="width: {{ max(4, ($b['revenue'] / $max) * 100) }}%"></div>
+                                            <div class="progress-bar bg-primary bar-animate" style="width: {{ max(4, ($b['revenue'] / $max) * 100) }}%"></div>
                                         </div>
                                     </div>
                                 </div>
@@ -93,29 +102,29 @@
         </div>
 
         {{-- Ledger --}}
-        <div class="tab-pane fade" id="tab-ledger">
+        <div class="tab-pane fade" id="tab-ledger" role="tabpanel">
             <div class="d-flex justify-content-end gap-2 mb-2">
                 <a href="{{ route('tenant.analytics.ledger.export', ['from' => $fromStr, 'to' => $toStr]) }}"
-                   class="btn btn-outline-secondary btn-sm"><i class="bi bi-file-earmark-excel me-1"></i> Export Excel</a>
+                   class="btn btn-light btn-sm"><i class="bi bi-file-earmark-excel me-1"></i> Export Excel</a>
                 @if ($ledger->count() >= 50 && ! $showAllLedger)
                     <a href="{{ route('tenant.analytics.index', ['from' => $fromStr, 'to' => $toStr, 'ledger_all' => 1]) }}"
-                       class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-repeat me-1"></i> Show all</a>
+                       class="btn btn-light btn-sm"><i class="bi bi-arrow-repeat me-1"></i> Show all</a>
                 @elseif ($showAllLedger)
                     <a href="{{ route('tenant.analytics.index', ['from' => $fromStr, 'to' => $toStr]) }}"
-                       class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-repeat me-1"></i> Show less</a>
+                       class="btn btn-light btn-sm"><i class="bi bi-arrow-repeat me-1"></i> Show less</a>
                 @endif
             </div>
             <div class="card border-0 shadow-sm rounded-4">
                 <div class="table-responsive">
-                    <table class="table align-middle mb-0">
-                        <thead class="text-muted-foreground" style="font-size:.78rem;">
+                    <table class="table align-middle mb-0 osms-orders-table">
+                        <thead class="text-muted-foreground text-xs">
                             <tr><th class="ps-4">Date</th><th>Customer</th><th>Status</th>
                                 <th class="text-end">Total</th><th class="text-end">Advance</th><th class="text-end pe-4">Balance</th></tr>
                         </thead>
                         <tbody>
                             @forelse ($ledger as $o)
                                 <tr role="button" onclick="window.location='{{ route('tenant.orders.show', $o) }}'">
-                                    <td class="ps-4" style="font-size:.85rem;">{{ $o->created_at->format('d M Y') }}</td>
+                                    <td class="ps-4 text-sm">{{ $o->created_at->format('d M Y') }}</td>
                                     <td>{{ $o->customer?->name ?? '—' }}</td>
                                     <td><span class="badge text-bg-light text-capitalize">{{ str_replace('_', ' ', $o->status) }}</span></td>
                                     <td class="text-end font-monospace">₹ {{ number_format($o->total_amount, 2) }}</td>
@@ -132,22 +141,22 @@
         </div>
 
         {{-- Pending dues --}}
-        <div class="tab-pane fade" id="tab-dues">
+        <div class="tab-pane fade" id="tab-dues" role="tabpanel">
             @if ($dues->count() >= 50 || $showAllDues)
                 <div class="d-flex justify-content-end mb-2">
                     @if ($dues->count() >= 50 && ! $showAllDues)
                         <a href="{{ route('tenant.analytics.index', ['from' => $fromStr, 'to' => $toStr, 'dues_all' => 1]) }}"
-                           class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-repeat me-1"></i> Show all</a>
+                           class="btn btn-light btn-sm"><i class="bi bi-arrow-repeat me-1"></i> Show all</a>
                     @elseif ($showAllDues)
                         <a href="{{ route('tenant.analytics.index', ['from' => $fromStr, 'to' => $toStr]) }}"
-                           class="btn btn-outline-secondary btn-sm"><i class="bi bi-arrow-repeat me-1"></i> Show less</a>
+                           class="btn btn-light btn-sm"><i class="bi bi-arrow-repeat me-1"></i> Show less</a>
                     @endif
                 </div>
             @endif
             <div class="card border-0 shadow-sm rounded-4">
                 <div class="table-responsive">
-                    <table class="table align-middle mb-0">
-                        <thead class="text-muted-foreground" style="font-size:.78rem;">
+                    <table class="table align-middle mb-0 osms-orders-table">
+                        <thead class="text-muted-foreground text-xs">
                             <tr><th class="ps-4">Customer</th><th>Phone</th><th>Date</th>
                                 <th class="text-end">Total</th><th class="text-end">Advance</th><th class="text-end pe-4">Balance due</th></tr>
                         </thead>
@@ -156,7 +165,7 @@
                                 <tr role="button" onclick="window.location='{{ route('tenant.orders.show', $o) }}'">
                                     <td class="ps-4 fw-medium">{{ $o->customer?->name ?? '—' }}</td>
                                     <td>{{ $o->customer?->phone ?? '—' }}</td>
-                                    <td style="font-size:.85rem;">{{ $o->created_at->format('d M Y') }}</td>
+                                    <td class="text-sm">{{ $o->created_at->format('d M Y') }}</td>
                                     <td class="text-end font-monospace">₹ {{ number_format($o->total_amount, 2) }}</td>
                                     <td class="text-end font-monospace">₹ {{ number_format($o->advance_paid, 2) }}</td>
                                     <td class="text-end pe-4 font-monospace text-danger fw-medium">₹ {{ number_format($o->balance_due, 2) }}</td>
