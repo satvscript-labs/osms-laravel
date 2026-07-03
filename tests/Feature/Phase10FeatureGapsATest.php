@@ -118,12 +118,17 @@ class Phase10FeatureGapsATest extends TestCase
 
     // ---- Store settings (FG-Settings) ----
 
-    public function test_settings_page_renders_for_store_admin(): void
+    public function test_settings_route_redirects_to_unified_hub(): void
     {
         $user = $this->storeUser('store_admin');
 
+        // The legacy store-settings route now folds into the unified Settings hub.
         $this->actingAs($user)->get(route('tenant.settings.edit'))
-            ->assertOk()->assertSee('Store settings');
+            ->assertRedirect(route('profile.edit'));
+
+        // The hub renders the store section for a store admin.
+        $this->actingAs($user)->get(route('profile.edit'))
+            ->assertOk()->assertSee('Store identity');
     }
 
     public function test_can_update_store_settings(): void
@@ -134,7 +139,7 @@ class Phase10FeatureGapsATest extends TestCase
             'store_name' => 'Sahaj Optical Renamed',
             'tax_id' => '22AAAAA0000A1Z5',
             'address' => '1 New Road',
-        ])->assertRedirect(route('tenant.settings.edit'));
+        ])->assertRedirect(route('profile.edit'));
 
         $this->assertDatabaseHas('tenants', [
             'id' => $user->tenant_id,

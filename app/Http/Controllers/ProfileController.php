@@ -16,8 +16,11 @@ class ProfileController extends Controller
      */
     public function edit(Request $request): View
     {
+        // Unified Settings hub: account sections for everyone, plus store
+        // sections when the user is a store admin (tenant is null otherwise).
         return view('profile.edit', [
             'user' => $request->user(),
+            'tenant' => $request->user()->tenant,
         ]);
     }
 
@@ -34,7 +37,7 @@ class ProfileController extends Controller
 
         $request->user()->save();
 
-        return Redirect::route('profile.edit')->with('status', 'profile-updated');
+        return Redirect::route('profile.edit')->with('status', 'Your profile has been updated.');
     }
 
     /**

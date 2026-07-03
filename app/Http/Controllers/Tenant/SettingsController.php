@@ -6,15 +6,13 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\View\View;
 
 class SettingsController extends Controller
 {
-    public function edit(Request $request): View
+    /** Store settings now live in the unified Settings hub (profile.edit). */
+    public function edit(Request $request): RedirectResponse
     {
-        $tenant = $request->user()->tenant;
-
-        return view('tenant.settings.edit', compact('tenant'));
+        return redirect()->route('profile.edit');
     }
 
     public function update(Request $request): RedirectResponse
@@ -51,7 +49,7 @@ class SettingsController extends Controller
             'logo_url' => $logoUrl,
         ]);
 
-        return redirect()->route('tenant.settings.edit')
+        return redirect()->route('profile.edit')
             ->with('status', 'Store settings updated.');
     }
 }

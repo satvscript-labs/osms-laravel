@@ -11,10 +11,8 @@
         ['route' => 'tenant.analytics.index', 'label' => 'Analytics', 'icon' => 'bi-bar-chart', 'match' => 'tenant.analytics.*'],
     ];
 
-    // Settings is store-admin only (matches the role-gated route group).
-    if ($user?->isStoreAdmin()) {
-        $tenantLinks[] = ['route' => 'tenant.settings.edit', 'label' => 'Settings', 'icon' => 'bi-sliders', 'match' => 'tenant.settings.*'];
-    }
+    // Settings now lives in the unified hub reachable via the gear in the footer
+    // (profile.edit) — no separate sidebar entry.
     $superLinks = [
         ['route' => 'superadmin.dashboard', 'label' => 'Platform', 'icon' => 'bi-shield-check', 'match' => 'superadmin.*'],
     ];
@@ -73,7 +71,8 @@
             <div class="flex-grow-1 min-w-0">
                 <p class="mb-0 fw-medium text-truncate" style="font-size:.85rem;">{{ $user?->name ?? 'User' }}</p>
             </div>
-            <a href="{{ route('profile.edit') }}" class="btn btn-sm btn-light" title="Account settings">
+            <a href="{{ route('profile.edit') }}"
+               class="btn btn-sm {{ request()->routeIs('profile.edit') ? 'btn-primary' : 'btn-light' }}" title="Settings">
                 <i class="bi bi-gear"></i>
             </a>
             <form method="POST" action="{{ route('logout') }}" class="m-0">

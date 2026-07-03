@@ -461,6 +461,47 @@ body {
 }
 .sidebar-link i { font-size: 1.05rem; }
 
+// ------------------------------------------------------------
+// Settings hub — in-page section nav (sticky rail)
+// ------------------------------------------------------------
+.settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  position: sticky;
+  top: 1.5rem;
+}
+.settings-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  width: 100%;
+  text-align: left;
+  padding: 0.625rem 0.85rem;
+  border: 0;
+  border-left: 3px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--osms-muted);
+  font-size: var(--text-md);
+  font-weight: 500;
+  transition: all var(--duration-base) var(--ease-spring);
+  i { font-size: 1.05rem; }
+}
+.settings-nav-item:hover { background: rgba(0, 79, 117, 0.06); color: var(--osms-primary); }
+.settings-nav-item.active {
+  background: var(--osms-primary-soft);
+  color: var(--osms-primary);
+  font-weight: 600;
+  border-left-color: var(--osms-primary);
+}
+.settings-nav-item-danger:hover { background: var(--tone-red-bg); color: var(--tone-red); }
+.settings-nav-item-danger.active {
+  background: var(--tone-red-bg);
+  color: var(--tone-red);
+  border-left-color: var(--tone-red);
+}
+
 // ============================================================
 // 14. METRIC / STAT CARDS
 // ============================================================
