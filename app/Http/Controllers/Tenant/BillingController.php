@@ -103,6 +103,14 @@ class BillingController extends Controller
                     $validated['interval'],
                 );
             } catch (\Throwable $e) {
+                // Razorpay/RBI e-mandate rule: a card-authorized subscription's plan_id
+                // (and thus its billing interval) can't be changed in place — only
+                // offer_id can. Card customers must cancel and resubscribe on the new
+                // plan; UPI Autopay isn't affected by this restriction.
+                if (str_contains($e->getMessage(), 'Only offers can be updated')) {
+                    return back()->with('error', "Billing-cycle switching isn't supported for card payments. Please cancel your subscription and resubscribe on the {$validated['interval']} plan, or use UPI Autopay instead.");
+                }
+
                 return back()->with('error', 'Could not change your billing cycle: ' . $e->getMessage());
             }
         }
