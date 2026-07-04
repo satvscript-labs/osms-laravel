@@ -11,7 +11,7 @@ class OrderItem extends Model
     use HasUuid;
 
     protected $fillable = [
-        'order_id', 'inventory_id', 'quantity', 'unit_price', 'list_price',
+        'order_id', 'inventory_id', 'description', 'quantity', 'unit_price', 'list_price',
     ];
 
     protected $casts = [
@@ -33,5 +33,24 @@ class OrderItem extends Model
     public function getLineTotalAttribute(): float
     {
         return (float) $this->unit_price * (int) $this->quantity;
+    }
+
+    /** True for an off-inventory/local line (no catalog item behind it). */
+    public function getIsCustomAttribute(): bool
+    {
+        return $this->inventory_id === null;
+    }
+
+    /**
+     * Human label for the line: the catalog item's brand + model, or the
+     * free-text description for a local/custom line (6.4).
+     */
+    public function getDisplayNameAttribute(): string
+    {
+        if ($this->is_custom) {
+            return $this->description ?: 'Custom item';
+        }
+
+        return trim(($this->inventory?->brand ?? '—') . ' ' . ($this->inventory?->model_name ?? ''));
     }
 }

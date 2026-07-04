@@ -155,7 +155,13 @@
                     <tbody>
                         @foreach ($order->items as $it)
                             <tr>
-                                <td>{{ $it->inventory?->brand ?? '—' }} <span class="text-muted-foreground">{{ $it->inventory?->model_name }}</span></td>
+                                <td>
+                                    @if ($it->is_custom)
+                                        {{ $it->display_name }}
+                                    @else
+                                        {{ $it->inventory?->brand ?? '—' }} <span class="text-muted-foreground">{{ $it->inventory?->model_name }}</span>
+                                    @endif
+                                </td>
                                 <td class="font-monospace text-muted-foreground" style="font-size:.75rem;">{{ $it->inventory?->sku ?? '—' }}</td>
                                 <td class="text-end">{{ $it->quantity }}</td>
                                 <td class="text-end font-monospace">₹ {{ number_format($it->unit_price, 2) }}</td>

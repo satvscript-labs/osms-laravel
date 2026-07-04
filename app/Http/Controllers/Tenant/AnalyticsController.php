@@ -77,7 +77,13 @@ class AnalyticsController extends Controller
                     $uncostedLines++;
                 }
 
-                $brand = trim((string) ($it->inventory->brand ?? '')) ?: '—';
+                // A local/custom line (6.4) has no inventory — bucket it distinctly so
+                // it reads clearly instead of colliding with a real item whose brand is
+                // just unset ("—"). Its cost is 0 above, so it's already excluded from
+                // COGS/margin while its revenue still counts (5.3's rule, for free).
+                $brand = $it->inventory
+                    ? (trim((string) $it->inventory->brand) ?: '—')
+                    : 'Local / custom item';
                 $brandMap[$brand] ??= ['quantity' => 0, 'revenue' => 0.0];
                 $brandMap[$brand]['quantity'] += $it->quantity;
                 $brandMap[$brand]['revenue'] += $lineNet;

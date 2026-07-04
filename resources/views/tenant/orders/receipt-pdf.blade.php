@@ -71,7 +71,13 @@
         <tbody>
             @foreach ($order->items as $it)
                 <tr>
-                    <td>{{ $it->inventory?->brand ?? '—' }} {{ $it->inventory?->model_name }}</td>
+                    <td>
+                        @if ($it->is_custom)
+                            {{ $it->display_name }}
+                        @else
+                            {{ $it->inventory?->brand ?? '—' }} {{ $it->inventory?->model_name }}
+                        @endif
+                    </td>
                     <td class="mono small muted">{{ $it->inventory?->sku ?? '—' }}</td>
                     <td class="right">{{ $it->quantity }}</td>
                     <td class="right mono">{{ number_format($it->unit_price, 2) }}</td>
