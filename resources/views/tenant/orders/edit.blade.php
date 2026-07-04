@@ -199,13 +199,16 @@
                                   x-text="discountAmount() > 0 ? '− ' + money(discountAmount()) : '—'"></span>
                         </div>
                         <div class="input-group input-group-sm">
-                            <button type="button" class="btn" :class="unit === '%' ? 'btn-primary' : 'btn-light'" @click="unit = '%'" style="width:2.75rem;">%</button>
-                            <button type="button" class="btn" :class="unit === '₹' ? 'btn-primary' : 'btn-light'" @click="unit = '₹'" style="width:2.75rem;">₹</button>
-                            <input type="number" min="0" step="0.01" class="form-control text-end font-monospace"
-                                   x-model.number="discountValue" placeholder="0" aria-label="Discount value">
+                            <button type="button" class="btn" :class="unit === '%' ? 'btn-primary' : 'btn-light'" @click="unit = '%'; normaliseDiscount()" style="width:2.75rem;">%</button>
+                            <button type="button" class="btn" :class="unit === '₹' ? 'btn-primary' : 'btn-light'" @click="unit = '₹'; normaliseDiscount()" style="width:2.75rem;">₹</button>
+                            <input type="number" min="0" step="0.01" :max="discountMax()" class="form-control text-end font-monospace"
+                                   x-model.number="discountValue" @input="normaliseDiscount()" @blur="normaliseDiscount()"
+                                   placeholder="0" aria-label="Discount value">
                         </div>
                         <p x-cloak x-show="discountAmount() > 0" class="text-success mb-0 mt-1" style="font-size:.7rem;"
                            x-text="savingsLabel()"></p>
+                        <p x-cloak x-show="discountCapped()" class="text-faint mb-0 mt-1" style="font-size:.68rem;"
+                           x-text="unit === '%' ? 'Capped at 100%' : 'Capped at the subtotal (' + money(subtotal()) + ')'"></p>
                     </div>
 
                     <div class="d-flex justify-content-between align-items-center border-top pt-3 mt-3">
@@ -297,6 +300,19 @@
                 return Math.round(Math.min(raw, st) * 100) / 100;
             },
             discountType() { return (Number(this.discountValue) || 0) > 0 ? (this.unit === '%' ? 'percent' : 'amount') : 'none'; },
+            discountMax() { return this.unit === '%' ? 100 : (this.subtotal() || 0); },
+            discountCapped() {
+                const v = Number(this.discountValue) || 0;
+                return v > 0 && v >= this.discountMax() && this.discountMax() > 0;
+            },
+            normaliseDiscount() {
+                if (this.discountValue === '' || this.discountValue === null) return;
+                let v = Number(this.discountValue);
+                if (isNaN(v) || v < 0) { this.discountValue = ''; return; }
+                const cap = this.discountMax();
+                if (cap > 0 && v > cap) v = cap;
+                this.discountValue = Math.round(v * 100) / 100;
+            },
             savingsLabel() {
                 const st = this.subtotal(), d = this.discountAmount();
                 if (d <= 0 || st <= 0) return '';
