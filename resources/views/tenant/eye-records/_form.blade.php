@@ -163,3 +163,64 @@
     }
 </style>
 @endpush
+
+@push('scripts')
+<script>
+    // FT-SmartRx (5.2) — smart prescription entry: mirror OD→OS, derive the
+    // near/add relationship, and validate ranges client-side (server still
+    // enforces the same bounds authoritatively).
+    (function () {
+        const anchor = document.querySelector('input[name="od_sph"]');
+        if (! anchor) return;
+        const form = anchor.closest('form');
+        const el = (n) => form.querySelector(`[name="${n}"]`);
+        const num = (v) => { const x = parseFloat(v); return Number.isFinite(x) ? x : null; };
+        const round = (x) => Math.round(x * 100) / 100;
+        const dirty = {}; // fields the user has typed into directly (never auto-overwritten)
+
+        // 5.2.2 — Near sphere = Distance sphere + ADD (per eye). Fill whichever of
+        // NV / ADD is still "clean" once the other two of {sph, add, nv} are known.
+        const derive = (eye) => {
+            const sph = num(el(`${eye}_sph`)?.value);
+            const add = num(el(`${eye}_add`)?.value);
+            const nv = num(el(`${eye}_nv`)?.value);
+            if (sph !== null && add !== null && ! dirty[`${eye}_nv`]) {
+                if (el(`${eye}_nv`)) el(`${eye}_nv`).value = round(sph + add);
+            } else if (sph !== null && nv !== null && ! dirty[`${eye}_add`]) {
+                if (el(`${eye}_add`)) el(`${eye}_add`).value = round(nv - sph);
+            }
+        };
+
+        // 5.2.1 — mirror each OD field to OS until the user edits OS directly.
+        ['sph', 'cyl', 'axis', 'va', 'add', 'nv', 'spl'].forEach((f) => {
+            const od = el(`od_${f}`), os = el(`os_${f}`);
+            if (! od || ! os) return;
+            os.addEventListener('input', () => { dirty[`os_${f}`] = true; derive('os'); });
+            od.addEventListener('input', () => {
+                if (f === 'nv' || f === 'add') dirty[`od_${f}`] = true; // typed a derived field → keep it
+                if (! dirty[`os_${f}`]) os.value = od.value;            // mirror (programmatic, no input event)
+                derive('od');
+                derive('os');
+            });
+        });
+
+        // Client-side range validation mirroring StoreEyeRecordRequest (BUG-002).
+        const bounds = {
+            sph: [-30, 30], cyl: [-15, 15], axis: [0, 180], add: [0, 6],
+            spl: [-50, 50], dv: [-50, 50], nv: [-50, 50], pd: [0, 100],
+        };
+        Object.entries(bounds).forEach(([field, [lo, hi]]) => {
+            (field === 'pd' ? ['pd'] : [`od_${field}`, `os_${field}`]).forEach((n) => {
+                const e = el(n);
+                if (! e) return;
+                const validate = () => {
+                    const v = num(e.value);
+                    e.classList.toggle('is-invalid', v !== null && (v < lo || v > hi));
+                };
+                e.addEventListener('input', validate);
+                validate();
+            });
+        });
+    })();
+</script>
+@endpush

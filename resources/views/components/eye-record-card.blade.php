@@ -26,7 +26,7 @@
                 <div>
                     <p class="mb-0 fw-medium">Eye record</p>
                     <p class="mb-0 text-muted-foreground" style="font-size:.75rem;">
-                        {{ $record->created_at->format('d M Y') }}
+                        {{ $record->created_at->format('d M Y') }}@if ($record->checked_by) · Examined by {{ $record->checked_by }}@endif
                     </p>
                 </div>
             </div>

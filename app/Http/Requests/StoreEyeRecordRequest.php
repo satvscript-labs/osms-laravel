@@ -16,6 +16,7 @@ class StoreEyeRecordRequest extends FormRequest
         $rules = [
             'pd' => ['nullable', 'numeric', 'min:0', 'max:100'],
             'notes' => ['nullable', 'string', 'max:2000'],
+            'checked_by' => ['nullable', 'string', 'max:255'],
         ];
 
         foreach (['od', 'os'] as $eye) {

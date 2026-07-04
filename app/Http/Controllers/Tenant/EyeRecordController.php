@@ -21,6 +21,8 @@ class EyeRecordController extends Controller
         $data = $request->validated();
         $data['customer_id'] = $customer->id;
         $data['recorded_by'] = $request->user()->id;
+        // 5.2.3 — default the examiner to the staff member when left blank.
+        $data['checked_by'] = ($data['checked_by'] ?? '') ?: $request->user()->name;
 
         EyeRecord::create($data);
 
@@ -38,7 +40,9 @@ class EyeRecordController extends Controller
 
     public function update(StoreEyeRecordRequest $request, EyeRecord $record): RedirectResponse
     {
-        $record->update($request->validated());
+        $data = $request->validated();
+        $data['checked_by'] = ($data['checked_by'] ?? '') ?: ($record->checked_by ?: $request->user()->name);
+        $record->update($data);
 
         return redirect()
             ->route('tenant.customers.show', $record->customer)
