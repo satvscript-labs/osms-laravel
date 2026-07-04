@@ -63,7 +63,7 @@ class BillingService
             throw new RuntimeException("No Razorpay plan configured for [$tier / $interval].");
         }
 
-        $this->api()->subscription->update($razorpaySubscriptionId, [
+        $this->api()->subscription->fetch($razorpaySubscriptionId)->update([
             'plan_id' => $planId,
             'schedule_change_at' => 'cycle_end',
             'customer_notify' => 1,
@@ -94,7 +94,7 @@ class BillingService
      */
     public function cancelSubscription(string $razorpaySubscriptionId): void
     {
-        $this->api()->subscription->cancel($razorpaySubscriptionId, ['cancel_at_cycle_end' => 1]);
+        $this->api()->subscription->fetch($razorpaySubscriptionId)->cancel(['cancel_at_cycle_end' => 1]);
     }
 
     /** Verify a Razorpay webhook signature. */
