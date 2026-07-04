@@ -70,6 +70,55 @@
                 </div>
             </div>
 
+            {{-- 5.4 — Collected by payment method (reconcile the cash counter) --}}
+            <div class="card border-0 shadow-sm rounded-4 mb-4">
+                <div class="card-body p-4">
+                    <div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-3">
+                        <div>
+                            <h3 class="section-label mb-1">Collected by payment method</h3>
+                            <p class="text-muted-foreground mb-0" style="font-size:.78rem;">
+                                Money actually received in this range — reconcile it with your cash drawer and each channel.
+                            </p>
+                        </div>
+                        <div class="text-end">
+                            <p class="text-uppercase text-muted-foreground mb-0" style="font-size:.6rem;letter-spacing:.05em;">Total collected</p>
+                            <p class="h4 fw-semibold font-display font-monospace mb-0">{{ $money($collectedTotal) }}</p>
+                        </div>
+                    </div>
+                    <div class="row g-3">
+                        @php
+                            $methods = [
+                                'cash'  => ['label' => 'Cash',  'icon' => 'bi-cash-stack',   'tone' => 'green'],
+                                'card'  => ['label' => 'Card',  'icon' => 'bi-credit-card-2-front', 'tone' => 'blue'],
+                                'upi'   => ['label' => 'UPI',   'icon' => 'bi-phone',        'tone' => 'primary'],
+                                'other' => ['label' => 'Other', 'icon' => 'bi-three-dots',   'tone' => 'neutral'],
+                            ];
+                        @endphp
+                        @foreach ($methods as $key => $m)
+                            @php
+                                $amt = $collectedByMethod[$key] ?? 0;
+                                $pct = $collectedTotal > 0 ? $amt / $collectedTotal * 100 : 0;
+                            @endphp
+                            <div class="col-6 col-lg-3">
+                                <div class="rounded-3 p-3 h-100" style="background: var(--surface-sunken);">
+                                    <div class="d-flex align-items-center gap-2 mb-2">
+                                        <span class="d-inline-flex align-items-center justify-content-center rounded-3 bg-primary-subtle text-primary"
+                                              style="width:2rem;height:2rem;"><i class="bi {{ $m['icon'] }}"></i></span>
+                                        <span class="fw-medium">{{ $m['label'] }}</span>
+                                    </div>
+                                    <p class="h5 fw-semibold font-display font-monospace mb-1">{{ $money($amt) }}</p>
+                                    <div class="progress rounded-pill" style="height:.3rem;background:var(--osms-border);">
+                                        <div class="progress-bar bg-primary" role="progressbar" style="width: {{ $pct }}%"
+                                             aria-valuenow="{{ (int) $pct }}" aria-valuemin="0" aria-valuemax="100"></div>
+                                    </div>
+                                    <p class="text-muted-foreground mb-0 mt-1" style="font-size:.68rem;">{{ number_format($pct, 0) }}% of collected</p>
+                                </div>
+                            </div>
+                        @endforeach
+                    </div>
+                </div>
+            </div>
+
             <div class="card border-0 shadow-sm rounded-4">
                 <div class="card-body p-4">
                     <h3 class="section-label mb-3">Best-selling brands</h3>

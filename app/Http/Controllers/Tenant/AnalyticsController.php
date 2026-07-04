@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Tenant;
 use App\Exports\LedgerExport;
 use App\Http\Controllers\Controller;
 use App\Models\Order;
+use App\Models\Payment;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -92,12 +93,26 @@ class AnalyticsController extends Controller
             ->limit($showAllDues ? self::MAX_ROWS : 50)
             ->get();
 
+        // 5.4 — money actually collected in range, grouped by payment method, so the
+        // owner can reconcile the cash drawer + each digital channel. Sourced from the
+        // payments ledger (when money was received), NOT order totals — the two
+        // legitimately differ (advances on open orders in; unpaid balances out).
+        $paid = Payment::whereBetween('created_at', [$from, $to])
+            ->selectRaw('method, SUM(amount) as total')
+            ->groupBy('method')
+            ->pluck('total', 'method');
+
+        $collectedByMethod = collect(['cash', 'card', 'upi', 'other'])
+            ->mapWithKeys(fn ($m) => [$m => (float) ($paid[$m] ?? 0)]);
+        $collectedTotal = (float) $collectedByMethod->sum();
+
         $stats = compact('revenue', 'discounts', 'cogs', 'profit', 'margin', 'ordersCount');
         $fromStr = $from->format('Y-m-d');
         $toStr = $to->format('Y-m-d');
 
         return view('tenant.analytics.index', compact(
             'stats', 'topBrands', 'ledger', 'dues', 'fromStr', 'toStr', 'showAllLedger', 'showAllDues',
+            'collectedByMethod', 'collectedTotal',
         ));
     }
 
