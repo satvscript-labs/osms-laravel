@@ -146,8 +146,12 @@ class OrderController extends Controller
             'payment_method' => ['nullable', 'in:cash,card,upi,other'],
             'discount_type' => ['nullable', 'in:none,percent,amount'],
             'discount_value' => ['nullable', 'numeric', 'min:0'],
-            'items' => ['required', 'array', 'min:1'],
-            'items.*.inventory_id' => ['required', 'exists:inventory,id'],
+            // Each line is EITHER a catalog item (inventory_id) OR a local/custom
+            // item (free-text description + required price) — enforced by the closure
+            // rule (required_without can't pair sibling wildcard fields by index).
+            'items' => ['required', 'array', 'min:1', $this->validItemsRule()],
+            'items.*.inventory_id' => ['nullable', 'exists:inventory,id'],
+            'items.*.description' => ['nullable', 'string', 'max:255'],
             'items.*.quantity' => ['required', 'integer', 'min:1', 'max:10000'],
             'items.*.unit_price' => ['nullable', 'numeric', 'min:0', 'max:99999999'],
         ], [
@@ -174,15 +178,19 @@ class OrderController extends Controller
                     ->findOrFail($validated['eye_record_id']);
             }
 
-            // Total quantity requested per item (collapses duplicate lines so the
-            // stock guard can't be bypassed by splitting one item across two rows).
+            // Partition posted lines: catalog lines draw down stock; local/custom
+            // lines (6.4) are free-text, untracked — no stock, no lock, no guard.
+            [$catalog, $custom] = $this->partitionItems($validated['items']);
+
+            // Total quantity requested per catalog item (collapses duplicate lines so
+            // the stock guard can't be bypassed by splitting one item across two rows).
             $wanted = [];
-            foreach ($validated['items'] as $line) {
+            foreach ($catalog as $line) {
                 $id = $line['inventory_id'];
                 $wanted[$id] = ($wanted[$id] ?? 0) + (int) $line['quantity'];
             }
 
-            // Load + lock each item once. The tenant scope still applies, so a
+            // Load + lock each catalog item once. The tenant scope still applies, so a
             // cross-tenant inventory_id simply won't be found (404 below).
             $inventories = Inventory::lockForUpdate()
                 ->findMany(array_keys($wanted))
@@ -208,7 +216,7 @@ class OrderController extends Controller
             // resolved server-side — never trust a client total). Subtotal is gross.
             $subtotal = 0;
             $lines = [];
-            foreach ($validated['items'] as $line) {
+            foreach ($catalog as $line) {
                 $inv = $inventories->get($line['inventory_id']);
                 $qty = (int) $line['quantity'];
                 $list = (float) $inv->selling_price;
@@ -216,9 +224,24 @@ class OrderController extends Controller
                 $subtotal += $unit * $qty;
                 $lines[] = [
                     'inventory_id' => $inv->id,
+                    'description' => null,
                     'quantity' => $qty,
                     'unit_price' => $unit,
                     'list_price' => $list,
+                ];
+            }
+            // Local/custom lines (6.4): no inventory, list_price = unit_price (no MRP
+            // concept), description sentence-cased. Price is required by the rule above.
+            foreach ($custom as $line) {
+                $qty = (int) $line['quantity'];
+                $unit = round((float) ($line['unit_price'] ?? 0), 2);
+                $subtotal += $unit * $qty;
+                $lines[] = [
+                    'inventory_id' => null,
+                    'description' => $this->normaliseDescription((string) ($line['description'] ?? '')),
+                    'quantity' => $qty,
+                    'unit_price' => $unit,
+                    'list_price' => $unit,
                 ];
             }
             $subtotal = round($subtotal, 2);
@@ -318,16 +341,24 @@ class OrderController extends Controller
 
         $order->load(['customer', 'items.inventory:id,sku,brand,model_name,stock_qty']);
 
-        // Items already on the order — seed the builder. `max_stock` includes the
-        // quantity this order already holds (conceptually returned first), so the
-        // current quantity is always valid even if the item is now low/out of stock.
+        // Items already on the order — seed the builder. Each line carries a stable
+        // `uid` so the Alpine x-for key never collides (multiple custom lines all
+        // have a null inventory_id — 6.4). For a catalog line `max_stock` includes
+        // the quantity this order already holds (conceptually returned first), so the
+        // current quantity is always valid even if the item is now low/out of stock;
+        // a custom line is untracked (max_stock null → no cap).
         $lineItems = $order->items->map(fn ($it) => [
+            'uid' => 's' . substr($it->id, 0, 12),
             'inventory_id' => $it->inventory_id,
-            'label' => trim(($it->inventory?->brand ?? '—') . ' · ' . ($it->inventory?->model_name ?? '')),
+            'description' => $it->description,
+            'custom' => $it->is_custom,
+            'label' => $it->is_custom
+                ? ($it->description ?: 'Custom item')
+                : trim(($it->inventory?->brand ?? '—') . ' · ' . ($it->inventory?->model_name ?? '')),
             'unit_price' => (float) $it->unit_price,
             'list_price' => (float) ($it->list_price ?? $it->unit_price),
             'quantity' => (int) $it->quantity,
-            'max_stock' => (int) ($it->inventory?->stock_qty ?? 0) + (int) $it->quantity,
+            'max_stock' => $it->is_custom ? null : (int) ($it->inventory?->stock_qty ?? 0) + (int) $it->quantity,
         ])->values();
 
         // Searchable inventory to add NEW lines (in-stock only, same as create).
@@ -362,8 +393,9 @@ class OrderController extends Controller
             'estimated_ready_at' => ['nullable', 'date'],
             'discount_type' => ['nullable', 'in:none,percent,amount'],
             'discount_value' => ['nullable', 'numeric', 'min:0'],
-            'items' => ['required', 'array', 'min:1'],
-            'items.*.inventory_id' => ['required', 'exists:inventory,id'],
+            'items' => ['required', 'array', 'min:1', $this->validItemsRule()],
+            'items.*.inventory_id' => ['nullable', 'exists:inventory,id'],
+            'items.*.description' => ['nullable', 'string', 'max:255'],
             'items.*.quantity' => ['required', 'integer', 'min:1', 'max:10000'],
             'items.*.unit_price' => ['nullable', 'numeric', 'min:0', 'max:99999999'],
         ]);
@@ -376,11 +408,18 @@ class OrderController extends Controller
         }
 
         DB::transaction(function () use ($order, $validated) {
-            // Requested quantity + any posted custom unit price per item (collapse
-            // duplicate lines; the builder emits one line per inventory_id).
+            // Partition posted lines. Catalog lines reconcile against inventory
+            // (keyed by inventory_id); local/custom lines (6.4) never touch stock and
+            // are simply replaced wholesale — so they can't be keyed by inventory_id
+            // (all null → they'd collide with each other). This partition is what
+            // makes two custom lines on one order survive an edit.
+            [$catalog, $custom] = $this->partitionItems($validated['items']);
+
+            // Requested quantity + any posted custom unit price per CATALOG item
+            // (collapse duplicate lines; the builder emits one line per inventory_id).
             $wanted = [];
             $postedPrice = [];
-            foreach ($validated['items'] as $line) {
+            foreach ($catalog as $line) {
                 $id = $line['inventory_id'];
                 $wanted[$id] = ($wanted[$id] ?? 0) + (int) $line['quantity'];
                 if (isset($line['unit_price'])) {
@@ -388,12 +427,17 @@ class OrderController extends Controller
                 }
             }
 
-            // Existing quantities + captured unit/list prices, keyed by inventory_id.
+            // Existing CATALOG quantities + captured unit/list prices, keyed by
+            // inventory_id. Existing custom lines carry no stock, so they're excluded
+            // from the diff (they're dropped + rebuilt from the posted custom lines).
             $order->loadMissing('items');
             $oldQty = [];
             $oldUnit = [];
             $oldList = [];
             foreach ($order->items as $it) {
+                if ($it->inventory_id === null) {
+                    continue; // local/custom line — no stock reconciliation
+                }
                 $oldQty[$it->inventory_id] = ($oldQty[$it->inventory_id] ?? 0) + (int) $it->quantity;
                 $oldUnit[$it->inventory_id] = (float) $it->unit_price;
                 $oldList[$it->inventory_id] = $it->list_price !== null ? (float) $it->list_price : (float) $it->unit_price;
@@ -433,9 +477,24 @@ class OrderController extends Controller
                 $subtotal += $unit * $qty;
                 $lines[] = [
                     'inventory_id' => $id,
+                    'description' => null,
                     'quantity' => $qty,
                     'unit_price' => $unit,
                     'list_price' => $list,
+                ];
+            }
+            // Local/custom lines (6.4): rebuilt fresh each edit (no stock diff), with
+            // list_price = unit_price and a sentence-cased description.
+            foreach ($custom as $line) {
+                $qty = (int) $line['quantity'];
+                $unit = round((float) ($line['unit_price'] ?? 0), 2);
+                $subtotal += $unit * $qty;
+                $lines[] = [
+                    'inventory_id' => null,
+                    'description' => $this->normaliseDescription((string) ($line['description'] ?? '')),
+                    'quantity' => $qty,
+                    'unit_price' => $unit,
+                    'list_price' => $unit,
                 ];
             }
             $subtotal = round($subtotal, 2);
@@ -504,6 +563,69 @@ class OrderController extends Controller
     private function isEditable(Order $order): bool
     {
         return in_array($order->status, ['pending', 'ready_for_pickup'], true);
+    }
+
+    /**
+     * FT-LocalItems (6.4) — split posted lines into [catalog, custom]. A catalog
+     * line has an `inventory_id` (stock-tracked); a custom/local line has none and
+     * carries a free-text `description` instead.
+     */
+    private function partitionItems(array $items): array
+    {
+        $catalog = [];
+        $custom = [];
+        foreach ($items as $line) {
+            if (! empty($line['inventory_id'])) {
+                $catalog[] = $line;
+            } else {
+                $custom[] = $line;
+            }
+        }
+
+        return [$catalog, $custom];
+    }
+
+    /**
+     * FT-LocalItems (6.4) — closure rule: every posted line must be EITHER a catalog
+     * item (`inventory_id`) OR a priced custom item (`description` + `unit_price`).
+     * A per-index closure is required because `required_without` can't pair sibling
+     * array-wildcard fields by index.
+     */
+    private function validItemsRule(): \Closure
+    {
+        return function (string $attribute, mixed $value, \Closure $fail): void {
+            foreach ((array) $value as $i => $line) {
+                $hasInventory = ! empty($line['inventory_id']);
+                $hasDescription = isset($line['description']) && trim((string) $line['description']) !== '';
+
+                if (! $hasInventory && ! $hasDescription) {
+                    $fail('Line ' . ($i + 1) . ' needs a catalog item or a custom description.');
+                } elseif (! $hasInventory && ! isset($line['unit_price'])) {
+                    $fail('The custom item on line ' . ($i + 1) . ' needs a price.');
+                }
+            }
+        };
+    }
+
+    /**
+     * FT-LocalItems (6.4-D2) — sentence-case a custom description: if the first
+     * character is lowercase, capitalize just it. The rest is left untouched so
+     * intentional casing ("UV400", "Ray-Ban style") is never mangled. A leading
+     * digit/symbol has no uppercase form, so it's left as-is.
+     */
+    private function normaliseDescription(string $description): string
+    {
+        $description = trim($description);
+        if ($description === '') {
+            return $description;
+        }
+
+        $first = mb_substr($description, 0, 1);
+        if (mb_strtoupper($first) !== $first) {
+            $description = mb_strtoupper($first) . mb_substr($description, 1);
+        }
+
+        return $description;
     }
 
     /**

@@ -29,9 +29,17 @@
         <input type="hidden" name="discount_value" :value="discountValue || 0">
         <input type="hidden" name="fulfillment_type" :value="fulfillmentType">
         <input type="hidden" name="estimated_ready_at" :value="fulfillmentType === 'special' ? estimatedReadyAt : ''">
-        <template x-for="(it, idx) in items" :key="it.inventory_id">
+        {{-- Keyed by uid, not inventory_id: a local/custom line has no inventory_id,
+             so two of them would collide on a null key (6.4). Each line posts EITHER
+             an inventory_id (catalog) OR a description (custom), never an empty one. --}}
+        <template x-for="(it, idx) in items" :key="it.uid">
             <span>
-                <input type="hidden" :name="`items[${idx}][inventory_id]`" :value="it.inventory_id">
+                <template x-if="it.inventory_id">
+                    <input type="hidden" :name="`items[${idx}][inventory_id]`" :value="it.inventory_id">
+                </template>
+                <template x-if="!it.inventory_id">
+                    <input type="hidden" :name="`items[${idx}][description]`" :value="it.description">
+                </template>
                 <input type="hidden" :name="`items[${idx}][quantity]`" :value="it.quantity">
                 <input type="hidden" :name="`items[${idx}][unit_price]`" :value="it.unit_price">
             </span>
@@ -208,8 +216,50 @@
                             </div>
                         </div>
 
+                        {{-- Add a local/custom item (6.4): something the store carries but
+                             never catalogued. Mirrors the inline customer quick-add. --}}
+                        <div class="mb-3">
+                            <button type="button" class="btn btn-light btn-sm d-inline-flex align-items-center gap-1"
+                                    @click="toggleCustom()" :aria-expanded="customMode.toString()">
+                                <i class="bi" :class="customMode ? 'bi-dash-lg' : 'bi-plus-lg'"></i>
+                                <span x-text="customMode ? 'Close custom item' : 'Add custom item'"></span>
+                            </button>
+                            <div class="reveal mt-2" :class="customMode ? 'reveal-open' : ''">
+                                <div class="reveal-inner">
+                                    <div class="rounded-3 p-3" style="background: var(--surface-sunken);">
+                                        <div class="row g-2 align-items-end">
+                                            <div class="col-12 col-sm">
+                                                <label class="form-label small fw-medium mb-1">Item name</label>
+                                                <input type="text" class="form-control form-control-sm" x-model="customName"
+                                                       placeholder="e.g. Lens cleaning kit" @keydown.enter.prevent="addCustomItem()">
+                                            </div>
+                                            <div class="col-6 col-sm-auto" style="max-width:8rem;">
+                                                <label class="form-label small fw-medium mb-1">Price (₹)</label>
+                                                <input type="number" min="0" step="0.01" class="form-control form-control-sm text-end font-monospace"
+                                                       x-model="customPrice" placeholder="0" @keydown.enter.prevent="addCustomItem()">
+                                            </div>
+                                            <div class="col-6 col-sm-auto" style="max-width:6rem;">
+                                                <label class="form-label small fw-medium mb-1">Qty</label>
+                                                <input type="number" min="1" step="1" class="form-control form-control-sm text-center"
+                                                       x-model="customQty" @keydown.enter.prevent="addCustomItem()">
+                                            </div>
+                                            <div class="col-12 col-sm-auto">
+                                                <button type="button" class="btn btn-primary btn-sm w-100" @click="addCustomItem()"
+                                                        :disabled="!canAddCustom()">
+                                                    <i class="bi bi-plus-lg me-1"></i> Add
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <p class="text-muted-foreground mb-0 mt-2" style="font-size:.72rem;">
+                                            Not tracked in inventory — no stock is drawn down. Counts toward the order total.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                         <div x-cloak x-show="items.length === 0" class="text-center text-muted-foreground py-4 border border-2 border-dashed rounded-3">
-                            No items yet — search or scan to add.
+                            No items yet — search, scan, or add a custom item.
                         </div>
 
                         <div class="table-responsive" x-cloak x-show="items.length">
@@ -228,7 +278,14 @@
                                         <tr class="animate-fade-up">
                                             <td>
                                                 <span class="fw-medium d-block" x-text="it.label"></span>
-                                                <span class="text-faint" style="font-size:.7rem;" x-text="'List ' + money(it.list_price)"></span>
+                                                <template x-if="it.custom">
+                                                    <span class="osms-badge osms-badge-blue" style="font-size:.6rem;">
+                                                        <span class="osms-badge-dot"></span> Local item
+                                                    </span>
+                                                </template>
+                                                <template x-if="!it.custom">
+                                                    <span class="text-faint" style="font-size:.7rem;" x-text="'List ' + money(it.list_price)"></span>
+                                                </template>
                                             </td>
                                             <td>
                                                 <div class="input-group input-group-sm mx-auto" style="width:6.75rem;">
@@ -389,6 +446,7 @@
             newMode: false, newName: '', newPhone: '', newCode: '+91',
             eyeRecords: [], eyeRecordId: '',
             items: [], itemSearch: '', scanFlash: null,
+            customMode: false, customName: '', customPrice: '', customQty: 1,
             advancePaid: '0', paymentMethod: 'cash',
             unit: '₹', discountValue: '',
             fulfillmentType: 'instant', estimatedReadyAt: @json(now()->addDays(3)->toDateString()),
@@ -399,6 +457,7 @@
                 window.addEventListener('osms-barcode', (e) => this.onScan(e.detail));
             },
             money(n) { return '₹ ' + Number(n || 0).toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2}); },
+            uid() { return 'u' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); },
             filteredCustomers() {
                 const q = this.customerSearch.trim().toLowerCase();
                 if (!q) return [];
@@ -431,19 +490,45 @@
                 if (ex) { ex.quantity = Math.min(ex.max_stock, ex.quantity + qty); return; }
                 const price = Number(inv.selling_price);
                 this.items.push({
-                    inventory_id: inv.id,
+                    uid: this.uid(), custom: false,
+                    inventory_id: inv.id, description: null,
                     label: (inv.brand||'—') + (inv.model_name ? ' · '+inv.model_name : ''),
                     unit_price: price, list_price: price,
                     quantity: Math.min(inv.stock_qty, qty), max_stock: inv.stock_qty,
                 });
             },
-            changeQty(it, delta) { it.quantity = Math.min(Math.max(1, it.quantity + delta), it.max_stock); },
+            canAddCustom() {
+                const p = Number(this.customPrice);
+                return this.customName.trim() !== '' && !isNaN(p) && p >= 0;
+            },
+            toggleCustom() { this.customMode = !this.customMode; },
+            addCustomItem() {
+                if (!this.canAddCustom()) return;
+                const price = Math.round(Number(this.customPrice) * 100) / 100;
+                const qty = Math.max(1, parseInt(this.customQty) || 1);
+                this.items.push({
+                    uid: this.uid(), custom: true,
+                    inventory_id: null, description: this.customName.trim(),
+                    label: this.customName.trim(),
+                    unit_price: price, list_price: price,
+                    quantity: qty, max_stock: null, // untracked — no stock cap
+                });
+                this.customName = ''; this.customPrice = ''; this.customQty = 1; this.customMode = false;
+            },
+            // A catalog line is capped at stock; a custom line (max_stock null) is uncapped.
+            changeQty(it, delta) {
+                const cap = it.max_stock == null ? Infinity : it.max_stock;
+                it.quantity = Math.min(Math.max(1, it.quantity + delta), cap);
+            },
             normalisePrice(it) {
                 let v = Number(it.unit_price);
                 if (isNaN(v) || v < 0 || it.unit_price === '' || it.unit_price === null) v = it.list_price;
                 it.unit_price = Math.round(v * 100) / 100;
+                // A custom line has no MRP: keep list_price in step so it never shows a
+                // phantom "discount given" / "reset to list".
+                if (it.custom) it.list_price = it.unit_price;
             },
-            removeItem(it) { this.items = this.items.filter(i => i.inventory_id !== it.inventory_id); },
+            removeItem(it) { this.items = this.items.filter(i => i.uid !== it.uid); },
             onScan(code) {
                 const m = this.inventory.find(i => i.barcode === code || i.sku === code);
                 if (m) { this.addItem(m,1); this.flash(`Added ${m.brand||'item'} ${m.model_name||''}`.trim()); }
