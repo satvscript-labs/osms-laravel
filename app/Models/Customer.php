@@ -22,12 +22,27 @@ class Customer extends Model
         'name',
         'phone',
         'age',
+        'birthday',
         'gender',
     ];
 
     protected $casts = [
         'age' => 'integer',
+        'birthday' => 'date',
     ];
+
+    /**
+     * Age is derived from the birthday when one is on file (always current);
+     * otherwise it falls back to the manually-entered `age` column (5.5).
+     */
+    public function getAgeAttribute($value): ?int
+    {
+        if (! empty($this->attributes['birthday'])) {
+            return (int) $this->birthday->age;
+        }
+
+        return $value !== null ? (int) $value : null;
+    }
 
     public function eyeRecords(): HasMany
     {

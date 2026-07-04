@@ -52,13 +52,21 @@
                         @error('phone')<div class="invalid-feedback">{{ $message }}</div>@enderror
                     </div>
                 </div>
-                <div class="col-sm-6">
+                <div class="col-sm-4">
+                    <label for="birthday" class="form-label small fw-medium mb-1">Birthday</label>
+                    @php $bday = old('birthday', optional($customer->birthday ?? null)->format('Y-m-d')); @endphp
+                    <input id="birthday" name="birthday" type="date" max="{{ now()->toDateString() }}" value="{{ $bday }}"
+                           class="form-control @error('birthday') is-invalid @enderror">
+                    <div class="text-muted-foreground" style="font-size:.7rem;margin-top:.25rem;">We'll calculate the age</div>
+                    @error('birthday')<div class="invalid-feedback">{{ $message }}</div>@enderror
+                </div>
+                <div class="col-sm-4">
                     <label for="age" class="form-label small fw-medium mb-1">Age</label>
                     <input id="age" name="age" type="number" min="0" max="150" value="{{ old('age', $customer->age ?? '') }}"
-                           class="form-control @error('age') is-invalid @enderror" placeholder="32">
+                           class="form-control @error('age') is-invalid @enderror" placeholder="or enter directly">
                     @error('age')<div class="invalid-feedback">{{ $message }}</div>@enderror
                 </div>
-                <div class="col-sm-6">
+                <div class="col-sm-4">
                     <label for="gender" class="form-label small fw-medium mb-1">Gender</label>
                     @php $g = old('gender', $customer->gender ?? ''); @endphp
                     <select id="gender" name="gender" class="form-select">
@@ -78,3 +86,25 @@
         </form>
     </div>
 </div>
+
+@push('scripts')
+<script>
+    // 5.5 — derive age from the birthday. When a birthday is set, the age is
+    // computed and the field locked; clearing the birthday makes age editable again.
+    (function () {
+        const bday = document.getElementById('birthday');
+        const age = document.getElementById('age');
+        if (! bday || ! age) return;
+        const sync = () => {
+            if (! bday.value) { age.readOnly = false; return; }
+            const b = new Date(bday.value), now = new Date();
+            let a = now.getFullYear() - b.getFullYear();
+            const m = now.getMonth() - b.getMonth();
+            if (m < 0 || (m === 0 && now.getDate() < b.getDate())) a--;
+            if (a >= 0 && a <= 150) { age.value = a; age.readOnly = true; }
+        };
+        bday.addEventListener('change', sync);
+        sync();
+    })();
+</script>
+@endpush

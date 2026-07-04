@@ -27,6 +27,7 @@ class StoreCustomerRequest extends FormRequest
                     ->ignore($customerId),
             ],
             'age' => ['nullable', 'integer', 'min:0', 'max:150'],
+            'birthday' => ['nullable', 'date', 'before:today', 'after:1900-01-01'],
             'gender' => ['nullable', Rule::in(['male', 'female', 'other'])],
         ];
     }
