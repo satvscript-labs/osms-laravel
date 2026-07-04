@@ -16,9 +16,10 @@ class DashboardController extends Controller
         $today = now()->startOfDay();
         $threeDaysAgo = now()->subDays(3);
 
-        // Today's delivered sales
+        // Today's sales — delivered orders placed today (by created_at, not
+        // updated_at, which drifts on any later save; see AnalyticsController).
         $todaySales = (float) Order::where('status', 'delivered')
-            ->where('updated_at', '>=', $today)
+            ->where('created_at', '>=', $today)
             ->sum('total_amount');
 
         $pendingCount = Order::where('status', 'pending')->count();

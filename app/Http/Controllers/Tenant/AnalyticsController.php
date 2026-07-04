@@ -41,9 +41,13 @@ class AnalyticsController extends Controller
         [$from, $to] = $this->range($request);
 
         // Delivered orders in range → revenue, COGS, profit, top brands.
+        // Bucketed by created_at (order/placement date) — NOT updated_at, which
+        // drifts every time the order is saved (a later payment, edit, or status
+        // change would otherwise move the sale into the wrong day). This keeps
+        // revenue on the same date as the orders list "Placed" column and the ledger.
         $delivered = Order::with('items.inventory:id,cost_price,brand')
             ->where('status', 'delivered')
-            ->whereBetween('updated_at', [$from, $to])
+            ->whereBetween('created_at', [$from, $to])
             ->get();
 
         // Revenue is net of discount (total_amount already = subtotal − discount).
