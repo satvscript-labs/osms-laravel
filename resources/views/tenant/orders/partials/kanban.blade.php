@@ -33,7 +33,14 @@
                         $waDigits = $phone ? preg_replace('/\D/', '', $phone) : null;
                         $telNumber = $phone ? preg_replace('/[^\d+]/', '', $phone) : null;
                     @endphp
-                    <div class="kanban-card card border-0 shadow-sm rounded-3 mb-2" data-id="{{ $order->id }}">
+                    <div class="kanban-card card border-0 shadow-sm rounded-3 mb-2" data-id="{{ $order->id }}"
+                         data-customer="{{ $order->customer?->name ?? 'Customer' }}"
+                         data-subtotal="{{ $order->subtotal }}"
+                         data-total="{{ $order->total_amount }}"
+                         data-advance="{{ $order->advance_paid }}"
+                         data-balance="{{ $order->balance_due }}"
+                         data-discount-type="{{ $order->discount_type }}"
+                         data-discount-value="{{ $order->discount_value }}">
                         <div class="card-body p-3">
                             <a href="{{ route('tenant.orders.show', $order) }}" class="text-decoration-none text-reset d-block">
                                 <p class="mb-0 fw-medium text-truncate">{{ $order->customer?->name ?? 'Unknown customer' }}</p>
@@ -72,7 +79,17 @@
                                 @if ($col['key'] !== 'delivered')
                                     @php $next = $col['key'] === 'pending' ? 'ready_for_pickup' : 'delivered'; @endphp
                                     <button type="button" class="btn btn-primary btn-sm flex-grow-1 advance-btn"
-                                            data-id="{{ $order->id }}" data-next="{{ $next }}">
+                                            data-id="{{ $order->id }}" data-next="{{ $next }}"
+                                            @if ($next === 'delivered')
+                                                data-settle="1"
+                                                data-customer="{{ $order->customer?->name ?? 'Customer' }}"
+                                                data-subtotal="{{ $order->subtotal }}"
+                                                data-total="{{ $order->total_amount }}"
+                                                data-advance="{{ $order->advance_paid }}"
+                                                data-balance="{{ $order->balance_due }}"
+                                                data-discount-type="{{ $order->discount_type }}"
+                                                data-discount-value="{{ $order->discount_value }}"
+                                            @endif>
                                         <span class="spinner-border spinner-border-sm d-none me-1" role="status"></span>
                                         {{ $col['key'] === 'pending' ? 'Mark ready' : 'Mark delivered' }}
                                         <i class="bi bi-arrow-right ms-1"></i>

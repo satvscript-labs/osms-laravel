@@ -245,7 +245,8 @@
                     <table class="table align-middle mb-0 osms-orders-table">
                         <thead class="text-muted-foreground text-xs">
                             <tr><th class="ps-4">Customer</th><th>Phone</th><th>Date</th>
-                                <th class="text-end">Total</th><th class="text-end">Advance</th><th class="text-end pe-4">Balance due</th></tr>
+                                <th class="text-end">Total</th><th class="text-end">Advance</th>
+                                <th class="text-end">Balance due</th><th class="text-end pe-4">Settle</th></tr>
                         </thead>
                         <tbody>
                             @forelse ($dues as $o)
@@ -255,10 +256,22 @@
                                     <td class="text-sm">{{ $o->created_at->format('d M Y') }}</td>
                                     <td class="text-end font-monospace">₹ {{ number_format($o->total_amount, 2) }}</td>
                                     <td class="text-end font-monospace">₹ {{ number_format($o->advance_paid, 2) }}</td>
-                                    <td class="text-end pe-4 font-monospace text-danger fw-medium">₹ {{ number_format($o->balance_due, 2) }}</td>
+                                    <td class="text-end font-monospace text-danger fw-medium">₹ {{ number_format($o->balance_due, 2) }}</td>
+                                    <td class="text-end pe-4" onclick="event.stopPropagation()">
+                                        {{-- 6.3 — settle this due via the shared modal (record-only, no status change) --}}
+                                        <button type="button" class="btn btn-sm btn-primary dues-settle-btn"
+                                                data-id="{{ $o->id }}"
+                                                data-customer="{{ $o->customer?->name ?? 'Customer' }}"
+                                                data-subtotal="{{ $o->subtotal }}"
+                                                data-advance="{{ $o->advance_paid }}"
+                                                data-discount-type="{{ $o->discount_type }}"
+                                                data-discount-value="{{ $o->discount_value }}">
+                                            <i class="bi bi-cash-coin me-1"></i> Settle
+                                        </button>
+                                    </td>
                                 </tr>
                             @empty
-                                <tr><td colspan="6" class="text-center text-muted-foreground py-4">No outstanding balances. 🎉</td></tr>
+                                <tr><td colspan="7" class="text-center text-muted-foreground py-4">No outstanding balances. 🎉</td></tr>
                             @endforelse
                         </tbody>
                     </table>
@@ -267,6 +280,9 @@
         </div>
     </div>
 </div>
+
+{{-- 6.3 — reuse the shared settle modal for pending-dues settlement --}}
+@include('tenant.orders.partials._settle-modal')
 @endsection
 
 @push('scripts')
@@ -286,6 +302,25 @@
                 document.querySelectorAll('.date-chip').forEach((c) => c.classList.remove('active'));
                 chip.classList.add('active');
                 form.submit();
+            });
+        });
+    })();
+
+    // 6.3 — open the shared settle modal in record-only mode (no status change).
+    (function () {
+        document.querySelectorAll('.dues-settle-btn').forEach((btn) => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (!window.SettleModal) return;
+                window.SettleModal.open({
+                    id: btn.dataset.id,
+                    customer: btn.dataset.customer,
+                    subtotal: btn.dataset.subtotal,
+                    advance: btn.dataset.advance,
+                    discountType: btn.dataset.discountType,
+                    discountValue: btn.dataset.discountValue,
+                }, { deliver: false });
             });
         });
     })();

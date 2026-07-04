@@ -16,6 +16,9 @@ window.Sortable = Sortable;
 import JsBarcode from 'jsbarcode';
 window.JsBarcode = JsBarcode;
 
+// Shared "Settle" modal controller (6.1 settle-on-deliver + 6.3 dues settlement)
+import './settle-modal';
+
 // Auto-enable tooltips
 document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach((el) => {

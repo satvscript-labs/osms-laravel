@@ -96,7 +96,17 @@
                                 <div class="d-flex align-items-center justify-content-end gap-1">
                                     @if ($next)
                                         <button type="button" class="btn btn-sm btn-primary advance-btn"
-                                                data-id="{{ $order->id }}" data-next="{{ $next }}">
+                                                data-id="{{ $order->id }}" data-next="{{ $next }}"
+                                                @if ($next === 'delivered')
+                                                    data-settle="1"
+                                                    data-customer="{{ $order->customer?->name ?? 'Customer' }}"
+                                                    data-subtotal="{{ $order->subtotal }}"
+                                                    data-total="{{ $order->total_amount }}"
+                                                    data-advance="{{ $order->advance_paid }}"
+                                                    data-balance="{{ $order->balance_due }}"
+                                                    data-discount-type="{{ $order->discount_type }}"
+                                                    data-discount-value="{{ $order->discount_value }}"
+                                                @endif>
                                             <span class="spinner-border spinner-border-sm d-none me-1" role="status"></span>
                                             {{ $nextLabel }}<i class="bi bi-arrow-right ms-1"></i>
                                         </button>
