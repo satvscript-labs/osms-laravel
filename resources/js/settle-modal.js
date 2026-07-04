@@ -9,14 +9,19 @@
 //   data = { id, customer, subtotal, advance, discountType, discountValue }
 //   opts = { deliver: bool (default true), onCancel: fn }
 
+// Import Bootstrap directly rather than reading window.bootstrap: this module is
+// imported from app.js *before* app.js assigns window.bootstrap (ES imports run
+// before the importing module's body), so the global isn't set yet at eval time.
+import { Modal } from 'bootstrap';
+
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 const fmt = (n) => '₹ ' + Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 function build() {
     const el = document.getElementById('settleModal');
-    if (!el || !window.bootstrap) return null;
+    if (!el) return null;
 
-    const modal = new window.bootstrap.Modal(el);
+    const modal = new Modal(el);
     const $ = (sel) => el.querySelector(sel);
     const CSRF = document.querySelector('meta[name="csrf-token"]')?.content;
     const SETTLE_URL = (id) => `/tenant/orders/${id}/settle`;
@@ -87,7 +92,7 @@ function build() {
             id: data.id,
             subtotal: Number(data.subtotal) || 0,
             advance: Number(data.advance) || 0,
-            dType: existingType || 'percent',
+            dType: existingType || 'amount',
             method: 'cash',
             amountDirty: false,
             discountEngaged: false,

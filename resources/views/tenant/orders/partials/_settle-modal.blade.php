@@ -65,8 +65,8 @@
                         <div class="reveal-inner">
                             <div class="d-flex gap-2 pt-1">
                                 <div class="segmented" role="group" id="settleDiscountType">
-                                    <button type="button" class="segmented-item active" data-dtype="percent">%</button>
-                                    <button type="button" class="segmented-item" data-dtype="amount">₹</button>
+                                    <button type="button" class="segmented-item active" data-dtype="amount">₹</button>
+                                    <button type="button" class="segmented-item" data-dtype="percent">%</button>
                                 </div>
                                 <input id="settle_discount_value" type="number" step="0.01" min="0" class="form-control form-control-sm"
                                        placeholder="0" inputmode="decimal">
