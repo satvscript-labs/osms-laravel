@@ -1,12 +1,26 @@
 @extends('layouts.app')
 @section('title', 'Analytics')
 
-@php $money = fn ($n) => '₹ ' . number_format($n, 0); @endphp
+@php
+    $money = fn ($n) => '₹ ' . number_format($n, 0);
+
+    // 6.2 — quick date-range presets. Computed server-side so the chip matching
+    // the active range highlights on load; each chip fills the existing From/To
+    // form and submits (no controller change — same GET the manual pickers use).
+    $today = now();
+    $presets = [
+        ['key' => 'today',     'label' => 'Today',       'from' => $today->copy(),                     'to' => $today->copy()],
+        ['key' => 'yesterday', 'label' => 'Yesterday',   'from' => $today->copy()->subDay(),           'to' => $today->copy()->subDay()],
+        ['key' => 'last7',     'label' => 'Last 7 days',  'from' => $today->copy()->subDays(6),         'to' => $today->copy()],
+        ['key' => 'last30',    'label' => 'Last 30 days', 'from' => $today->copy()->subDays(30),        'to' => $today->copy()],
+        ['key' => 'month',     'label' => 'This month',   'from' => $today->copy()->startOfMonth(),     'to' => $today->copy()],
+    ];
+@endphp
 
 @section('content')
 <div class="p-4 p-md-5">
     {{-- Header + date range --}}
-    <div class="d-flex flex-column flex-md-row gap-3 align-items-md-end justify-content-between mb-4">
+    <div class="d-flex flex-column flex-md-row gap-3 align-items-md-end justify-content-between mb-3">
         <div>
             <p class="section-label mb-1">Store admin</p>
             <h1 class="h3 fw-semibold font-display mb-1">Analytics</h1>
@@ -14,7 +28,7 @@
                 Revenue, COGS, gross profit, and outstanding balances.
             </p>
         </div>
-        <form action="{{ route('tenant.analytics.index') }}" method="GET" class="d-flex flex-wrap align-items-end gap-2">
+        <form id="rangeForm" action="{{ route('tenant.analytics.index') }}" method="GET" class="d-flex flex-wrap align-items-end gap-2">
             <div>
                 <label for="from" class="form-label section-label mb-1">From</label>
                 <input id="from" name="from" type="date" value="{{ $fromStr }}" class="form-control form-control-sm">
@@ -25,6 +39,23 @@
             </div>
             <button type="submit" class="btn btn-primary btn-sm">Apply</button>
         </form>
+    </div>
+
+    {{-- 6.2 — quick range chips --}}
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-4 stagger">
+        <span class="section-label mb-0 me-1">Quick range</span>
+        @foreach ($presets as $preset)
+            @php
+                $isActive = $fromStr === $preset['from']->format('Y-m-d') && $toStr === $preset['to']->format('Y-m-d');
+            @endphp
+            <button type="button"
+                    class="date-chip {{ $isActive ? 'active' : '' }}"
+                    data-from="{{ $preset['from']->format('Y-m-d') }}"
+                    data-to="{{ $preset['to']->format('Y-m-d') }}"
+                    @if ($isActive) aria-current="true" @endif>
+                {{ $preset['label'] }}
+            </button>
+        @endforeach
     </div>
 
     {{-- Tabs (iOS segmented control) --}}
@@ -214,7 +245,8 @@
                     <table class="table align-middle mb-0 osms-orders-table">
                         <thead class="text-muted-foreground text-xs">
                             <tr><th class="ps-4">Customer</th><th>Phone</th><th>Date</th>
-                                <th class="text-end">Total</th><th class="text-end">Advance</th><th class="text-end pe-4">Balance due</th></tr>
+                                <th class="text-end">Total</th><th class="text-end">Advance</th>
+                                <th class="text-end">Balance due</th><th class="text-end pe-4">Settle</th></tr>
                         </thead>
                         <tbody>
                             @forelse ($dues as $o)
@@ -224,10 +256,22 @@
                                     <td class="text-sm">{{ $o->created_at->format('d M Y') }}</td>
                                     <td class="text-end font-monospace">₹ {{ number_format($o->total_amount, 2) }}</td>
                                     <td class="text-end font-monospace">₹ {{ number_format($o->advance_paid, 2) }}</td>
-                                    <td class="text-end pe-4 font-monospace text-danger fw-medium">₹ {{ number_format($o->balance_due, 2) }}</td>
+                                    <td class="text-end font-monospace text-danger fw-medium">₹ {{ number_format($o->balance_due, 2) }}</td>
+                                    <td class="text-end pe-4" onclick="event.stopPropagation()">
+                                        {{-- 6.3 — settle this due via the shared modal (record-only, no status change) --}}
+                                        <button type="button" class="btn btn-sm btn-primary dues-settle-btn"
+                                                data-id="{{ $o->id }}"
+                                                data-customer="{{ $o->customer?->name ?? 'Customer' }}"
+                                                data-subtotal="{{ $o->subtotal }}"
+                                                data-advance="{{ $o->advance_paid }}"
+                                                data-discount-type="{{ $o->discount_type }}"
+                                                data-discount-value="{{ $o->discount_value }}">
+                                            <i class="bi bi-cash-coin me-1"></i> Settle
+                                        </button>
+                                    </td>
                                 </tr>
                             @empty
-                                <tr><td colspan="6" class="text-center text-muted-foreground py-4">No outstanding balances. 🎉</td></tr>
+                                <tr><td colspan="7" class="text-center text-muted-foreground py-4">No outstanding balances. 🎉</td></tr>
                             @endforelse
                         </tbody>
                     </table>
@@ -236,4 +280,49 @@
         </div>
     </div>
 </div>
+
+{{-- 6.3 — reuse the shared settle modal for pending-dues settlement --}}
+@include('tenant.orders.partials._settle-modal')
 @endsection
+
+@push('scripts')
+<script>
+    // 6.2 — quick range chips fill the From/To pickers and submit the existing
+    // GET form. The server re-renders with the matching chip highlighted; the
+    // page-enter fade keeps the transition liquid rather than a hard reload snap.
+    (function () {
+        const form = document.getElementById('rangeForm');
+        if (!form) return;
+        document.querySelectorAll('.date-chip').forEach((chip) => {
+            chip.addEventListener('click', () => {
+                if (chip.classList.contains('active')) return; // already this range
+                form.querySelector('#from').value = chip.dataset.from;
+                form.querySelector('#to').value = chip.dataset.to;
+                // Optimistic active-state flip so the press feels instant before nav.
+                document.querySelectorAll('.date-chip').forEach((c) => c.classList.remove('active'));
+                chip.classList.add('active');
+                form.submit();
+            });
+        });
+    })();
+
+    // 6.3 — open the shared settle modal in record-only mode (no status change).
+    (function () {
+        document.querySelectorAll('.dues-settle-btn').forEach((btn) => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if (!window.SettleModal) return;
+                window.SettleModal.open({
+                    id: btn.dataset.id,
+                    customer: btn.dataset.customer,
+                    subtotal: btn.dataset.subtotal,
+                    advance: btn.dataset.advance,
+                    discountType: btn.dataset.discountType,
+                    discountValue: btn.dataset.discountValue,
+                }, { deliver: false });
+            });
+        });
+    })();
+</script>
+@endpush

@@ -408,6 +408,38 @@ body {
   }
 }
 
+// Quick date-range chips (analytics). Pill filters that echo the segmented
+// language: muted resting, primary-soft tint + lift on hover, brand-filled when
+// the active server range matches the preset. Spring-eased like everything else.
+.date-chip {
+  border: 1px solid var(--osms-border);
+  background: var(--surface-card);
+  color: var(--osms-muted);
+  border-radius: var(--radius-pill);
+  padding: 0.3rem 0.8rem;
+  font-size: var(--text-xs);
+  font-weight: 500;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  cursor: pointer;
+  transition: all var(--duration-base) var(--ease-spring);
+  &:hover:not(.active) {
+    color: var(--osms-primary);
+    background: var(--osms-primary-soft);
+    border-color: transparent;
+    transform: translateY(-1px);
+  }
+  &.active {
+    background: var(--osms-primary);
+    border-color: var(--osms-primary);
+    color: #fff;
+    font-weight: 600;
+    box-shadow: var(--shadow-sm);
+  }
+}
+
 // ============================================================
 // 12. FORMS
 // ============================================================

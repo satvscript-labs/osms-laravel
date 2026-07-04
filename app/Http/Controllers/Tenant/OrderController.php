@@ -545,6 +545,107 @@ class OrderController extends Controller
     }
 
     /**
+     * 6.1 / 6.3 — settle an order: optionally apply a last-moment discount, record
+     * a payment, and (when marking delivered from the orders board) advance the
+     * status. One atomic transaction reusing the same discount + payment-capping
+     * math as store()/recordPayment(), so nothing is recomputed a second way.
+     *
+     * Called two ways:
+     *  • from the orders board's "Settle & deliver" modal (JSON, mark_delivered=1)
+     *  • from the analytics Pending-Dues "Settle" button (form POST, no status change)
+     */
+    public function settle(Request $request, Order $order): RedirectResponse|JsonResponse
+    {
+        $validated = $request->validate([
+            'amount' => ['nullable', 'numeric', 'min:0', 'max:99999999'],
+            'method' => ['required_with:amount', 'in:cash,card,upi,other'],
+            'note' => ['nullable', 'string', 'max:255'],
+            'discount_type' => ['nullable', 'in:none,percent,amount'],
+            'discount_value' => ['nullable', 'numeric', 'min:0'],
+            'mark_delivered' => ['nullable', 'boolean'],
+        ]);
+
+        if ($order->isCancelled()) {
+            return $this->settleError($request, 'You cannot settle a cancelled order.');
+        }
+
+        try {
+            DB::transaction(function () use ($validated, $order) {
+                // 1) Last-moment discount (optional): re-resolve against the order's
+                // existing subtotal, then recompute the total. It can never drop the
+                // total below what has already been paid (no refund flow — same guard
+                // as update()).
+                if (! empty($validated['discount_type'])) {
+                    [$dType, $dValue, $dAmount] = $this->resolveDiscount(
+                        $validated['discount_type'],
+                        (float) ($validated['discount_value'] ?? 0),
+                        (float) $order->subtotal,
+                    );
+                    $newTotal = round((float) $order->subtotal - $dAmount, 2);
+
+                    if ($newTotal < (float) $order->advance_paid) {
+                        throw ValidationException::withMessages([
+                            'discount_value' => '₹ ' . number_format($order->advance_paid, 2)
+                                . ' has already been paid; a discount cannot drop the total below that.',
+                        ]);
+                    }
+
+                    $order->update([
+                        'discount_type' => $dType,
+                        'discount_value' => $dValue,
+                        'discount_amount' => $dAmount,
+                        'total_amount' => $newTotal,
+                    ]);
+                }
+
+                // 2) Payment (optional): capped at the balance remaining *after* any
+                // discount above, so we never over-collect.
+                $amount = min((float) ($validated['amount'] ?? 0), (float) $order->balance_due);
+                if ($amount > 0) {
+                    Payment::create([
+                        'order_id' => $order->id,
+                        'amount' => $amount,
+                        'method' => $validated['method'] ?? 'cash',
+                        'note' => $validated['note'] ?? 'Settled on delivery',
+                        'recorded_by' => auth()->id(),
+                    ]);
+
+                    $order->update([
+                        'advance_paid' => (float) $order->advance_paid + $amount,
+                    ]);
+                }
+
+                // 3) Advance to delivered when the board asked for it (6.1). The dues
+                // settlement (6.3) never sets this, so status is untouched there.
+                if (! empty($validated['mark_delivered']) && $order->status !== 'delivered') {
+                    $order->update(['status' => 'delivered']);
+                }
+            });
+        } catch (ValidationException $e) {
+            if ($request->expectsJson()) {
+                return response()->json(['ok' => false, 'errors' => $e->errors()], 422);
+            }
+            throw $e;
+        }
+
+        if ($request->expectsJson()) {
+            return response()->json(['ok' => true, 'status' => $order->fresh()->status]);
+        }
+
+        return back()->with('status', 'Order settled.');
+    }
+
+    /** Shared error response for settle() — JSON for the board, redirect for a form. */
+    private function settleError(Request $request, string $message): RedirectResponse|JsonResponse
+    {
+        if ($request->expectsJson()) {
+            return response()->json(['ok' => false, 'message' => $message], 422);
+        }
+
+        return back()->with('error', $message);
+    }
+
+    /**
      * NB-009 — cancel an order and return its stock. A delivered or
      * already-cancelled order can't be cancelled (idempotent + safe).
      */

@@ -62,6 +62,7 @@ Route::get('orders/{order}', [OrderController::class, 'show'])->name('orders.sho
 Route::get('orders/{order}/edit', [OrderController::class, 'edit'])->name('orders.edit'); // FG-OrderEdit
 Route::put('orders/{order}', [OrderController::class, 'update'])->name('orders.update');   // FG-OrderEdit
 Route::patch('orders/{order}/status', [OrderController::class, 'updateStatus'])->name('orders.status');
+Route::post('orders/{order}/settle', [OrderController::class, 'settle'])->name('orders.settle'); // 6.1 / 6.3
 Route::post('orders/{order}/cancel', [OrderController::class, 'cancel'])->name('orders.cancel');
 Route::post('orders/{order}/payments', [OrderController::class, 'recordPayment'])->name('orders.payments.store');
 Route::get('orders/{order}/pdf', [OrderController::class, 'pdf'])->name('orders.pdf');

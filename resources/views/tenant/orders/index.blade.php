@@ -89,6 +89,10 @@
     @endif
 </div>
 
+{{-- 6.1 — shared "Settle & deliver" modal (controller: resources/js/settle-modal.js).
+     Opened from the table button, the kanban button, and kanban drag-to-Delivered. --}}
+@include('tenant.orders.partials._settle-modal')
+
 @push('scripts')
 <script>
     const CSRF = document.querySelector('meta[name="csrf-token"]').content;
@@ -103,6 +107,9 @@
     }
     window.updateStatus = updateStatus;
 
+    // The settle modal controller (window.SettleModal) is bundled — see
+    // resources/js/settle-modal.js. This page only decides *when* to open it.
+
     // Bind inline quick-advance. Called on load and again after the live table
     // swaps its rows in (new buttons need binding). Idempotent per-button.
     function bindAdvanceButtons(root) {
@@ -112,6 +119,21 @@
             btn.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
+
+                // Delivering an order → settle first (6.1). Other transitions
+                // (pending → ready) stay a one-click flip.
+                if (btn.dataset.settle && window.SettleModal) {
+                    window.SettleModal.open({
+                        id: btn.dataset.id,
+                        customer: btn.dataset.customer,
+                        subtotal: btn.dataset.subtotal,
+                        advance: btn.dataset.advance,
+                        discountType: btn.dataset.discountType,
+                        discountValue: btn.dataset.discountValue,
+                    });
+                    return;
+                }
+
                 btn.disabled = true;
                 btn.querySelector('.spinner-border')?.classList.remove('d-none');
                 // Reload after a status change so the KPI stats + row placement stay
@@ -147,9 +169,28 @@
                 onEnd(evt) {
                     const newStatus = evt.to.dataset.status;
                     const id = evt.item.dataset.id;
-                    if (newStatus !== evt.from.dataset.status) {
-                        updateStatus(id, newStatus).then(() => window.location.reload());
+                    if (newStatus === evt.from.dataset.status) return;
+
+                    // Dropping into Delivered opens the settle modal; cancelling
+                    // snaps the card back to where it came from (6.1 drag UX).
+                    if (newStatus === 'delivered' && window.SettleModal) {
+                        const card = evt.item;
+                        const revert = () => {
+                            const ref = evt.from.children[evt.oldIndex] || null;
+                            evt.from.insertBefore(card, ref);
+                        };
+                        window.SettleModal.open({
+                            id,
+                            customer: card.dataset.customer,
+                            subtotal: card.dataset.subtotal,
+                            advance: card.dataset.advance,
+                            discountType: card.dataset.discountType,
+                            discountValue: card.dataset.discountValue,
+                        }, { onCancel: revert });
+                        return;
                     }
+
+                    updateStatus(id, newStatus).then(() => window.location.reload());
                 },
             });
         });
