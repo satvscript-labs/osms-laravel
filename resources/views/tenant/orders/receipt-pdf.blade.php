@@ -48,29 +48,16 @@
         </tr>
     </table>
 
-    {{-- Customer + Rx --}}
+    {{-- Customer (5.1 — prescription is confidential; never printed on a customer receipt) --}}
     <table style="margin-top:16px;">
         <tr>
-            <td style="width:48%; vertical-align:top; padding-right:8px;">
+            <td style="vertical-align:top;">
                 <div class="box">
                     <div class="muted small" style="text-transform:uppercase;">Customer</div>
                     <div style="font-weight:bold; font-size:14px;">{{ $p?->name }}</div>
                     @if ($p?->phone)<div class="muted small">{{ $p->phone }}</div>@endif
                     @if ($p?->age)<div class="muted small">{{ $p->age }} years · {{ $p->gender ?? '—' }}</div>@endif
                 </div>
-            </td>
-            <td style="width:52%; vertical-align:top;">
-                @if ($rx)
-                    <div class="box">
-                        <div class="muted small" style="text-transform:uppercase; margin-bottom:4px;">Prescription</div>
-                        <table class="small">
-                            <tr class="muted"><td></td><td>SPH</td><td>CYL</td><td>Axis</td><td>ADD</td><td>VA</td></tr>
-                            <tr class="mono"><td><b>OD</b></td><td>{{ $nz($rx->od_sph) }}</td><td>{{ $nz($rx->od_cyl) }}</td><td>{{ $nz($rx->od_axis) }}</td><td>{{ $nz($rx->od_add) }}</td><td>{{ $rx->od_va ?? '—' }}</td></tr>
-                            <tr class="mono"><td><b>OS</b></td><td>{{ $nz($rx->os_sph) }}</td><td>{{ $nz($rx->os_cyl) }}</td><td>{{ $nz($rx->os_axis) }}</td><td>{{ $nz($rx->os_add) }}</td><td>{{ $rx->os_va ?? '—' }}</td></tr>
-                        </table>
-                        @if (! is_null($rx->pd))<div class="small" style="margin-top:4px;">PD: <span class="mono">{{ $rx->pd }} mm</span></div>@endif
-                    </div>
-                @endif
             </td>
         </tr>
     </table>

@@ -115,10 +115,14 @@
                             </div>
                         </div>
                     </div>
+                    {{-- 5.1 — prescription is confidential: shown to staff on screen, never printed on the customer receipt. --}}
                     @if ($rx)
-                        <div class="col-md-6">
+                        <div class="col-md-6 no-print">
                             <div class="border rounded-3 bg-light bg-opacity-50 p-3 h-100">
-                                <p class="text-uppercase text-muted-foreground mb-2" style="font-size:.62rem;letter-spacing:.05em;">Prescription</p>
+                                <div class="d-flex align-items-center justify-content-between mb-2">
+                                    <p class="text-uppercase text-muted-foreground mb-0" style="font-size:.62rem;letter-spacing:.05em;">Prescription</p>
+                                    <span class="badge text-bg-light" style="font-size:.58rem;"><i class="bi bi-eye-slash me-1"></i>Staff only</span>
+                                </div>
                                 <table class="w-100" style="font-size:.78rem;">
                                     <thead class="text-muted-foreground text-uppercase" style="font-size:.62rem;">
                                         <tr><th></th><th>SPH</th><th>CYL</th><th>Axis</th><th>ADD</th><th>VA</th></tr>
