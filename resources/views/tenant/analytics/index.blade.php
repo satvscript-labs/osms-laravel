@@ -1,12 +1,26 @@
 @extends('layouts.app')
 @section('title', 'Analytics')
 
-@php $money = fn ($n) => '₹ ' . number_format($n, 0); @endphp
+@php
+    $money = fn ($n) => '₹ ' . number_format($n, 0);
+
+    // 6.2 — quick date-range presets. Computed server-side so the chip matching
+    // the active range highlights on load; each chip fills the existing From/To
+    // form and submits (no controller change — same GET the manual pickers use).
+    $today = now();
+    $presets = [
+        ['key' => 'today',     'label' => 'Today',       'from' => $today->copy(),                     'to' => $today->copy()],
+        ['key' => 'yesterday', 'label' => 'Yesterday',   'from' => $today->copy()->subDay(),           'to' => $today->copy()->subDay()],
+        ['key' => 'last7',     'label' => 'Last 7 days',  'from' => $today->copy()->subDays(6),         'to' => $today->copy()],
+        ['key' => 'last30',    'label' => 'Last 30 days', 'from' => $today->copy()->subDays(30),        'to' => $today->copy()],
+        ['key' => 'month',     'label' => 'This month',   'from' => $today->copy()->startOfMonth(),     'to' => $today->copy()],
+    ];
+@endphp
 
 @section('content')
 <div class="p-4 p-md-5">
     {{-- Header + date range --}}
-    <div class="d-flex flex-column flex-md-row gap-3 align-items-md-end justify-content-between mb-4">
+    <div class="d-flex flex-column flex-md-row gap-3 align-items-md-end justify-content-between mb-3">
         <div>
             <p class="section-label mb-1">Store admin</p>
             <h1 class="h3 fw-semibold font-display mb-1">Analytics</h1>
@@ -14,7 +28,7 @@
                 Revenue, COGS, gross profit, and outstanding balances.
             </p>
         </div>
-        <form action="{{ route('tenant.analytics.index') }}" method="GET" class="d-flex flex-wrap align-items-end gap-2">
+        <form id="rangeForm" action="{{ route('tenant.analytics.index') }}" method="GET" class="d-flex flex-wrap align-items-end gap-2">
             <div>
                 <label for="from" class="form-label section-label mb-1">From</label>
                 <input id="from" name="from" type="date" value="{{ $fromStr }}" class="form-control form-control-sm">
@@ -25,6 +39,23 @@
             </div>
             <button type="submit" class="btn btn-primary btn-sm">Apply</button>
         </form>
+    </div>
+
+    {{-- 6.2 — quick range chips --}}
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-4 stagger">
+        <span class="section-label mb-0 me-1">Quick range</span>
+        @foreach ($presets as $preset)
+            @php
+                $isActive = $fromStr === $preset['from']->format('Y-m-d') && $toStr === $preset['to']->format('Y-m-d');
+            @endphp
+            <button type="button"
+                    class="date-chip {{ $isActive ? 'active' : '' }}"
+                    data-from="{{ $preset['from']->format('Y-m-d') }}"
+                    data-to="{{ $preset['to']->format('Y-m-d') }}"
+                    @if ($isActive) aria-current="true" @endif>
+                {{ $preset['label'] }}
+            </button>
+        @endforeach
     </div>
 
     {{-- Tabs (iOS segmented control) --}}
@@ -237,3 +268,26 @@
     </div>
 </div>
 @endsection
+
+@push('scripts')
+<script>
+    // 6.2 — quick range chips fill the From/To pickers and submit the existing
+    // GET form. The server re-renders with the matching chip highlighted; the
+    // page-enter fade keeps the transition liquid rather than a hard reload snap.
+    (function () {
+        const form = document.getElementById('rangeForm');
+        if (!form) return;
+        document.querySelectorAll('.date-chip').forEach((chip) => {
+            chip.addEventListener('click', () => {
+                if (chip.classList.contains('active')) return; // already this range
+                form.querySelector('#from').value = chip.dataset.from;
+                form.querySelector('#to').value = chip.dataset.to;
+                // Optimistic active-state flip so the press feels instant before nav.
+                document.querySelectorAll('.date-chip').forEach((c) => c.classList.remove('active'));
+                chip.classList.add('active');
+                form.submit();
+            });
+        });
+    })();
+</script>
+@endpush
