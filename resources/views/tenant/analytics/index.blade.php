@@ -57,7 +57,8 @@
                 </div>
                 <div class="col-6 col-lg-3">
                     <x-metric-card label="Gross profit" value="{{ $money($stats['profit']) }}"
-                        hint="{{ number_format($stats['margin'], 1) }}% margin" icon="bi-receipt" tone="primary" />
+                        hint="{{ $stats['margin'] !== null ? number_format($stats['margin'], 1) . '% margin' : 'margin — (no cost data)' }}"
+                        icon="bi-receipt" tone="primary" />
                 </div>
                 <div class="col-6 col-lg-3">
                     <x-metric-card label="Avg order value"
@@ -69,6 +70,14 @@
                         hint="Across delivered orders" icon="bi-tag" tone="amber" />
                 </div>
             </div>
+
+            @if (($stats['uncostedLines'] ?? 0) > 0)
+                <p class="text-muted-foreground mb-4" style="font-size:.75rem;">
+                    <i class="bi bi-info-circle me-1"></i>{{ $stats['uncostedLines'] }} sold
+                    {{ Str::plural('line', $stats['uncostedLines']) }} {{ $stats['uncostedLines'] === 1 ? 'has' : 'have' }}
+                    no recorded cost price — excluded from COGS, profit &amp; margin (revenue still counts).
+                </p>
+            @endif
 
             {{-- 5.4 — Collected by payment method (reconcile the cash counter) --}}
             <div class="card border-0 shadow-sm rounded-4 mb-4">

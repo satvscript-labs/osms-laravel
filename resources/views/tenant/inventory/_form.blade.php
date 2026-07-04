@@ -127,7 +127,8 @@
         if (!cost || !sell || !warn) return;
         const check = () => {
             const c = parseFloat(cost.value), s = parseFloat(sell.value);
-            const below = Number.isFinite(c) && Number.isFinite(s) && s < c;
+            // 5.3: cost 0 = "not recorded" — nothing to compare, so no below-cost warning.
+            const below = Number.isFinite(c) && c > 0 && Number.isFinite(s) && s < c;
             warn.classList.toggle('d-none', !below);
             warn.classList.toggle('d-flex', below);
         };

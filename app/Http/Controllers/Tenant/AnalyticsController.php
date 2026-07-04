@@ -50,28 +50,42 @@ class AnalyticsController extends Controller
         $revenue = (float) $delivered->sum('total_amount');
         $discounts = (float) $delivered->sum('discount_amount');
 
-        $cogs = (float) $delivered->sum(function (Order $o) {
-            return $o->items->sum(fn ($i) => (float) ($i->inventory->cost_price ?? 0) * $i->quantity);
-        });
-
-        $profit = $revenue - $cogs;
-        $margin = $revenue > 0 ? ($profit / $revenue) * 100 : 0;
-        $ordersCount = $delivered->count();
-
-        // Top brands by revenue. The order-level discount is allocated pro-rata to
-        // each line (factor = net total ÷ gross subtotal) so brand revenue sums back
-        // to the net total revenue instead of the pre-discount gross (D7).
+        // Single pass over delivered lines. The order-level discount is allocated
+        // pro-rata to each line (factor = net total ÷ gross subtotal) so brand
+        // revenue sums back to net total revenue (D7). COGS/margin count only lines
+        // whose item has a *recorded* cost — a `cost_price` of 0 means "not entered"
+        // (many owners skip it), so it's excluded rather than faking a 100% margin
+        // (5.3). Revenue always counts the full sale.
+        $cogs = 0.0;
+        $costedRevenue = 0.0; // net revenue attributable to lines that have a cost
+        $uncostedLines = 0;
         $brandMap = [];
         foreach ($delivered as $o) {
             $sub = (float) $o->subtotal;
             $factor = $sub > 0 ? (float) $o->total_amount / $sub : 1.0;
             foreach ($o->items as $it) {
+                $lineNet = (float) $it->unit_price * $it->quantity * $factor;
+                $cost = (float) ($it->inventory->cost_price ?? 0);
+                if ($cost > 0) {
+                    $cogs += $cost * $it->quantity;
+                    $costedRevenue += $lineNet;
+                } else {
+                    $uncostedLines++;
+                }
+
                 $brand = trim((string) ($it->inventory->brand ?? '')) ?: '—';
                 $brandMap[$brand] ??= ['quantity' => 0, 'revenue' => 0.0];
                 $brandMap[$brand]['quantity'] += $it->quantity;
-                $brandMap[$brand]['revenue'] += (float) $it->unit_price * $it->quantity * $factor;
+                $brandMap[$brand]['revenue'] += $lineNet;
             }
         }
+
+        // Profit + margin are computed over costed lines only (uncosted lines can't
+        // contribute a known profit). Margin is null when there's no cost data → "—".
+        $profit = $costedRevenue - $cogs;
+        $margin = $costedRevenue > 0 ? ($profit / $costedRevenue) * 100 : null;
+        $ordersCount = $delivered->count();
+
         $topBrands = collect($brandMap)
             ->map(fn ($v, $brand) => ['brand' => $brand] + $v)
             ->sortByDesc('revenue')->take(10)->values();
@@ -106,7 +120,7 @@ class AnalyticsController extends Controller
             ->mapWithKeys(fn ($m) => [$m => (float) ($paid[$m] ?? 0)]);
         $collectedTotal = (float) $collectedByMethod->sum();
 
-        $stats = compact('revenue', 'discounts', 'cogs', 'profit', 'margin', 'ordersCount');
+        $stats = compact('revenue', 'discounts', 'cogs', 'profit', 'margin', 'ordersCount', 'uncostedLines');
         $fromStr = $from->format('Y-m-d');
         $toStr = $to->format('Y-m-d');
 
