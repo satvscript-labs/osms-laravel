@@ -18,6 +18,7 @@ return Application::configure(basePath: dirname(__DIR__))
 
         $middleware->alias([
             'role' => \App\Http\Middleware\EnsureUserRole::class,
+            'superadmin' => \App\Http\Middleware\EnsureSuperadmin::class,
             'onboarded' => \App\Http\Middleware\EnsureTenantOnboarded::class,
             'subscribed' => \App\Http\Middleware\EnsureSubscriptionActive::class,
             'verified.optional' => \App\Http\Middleware\EnsureEmailVerifiedIfRequired::class,

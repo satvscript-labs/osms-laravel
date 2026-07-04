@@ -90,11 +90,10 @@ It drives `subscriptions:reconcile` (02:15, expires lapsed trials) and `model:pu
 (02:00). Without it, the SaaS access enforcement still works live (it's derived), but stored
 subscription state and the trash purge won't advance.
 
-**Queue worker.** Transactional mail runs on the `database` queue. Run a worker (cron-restarted):
-
-```bash
-php artisan queue:work --stop-when-empty   # or a supervised long-running worker
-```
+**Queue worker.** Transactional mail (staff invitations, trial-status reminders) runs on the
+`database` queue. No separate cron entry is needed — the scheduler above drains it once a minute
+(`queue:work --stop-when-empty`, registered in `routes/console.php`), which is why the
+`schedule:run` cron entry is required even outside of trials/purge.
 
 ### Backups, monitoring & security (ST-Harden)
 
