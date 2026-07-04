@@ -13,3 +13,7 @@ Schedule::command('model:purge-trashed')->dailyAt('02:00');
 
 // ST-Enforce (S1) — reconcile expired trials so subscription state stays accurate.
 Schedule::command('subscriptions:reconcile')->dailyAt('02:15');
+
+// Queued mail (staff invitations, trial-status reminders) has no persistent worker on
+// shared hosting — drain the jobs table every minute via the scheduler cron instead.
+Schedule::command('queue:work --stop-when-empty --max-time=50')->everyMinute()->withoutOverlapping();
