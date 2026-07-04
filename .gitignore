@@ -25,3 +25,7 @@ Homestead.yaml
 Thumbs.db
 
 .env.prod
+
+# Local-only planning/tracking artifacts (Claude-maintained; never committed).
+# Bug/feature trackers, QA reports, SaaS docs. See CLAUDE.md → "Local artifacts".
+/_artifacts/

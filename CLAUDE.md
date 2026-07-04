@@ -53,6 +53,15 @@ use this trait** and have a `tenant_id` UUID column. Never query tenant data wit
 Add a `PhaseNXxxTest` per feature. Always include a tenant-isolation assertion for new
 tenant-owned data. Run `php artisan test` before considering a change done.
 
+## Local artifacts (`_artifacts/`)
+
+All planning/tracking docs live in **`_artifacts/`**, which is **gitignored** (local-only, never
+committed): `BUG_TRACKER.md`, `FEATURE_TRACKER.md`, `QA_TESTING_REPORT_*.md`, `SAAS_TRACKER.md`,
+`SAAS_LAUNCH_REPORT.md`. Read/update these for context on features, bugs, and build order — but keep
+**every** such generated report, tracker, or scratch doc inside `_artifacts/` so it stays out of git.
+Only `CLAUDE.md` and `README.md` remain tracked at the repo root. Links inside these docs are relative
+to `_artifacts/`, so source-file references use a `../` prefix (e.g. `../app/Models/Order.php`).
+
 ## [VISUAL DESIGN SYSTEM DIRECTIVE]
 
 OSMS uses an **iOS-inspired premium design system**. The single source of truth is the
