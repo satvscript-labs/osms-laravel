@@ -16,6 +16,7 @@ class Tenant extends Model
         'tax_id',
         'logo_url',
         'address',
+        'internal_notes',
     ];
 
     /**
@@ -73,6 +74,17 @@ class Tenant extends Model
     public function invitations(): HasMany
     {
         return $this->hasMany(StaffInvitation::class);
+    }
+
+    public function subscriptionInvoices(): HasMany
+    {
+        return $this->hasMany(SubscriptionInvoice::class);
+    }
+
+    /** ST-Admin — the superadmin audit trail for actions on this store. */
+    public function auditLogs(): HasMany
+    {
+        return $this->hasMany(AdminAuditLog::class);
     }
 
     /*

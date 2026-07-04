@@ -4,7 +4,10 @@ use App\Http\Controllers\InvitationController;
 use App\Http\Controllers\OnboardingController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\RazorpayWebhookController;
+use App\Http\Controllers\Superadmin\AuditLogController as SuperadminAuditLog;
 use App\Http\Controllers\Superadmin\DashboardController as SuperadminDashboard;
+use App\Http\Controllers\Superadmin\SubscriptionController as SuperadminSubscription;
+use App\Http\Controllers\Superadmin\TenantController as SuperadminTenant;
 use App\Http\Controllers\Tenant\DashboardController as TenantDashboard;
 use App\Support\Navigation;
 use Illuminate\Support\Facades\Route;
@@ -65,11 +68,29 @@ Route::middleware(['auth', 'verified.optional', 'onboarded', 'subscribed'])
 | Superadmin platform panel (auth + role)
 |--------------------------------------------------------------------------
 */
-Route::middleware(['auth', 'role:superadmin'])
+// Hardened: dedicated `superadmin` guard + throttle. Money-affecting mutations
+// additionally require a recent password confirmation (`password.confirm`).
+Route::middleware(['auth', 'superadmin', 'throttle:120,1'])
     ->prefix('superadmin')
     ->name('superadmin.')
     ->group(function () {
         Route::get('/', [SuperadminDashboard::class, 'index'])->name('dashboard');
+
+        // Store directory + read-only detail
+        Route::get('/stores', [SuperadminTenant::class, 'index'])->name('tenants.index');
+        Route::get('/stores/{tenant}', [SuperadminTenant::class, 'show'])->name('tenants.show');
+
+        // Audit trail (read-only)
+        Route::get('/audit', [SuperadminAuditLog::class, 'index'])->name('audit.index');
+
+        // Mutations — require recent re-authentication.
+        Route::middleware('password.confirm')->group(function () {
+            Route::patch('/stores/{tenant}/notes', [SuperadminTenant::class, 'updateNotes'])->name('tenants.notes');
+            Route::patch('/stores/{tenant}/subscription', [SuperadminSubscription::class, 'update'])->name('subscription.update');
+            Route::post('/stores/{tenant}/subscription/extend-trial', [SuperadminSubscription::class, 'extendTrial'])->name('subscription.extend-trial');
+            Route::post('/stores/{tenant}/subscription/activate', [SuperadminSubscription::class, 'activate'])->name('subscription.activate');
+            Route::post('/stores/{tenant}/subscription/cancel', [SuperadminSubscription::class, 'cancel'])->name('subscription.cancel');
+        });
     });
 
 // Razorpay webhook (no auth, CSRF-exempt — see bootstrap/app.php)

@@ -19,7 +19,9 @@
     // Settings now lives in the unified hub reachable via the gear in the footer
     // (profile.edit) — no separate sidebar entry.
     $superLinks = [
-        ['route' => 'superadmin.dashboard', 'label' => 'Platform', 'icon' => 'bi-shield-check', 'match' => 'superadmin.*'],
+        ['route' => 'superadmin.dashboard', 'label' => 'Overview', 'icon' => 'bi-speedometer2', 'match' => 'superadmin.dashboard'],
+        ['route' => 'superadmin.tenants.index', 'label' => 'Stores', 'icon' => 'bi-shop', 'match' => 'superadmin.tenants.*'],
+        ['route' => 'superadmin.audit.index', 'label' => 'Audit log', 'icon' => 'bi-clock-history', 'match' => 'superadmin.audit.*'],
     ];
     $links = $isSuper ? $superLinks : $tenantLinks;
 @endphp
