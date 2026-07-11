@@ -124,6 +124,16 @@ $enable-negative-margins:  true;
   --osms-amber:          #b45309;
   --osms-amber-bg:       #fef3c7;
 
+  // --- Tax invoice identity (FT-TaxInvoice) ---
+  // Deliberately its own pair, not a semantic tone: evokes the pale-yellow
+  // carbon bill-book paper of a typical Indian shop counter, so the formal
+  // tax invoice reads as a visually distinct document from the primary-blue
+  // receipt at a glance — on screen, in the PDF, and on the toggle in the
+  // order builder that flags which items belong on it.
+  --invoice-paper:        #fdf6d8;
+  --invoice-paper-border: #eadfa0;
+  --invoice-accent:       #8a6d1a;
+
   // --- Layered shadow scale (cool, soft) ---
   --shadow-sm:      0 1px 2px rgba(16, 24, 40, 0.05);
   --shadow-card:    0 1px 2px rgba(16, 24, 40, 0.04), 0 4px 14px rgba(16, 24, 40, 0.04);
@@ -613,10 +623,11 @@ body {
   font-size: var(--text-xs); font-weight: 600; white-space: nowrap;
 }
 .osms-badge-dot { width: 0.45rem; height: 0.45rem; border-radius: 50%; flex-shrink: 0; background: currentColor; }
-.osms-badge-amber { background: var(--tone-amber-bg); color: var(--tone-amber); }
-.osms-badge-blue  { background: var(--tone-blue-bg);  color: var(--tone-blue); }
-.osms-badge-green { background: var(--tone-green-bg); color: var(--tone-green); }
-.osms-badge-red   { background: var(--tone-red-bg);   color: var(--tone-red); }
+.osms-badge-amber   { background: var(--tone-amber-bg);   color: var(--tone-amber); }
+.osms-badge-blue    { background: var(--tone-blue-bg);    color: var(--tone-blue); }
+.osms-badge-green   { background: var(--tone-green-bg);   color: var(--tone-green); }
+.osms-badge-red     { background: var(--tone-red-bg);     color: var(--tone-red); }
+.osms-badge-neutral { background: var(--tone-neutral-bg); color: var(--tone-neutral); }
 
 // ============================================================
 // 16. KANBAN
@@ -968,6 +979,89 @@ $wa-green-strong: #0b8043;
 
   i.bi-telephone-fill { transition: transform var(--duration-base) var(--ease-spring); }
   &:hover i.bi-telephone-fill { transform: scale(1.12) rotate(-8deg); }
+}
+
+// ------------------------------------------------------------
+// Tax invoice — light-yellow identity (FT-TaxInvoice)
+// ------------------------------------------------------------
+// Per-line opt-in toggle in the order builder: outlined/muted at rest, fills
+// with the invoice-paper yellow once a line is flagged.
+.invoice-toggle {
+  display: inline-flex; align-items: center; gap: .3rem;
+  padding: .15rem .5rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--osms-border);
+  background: transparent;
+  color: var(--osms-faint);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  line-height: 1.4;
+  transition: all var(--duration-base) var(--ease-spring);
+
+  i { font-size: .8rem; }
+
+  &:hover {
+    border-color: var(--invoice-paper-border);
+    color: var(--invoice-accent);
+    background: var(--invoice-paper);
+    transform: translateY(-1px);
+  }
+  &:active { transform: scale(0.96); }
+  &:focus-visible { outline: 2px solid var(--invoice-accent); outline-offset: 2px; }
+}
+.invoice-toggle-active {
+  border-color: var(--invoice-paper-border);
+  background: var(--invoice-paper);
+  color: var(--invoice-accent);
+  &:hover { background: var(--invoice-paper); color: var(--invoice-accent); }
+}
+
+// Summary-panel reassurance strip (order builder) once ≥1 line is flagged.
+.invoice-note {
+  display: flex; align-items: flex-start; gap: .5rem;
+  padding: .65rem .75rem;
+  border-radius: var(--radius);
+  background: var(--invoice-paper);
+  border: 1px solid var(--invoice-paper-border);
+  color: var(--invoice-accent);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+  i { font-size: .95rem; margin-top: .1rem; flex-shrink: 0; }
+}
+
+// "Tax invoice" pill on the order show page — twin of .wa-pill, yellow identity.
+.invoice-pill {
+  display: inline-flex; align-items: center; justify-content: center;
+  gap: .4rem;
+  padding: .42rem .85rem;
+  border-radius: var(--radius-pill);
+  background: var(--invoice-paper);
+  border: 1px solid var(--invoice-paper-border);
+  color: var(--invoice-accent);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  line-height: 1;
+  text-decoration: none;
+  position: relative;
+  overflow: hidden;
+  transition: all var(--duration-base) var(--ease-spring);
+
+  i { font-size: 1rem; }
+
+  &::after {
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(120deg, transparent 30%, rgba(255, 255, 255, .55) 50%, transparent 70%);
+    transform: translateX(-120%);
+    transition: transform var(--duration-slow) var(--ease-spring);
+  }
+  &:hover {
+    background: var(--invoice-accent); border-color: var(--invoice-accent); color: #fff;
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-raised);
+  }
+  &:hover::after { transform: translateX(120%); }
+  &:active { transform: scale(0.97); }
+  &:focus-visible { outline: 2px solid var(--invoice-accent); outline-offset: 2px; }
 }
 
 // Live results swap — dim + lock while the next partial is fetching, so the

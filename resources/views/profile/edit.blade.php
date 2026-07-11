@@ -143,6 +143,50 @@
                             </div>
                         </div>
 
+                        {{-- Tax invoices (GST) — FT-TaxInvoice --}}
+                        <div class="card border-0 shadow-sm rounded-4"
+                             x-data="{ gst: {{ old('gst_enabled', $tenant->gst_enabled) ? 'true' : 'false' }} }">
+                            <div class="card-body p-4">
+                                <h2 class="section-label mb-1">Tax invoices</h2>
+                                <p class="text-muted-foreground text-sm mb-3">
+                                    Controls the formal tax invoice you can generate for individual items from the
+                                    order builder (separate from your regular printed receipt).
+                                </p>
+                                <div class="form-check form-switch mb-1">
+                                    <input class="form-check-input" type="checkbox" role="switch" id="gst_enabled"
+                                           name="gst_enabled" value="1" x-model="gst"
+                                           {{ old('gst_enabled', $tenant->gst_enabled) ? 'checked' : '' }}>
+                                    <label class="form-check-label fw-medium" for="gst_enabled">This store is GST-registered</label>
+                                </div>
+                                <p class="text-muted-foreground text-xs mb-0 ms-4" x-show="!gst">
+                                    Tax invoices will be plain itemised bills with no tax breakup. Turn this on once you
+                                    have a GSTIN to add a CGST/SGST split instead.
+                                </p>
+
+                                <div class="reveal mt-3" :class="gst ? 'reveal-open' : ''">
+                                    <div class="reveal-inner">
+                                        <div class="row g-3 align-items-end">
+                                            <div class="col-sm-5">
+                                                <label for="gst_rate" class="form-label small fw-medium mb-1">GST rate (%)</label>
+                                                <input id="gst_rate" type="number" name="gst_rate" min="0" max="28" step="0.01"
+                                                       value="{{ old('gst_rate', $tenant->gst_rate) }}"
+                                                       class="form-control @error('gst_rate') is-invalid @enderror"
+                                                       placeholder="{{ \App\Models\Tenant::DEFAULT_GST_RATE }}">
+                                                @error('gst_rate')<div class="invalid-feedback">{{ $message }}</div>@enderror
+                                            </div>
+                                            <div class="col-sm-7">
+                                                <p class="text-muted-foreground text-xs mb-0">
+                                                    Applied as CGST + SGST (half each) on the tax invoice, back-calculated
+                                                    from your item prices (which already include tax). Make sure your
+                                                    GSTIN above is filled in.
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                         {{-- Store logo --}}
                         <div class="card border-0 shadow-sm rounded-4">
                             <div class="card-body p-4">

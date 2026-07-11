@@ -25,6 +25,9 @@ class SettingsController extends Controller
             'address' => ['nullable', 'string', 'max:500'],
             'logo' => ['nullable', 'image', 'max:2048'], // 2MB
             'remove_logo' => ['nullable', 'boolean'],
+            // FT-TaxInvoice — GST registration + rate (drives the tax-invoice breakup).
+            'gst_enabled' => ['nullable', 'boolean'],
+            'gst_rate' => ['nullable', 'numeric', 'min:0', 'max:28'],
         ]);
 
         $logoUrl = $tenant->logo_url;
@@ -47,6 +50,8 @@ class SettingsController extends Controller
             'tax_id' => $validated['tax_id'] ?? null,
             'address' => $validated['address'] ?? null,
             'logo_url' => $logoUrl,
+            'gst_enabled' => $request->boolean('gst_enabled'),
+            'gst_rate' => $validated['gst_rate'] ?? null,
         ]);
 
         return redirect()->route('profile.edit')

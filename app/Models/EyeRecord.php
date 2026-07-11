@@ -14,9 +14,9 @@ class EyeRecord extends Model
     protected $fillable = [
         'tenant_id', 'customer_id', 'recorded_by', 'checked_by',
         // OD (right eye)
-        'od_sph', 'od_cyl', 'od_axis', 'od_add', 'od_va', 'od_dv', 'od_nv',
+        'od_sph', 'od_cyl', 'od_axis', 'od_add', 'od_va', 'od_nv',
         // OS (left eye)
-        'os_sph', 'os_cyl', 'os_axis', 'os_add', 'os_va', 'os_dv', 'os_nv',
+        'os_sph', 'os_cyl', 'os_axis', 'os_add', 'os_va', 'os_nv',
         'pd', 'notes',
     ];
 

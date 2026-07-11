@@ -9,6 +9,7 @@ use App\Models\Order;
 use App\Models\Customer;
 use App\Models\Payment;
 use App\Models\StockMovement;
+use App\Models\TaxInvoice;
 use App\Models\WhatsAppConfig;
 use App\Models\WhatsAppMessage;
 use App\Services\WhatsApp\WhatsAppScheduler;
@@ -252,6 +253,9 @@ class OrderController extends Controller
             'items.*.description' => ['nullable', 'string', 'max:255'],
             'items.*.quantity' => ['required', 'integer', 'min:1', 'max:10000'],
             'items.*.unit_price' => ['nullable', 'numeric', 'min:0', 'max:99999999'],
+            // FT-TaxInvoice — per-line opt-in, only the items a customer wants a
+            // formal invoice for (e.g. a branded frame), not necessarily the whole order.
+            'items.*.tax_invoice' => ['nullable', 'boolean'],
         ], [
             'customer_phone.regex' => 'Enter a valid phone number (7–15 digits).',
             'estimated_ready_at.required_if' => 'A special order needs an estimated ready date.',
@@ -326,6 +330,7 @@ class OrderController extends Controller
                     'quantity' => $qty,
                     'unit_price' => $unit,
                     'list_price' => $list,
+                    'on_tax_invoice' => (bool) ($line['tax_invoice'] ?? false),
                 ];
             }
             // Local/custom lines (6.4): no inventory, list_price = unit_price (no MRP
@@ -340,6 +345,7 @@ class OrderController extends Controller
                     'quantity' => $qty,
                     'unit_price' => $unit,
                     'list_price' => $unit,
+                    'on_tax_invoice' => (bool) ($line['tax_invoice'] ?? false),
                 ];
             }
             $subtotal = round($subtotal, 2);
@@ -377,6 +383,13 @@ class OrderController extends Controller
             ]);
 
             $order->items()->createMany($lines);
+
+            // FT-TaxInvoice — issue the formal invoice now (same transaction as the
+            // order) when at least one line was opted in, so the two can never
+            // disagree: either both exist or neither does.
+            if (collect($lines)->contains('on_tax_invoice', true)) {
+                TaxInvoice::issueFor($order);
+            }
 
             // Draw down stock now that the order is committed, logging each
             // movement so the item's stock ledger stays complete (FG-StockLog).
@@ -427,8 +440,11 @@ class OrderController extends Controller
         $tenant = $order->tenant;
         $waConfig = $this->waConfig();
         $waPending = $this->waPendingFor([$order->id]);
+        // FT-TaxInvoice — only surface the button when the invoice exists AND at
+        // least one item is currently flagged (an edit could have unflagged all of them).
+        $taxInvoice = $order->items->contains('on_tax_invoice', true) ? $order->taxInvoice : null;
 
-        return view('tenant.orders.show', compact('order', 'tenant', 'waConfig', 'waPending'));
+        return view('tenant.orders.show', compact('order', 'tenant', 'waConfig', 'waPending', 'taxInvoice'));
     }
 
     /**
@@ -502,6 +518,7 @@ class OrderController extends Controller
             'items.*.description' => ['nullable', 'string', 'max:255'],
             'items.*.quantity' => ['required', 'integer', 'min:1', 'max:10000'],
             'items.*.unit_price' => ['nullable', 'numeric', 'min:0', 'max:99999999'],
+            'items.*.tax_invoice' => ['nullable', 'boolean'],
         ]);
 
         // A re-attached prescription must belong to this order's customer (the
@@ -523,11 +540,15 @@ class OrderController extends Controller
             // (collapse duplicate lines; the builder emits one line per inventory_id).
             $wanted = [];
             $postedPrice = [];
+            $postedTaxInvoice = [];
             foreach ($catalog as $line) {
                 $id = $line['inventory_id'];
                 $wanted[$id] = ($wanted[$id] ?? 0) + (int) $line['quantity'];
                 if (isset($line['unit_price'])) {
                     $postedPrice[$id] = round((float) $line['unit_price'], 2);
+                }
+                if (array_key_exists('tax_invoice', $line)) {
+                    $postedTaxInvoice[$id] = (bool) $line['tax_invoice'];
                 }
             }
 
@@ -538,6 +559,7 @@ class OrderController extends Controller
             $oldQty = [];
             $oldUnit = [];
             $oldList = [];
+            $oldTaxInvoice = [];
             foreach ($order->items as $it) {
                 if ($it->inventory_id === null) {
                     continue; // local/custom line — no stock reconciliation
@@ -545,6 +567,10 @@ class OrderController extends Controller
                 $oldQty[$it->inventory_id] = ($oldQty[$it->inventory_id] ?? 0) + (int) $it->quantity;
                 $oldUnit[$it->inventory_id] = (float) $it->unit_price;
                 $oldList[$it->inventory_id] = $it->list_price !== null ? (float) $it->list_price : (float) $it->unit_price;
+                // FT-TaxInvoice — the edit form has no toggle for this yet, so a
+                // previously-flagged catalog item must survive an unrelated edit
+                // (e.g. a quantity bump) rather than silently losing its invoice flag.
+                $oldTaxInvoice[$it->inventory_id] = $oldTaxInvoice[$it->inventory_id] ?? (bool) $it->on_tax_invoice;
             }
 
             // Lock every item this edit touches (old ∪ new). Open-order items can
@@ -585,10 +611,14 @@ class OrderController extends Controller
                     'quantity' => $qty,
                     'unit_price' => $unit,
                     'list_price' => $list,
+                    // Preserve unless this edit explicitly posts a value for it.
+                    'on_tax_invoice' => $postedTaxInvoice[$id] ?? ($oldTaxInvoice[$id] ?? false),
                 ];
             }
             // Local/custom lines (6.4): rebuilt fresh each edit (no stock diff), with
-            // list_price = unit_price and a sentence-cased description.
+            // list_price = unit_price and a sentence-cased description. There's no
+            // stable key to match a custom line to its pre-edit self, so (like its
+            // price) the invoice flag only survives if this edit re-posts it.
             foreach ($custom as $line) {
                 $qty = (int) $line['quantity'];
                 $unit = round((float) ($line['unit_price'] ?? 0), 2);
@@ -599,6 +629,7 @@ class OrderController extends Controller
                     'quantity' => $qty,
                     'unit_price' => $unit,
                     'list_price' => $unit,
+                    'on_tax_invoice' => (bool) ($line['tax_invoice'] ?? false),
                 ];
             }
             $subtotal = round($subtotal, 2);
@@ -658,6 +689,12 @@ class OrderController extends Controller
                 'discount_amount' => $discountAmount,
                 'total_amount' => $total,
             ]);
+
+            // FT-TaxInvoice — issue the invoice if this edit is what first flags an
+            // item (idempotent; a no-op once one already exists for this order).
+            if (collect($lines)->contains('on_tax_invoice', true)) {
+                TaxInvoice::issueFor($order);
+            }
         });
 
         return redirect()->route('tenant.orders.show', $order)->with('status', 'Order updated.');
@@ -983,6 +1020,28 @@ class OrderController extends Controller
             ->setPaper('a4');
 
         return $pdf->stream('receipt-' . substr($order->id, 0, 8) . '.pdf');
+    }
+
+    /**
+     * FT-TaxInvoice — the formal tax invoice PDF, covering only the items the
+     * shop owner opted in for (not necessarily the whole order). 404s when
+     * nothing is currently flagged, so a stale link can't leak an empty invoice.
+     */
+    public function taxInvoicePdf(Order $order)
+    {
+        $order->load(['customer', 'items.inventory:id,sku,brand,model_name,item_type', 'taxInvoice']);
+        $tenant = $order->tenant;
+        $invoice = $order->taxInvoice;
+        $items = $order->items->where('on_tax_invoice', true);
+
+        if (! $invoice || $items->isEmpty()) {
+            abort(404);
+        }
+
+        $pdf = Pdf::loadView('tenant.orders.tax-invoice-pdf', compact('order', 'tenant', 'invoice', 'items'))
+            ->setPaper('a4');
+
+        return $pdf->stream($invoice->number . '.pdf');
     }
 
     /** JSON list of a customer's eye records for the order builder. */

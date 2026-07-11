@@ -55,6 +55,13 @@
                 <a href="{{ route('tenant.orders.pdf', $order) }}" target="_blank" class="btn btn-light btn-sm">
                     <i class="bi bi-file-earmark-pdf me-1"></i> PDF
                 </a>
+                @if ($taxInvoice)
+                    <a href="{{ route('tenant.orders.tax-invoice.pdf', $order) }}" target="_blank" rel="noopener"
+                       class="invoice-pill" aria-label="Formal tax invoice {{ $taxInvoice->number }}">
+                        <i class="bi bi-receipt-cutoff"></i>
+                        <span>Tax invoice</span>
+                    </a>
+                @endif
                 <button type="button" class="btn btn-secondary btn-sm" onclick="window.print()">
                     <i class="bi bi-printer me-1"></i> Print
                 </button>

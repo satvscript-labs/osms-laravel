@@ -17,7 +17,29 @@ class Tenant extends Model
         'logo_url',
         'address',
         'internal_notes',
+        'gst_enabled',
+        'gst_rate',
     ];
+
+    protected $casts = [
+        'gst_enabled' => 'boolean',
+        'gst_rate' => 'decimal:2',
+    ];
+
+    /** Default GST rate assumed when a registered store hasn't set one (%). */
+    public const DEFAULT_GST_RATE = 12.0;
+
+    /** Whether this store's formal tax invoices should show a CGST/SGST breakup. */
+    public function hasGst(): bool
+    {
+        return $this->gst_enabled && filled($this->tax_id);
+    }
+
+    /** The GST rate to apply on the formal tax invoice (%). */
+    public function effectiveGstRate(): float
+    {
+        return $this->gst_rate !== null ? (float) $this->gst_rate : self::DEFAULT_GST_RATE;
+    }
 
     /**
      * ST-Enforce (S1): creating a store starts its free trial. Keeping this a

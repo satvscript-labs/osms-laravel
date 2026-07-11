@@ -197,7 +197,7 @@
         // Client-side range validation mirroring StoreEyeRecordRequest (BUG-002).
         const bounds = {
             sph: [-30, 30], cyl: [-15, 15], axis: [0, 180], add: [0, 6],
-            dv: [-50, 50], nv: [-50, 50], pd: [0, 100],
+            nv: [-50, 50], pd: [0, 100],
         };
         Object.entries(bounds).forEach(([field, [lo, hi]]) => {
             (field === 'pd' ? ['pd'] : [`od_${field}`, `os_${field}`]).forEach((n) => {

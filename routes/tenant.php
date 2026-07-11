@@ -68,6 +68,7 @@ Route::post('orders/{order}/settle', [OrderController::class, 'settle'])->name('
 Route::post('orders/{order}/cancel', [OrderController::class, 'cancel'])->name('orders.cancel');
 Route::post('orders/{order}/payments', [OrderController::class, 'recordPayment'])->name('orders.payments.store');
 Route::get('orders/{order}/pdf', [OrderController::class, 'pdf'])->name('orders.pdf');
+Route::get('orders/{order}/tax-invoice/pdf', [OrderController::class, 'taxInvoicePdf'])->name('orders.tax-invoice.pdf'); // FT-TaxInvoice
 Route::middleware('throttle:120,1')->get('customers/{customer}/eye-records', [OrderController::class, 'eyeRecords'])->name('customers.eye-records');
 
 // ---- Analytics (store admins + superadmin only) ----
