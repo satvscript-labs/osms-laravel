@@ -90,8 +90,8 @@ class Order extends Model
     public function getFulfillmentLabelAttribute(): string
     {
         return match ($this->fulfillment_type) {
-            'instant' => 'Instant sale',
-            'special' => 'Special order',
+            'instant' => 'Sell now',
+            'special' => 'Order for later',
             default   => ucfirst((string) $this->fulfillment_type),
         };
     }

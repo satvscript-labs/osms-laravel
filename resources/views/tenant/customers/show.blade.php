@@ -8,8 +8,11 @@
         <i class="bi bi-chevron-left"></i> Back to customers
     </a>
 
-    {{-- Customer header --}}
-    <div class="glass card-lift rounded-4 p-4 mb-4 d-flex flex-column flex-md-row gap-3 align-items-md-end justify-content-between">
+    {{-- Customer header. `position-relative z-2` (Bootstrap utilities): .glass's
+         backdrop-filter creates its own stacking context, which otherwise traps
+         the ⋯ dropdown menu underneath the "History" section that follows in the
+         DOM — this lifts the whole header (dropdown included) above it. --}}
+    <div class="glass card-lift rounded-4 p-4 mb-4 d-flex flex-column flex-md-row gap-3 align-items-md-end justify-content-between position-relative z-2">
         <div class="d-flex align-items-start gap-3">
             <span class="d-inline-flex align-items-center justify-content-center rounded-4 bg-primary text-white"
                   style="width:3.25rem;height:3.25rem;"><i class="bi bi-person fs-4"></i></span>

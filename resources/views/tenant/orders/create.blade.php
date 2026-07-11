@@ -60,8 +60,8 @@
                             <div class="segmented" role="tablist" aria-label="Fulfillment type">
                                 @php
                                     $tiles = [
-                                        ['key' => 'instant', 'icon' => 'bi-bag-check', 'title' => 'Take today'],
-                                        ['key' => 'special', 'icon' => 'bi-clock-history', 'title' => 'Special order'],
+                                        ['key' => 'instant', 'icon' => 'bi-bag-check', 'title' => 'Sell now'],
+                                        ['key' => 'special', 'icon' => 'bi-clock-history', 'title' => 'Order for later'],
                                     ];
                                 @endphp
                                 @foreach ($tiles as $t)
