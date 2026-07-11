@@ -50,6 +50,12 @@ class Tenant extends Model
         return $this->hasOne(Subscription::class);
     }
 
+    /** FT-WhatsApp — this store's WhatsApp messaging configuration (may be absent). */
+    public function whatsappConfig(): HasOne
+    {
+        return $this->hasOne(WhatsAppConfig::class);
+    }
+
     /** True when this store has a live subscription (trial in-window, paid, or in grace). */
     public function hasActiveAccess(): bool
     {

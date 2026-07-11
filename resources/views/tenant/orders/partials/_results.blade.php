@@ -45,11 +45,10 @@
                                   : ($order->status === 'ready_for_pickup' ? 'delivered' : null);
                             $nextLabel = $order->status === 'pending' ? 'Mark ready' : 'Deliver';
 
-                            // WhatsApp / call targets (temp — native deep links; a future
-                            // release swaps these for templated Business-API messaging).
                             $phone = $order->customer?->phone;
-                            $waDigits = $phone ? preg_replace('/\D/', '', $phone) : null;
-                            $telNumber = $phone ? preg_replace('/[^\d+]/', '', $phone) : null;
+                            // Mode-aware manual WhatsApp pill (FT-WhatsApp); null when Off /
+                            // Automated / no phone / event disabled.
+                            $pill = $waConfig->orderPill($order);
 
                             $showReady = $order->needsPrep() && $order->estimated_ready_at
                                 && ! in_array($order->status, ['delivered', 'cancelled'], true);
@@ -93,35 +92,36 @@
                                 {{ $order->created_at->format('d M Y') }}
                             </td>
                             <td class="pe-4" onclick="event.stopPropagation()">
+                                @php $waPend = $waPending[$order->id] ?? null; @endphp
                                 <div class="d-flex align-items-center justify-content-end gap-1">
-                                    @if ($next)
-                                        <button type="button" class="btn btn-sm btn-primary advance-btn"
-                                                data-id="{{ $order->id }}" data-next="{{ $next }}"
-                                                @if ($next === 'delivered')
-                                                    data-settle="1"
-                                                    data-customer="{{ $order->customer?->name ?? 'Customer' }}"
-                                                    data-subtotal="{{ $order->subtotal }}"
-                                                    data-total="{{ $order->total_amount }}"
-                                                    data-advance="{{ $order->advance_paid }}"
-                                                    data-balance="{{ $order->balance_due }}"
-                                                    data-discount-type="{{ $order->discount_type }}"
-                                                    data-discount-value="{{ $order->discount_value }}"
-                                                @endif>
-                                            <span class="spinner-border spinner-border-sm d-none me-1" role="status"></span>
-                                            {{ $nextLabel }}<i class="bi bi-arrow-right ms-1"></i>
-                                        </button>
-                                    @endif
-                                    @if ($waDigits)
-                                        <a href="https://wa.me/{{ $waDigits }}" target="_blank" rel="noopener"
-                                           class="action-icon-btn action-whatsapp" title="Message on WhatsApp" aria-label="Message on WhatsApp">
-                                            <i class="bi bi-whatsapp"></i>
-                                        </a>
-                                    @endif
-                                    @if ($telNumber)
-                                        <a href="tel:{{ $telNumber }}"
-                                           class="action-icon-btn action-call" title="Call customer" aria-label="Call customer">
-                                            <i class="bi bi-telephone"></i>
-                                        </a>
+                                    @if ($waPend)
+                                        @include('tenant.orders.partials._wa-undo', ['order' => $order, 'msg' => $waPend, 'variant' => 'compact'])
+                                    @else
+                                        @if ($next)
+                                            <button type="button" class="advance-liquid advance-liquid-sm advance-btn"
+                                                    data-id="{{ $order->id }}" data-next="{{ $next }}"
+                                                    @if ($next === 'delivered')
+                                                        data-settle="1"
+                                                        data-customer="{{ $order->customer?->name ?? 'Customer' }}"
+                                                        data-subtotal="{{ $order->subtotal }}"
+                                                        data-total="{{ $order->total_amount }}"
+                                                        data-advance="{{ $order->advance_paid }}"
+                                                        data-balance="{{ $order->balance_due }}"
+                                                        data-discount-type="{{ $order->discount_type }}"
+                                                        data-discount-value="{{ $order->discount_value }}"
+                                                    @endif>
+                                                <span class="spinner-border spinner-border-sm d-none me-1" role="status"></span>
+                                                {{ $nextLabel }}<i class="bi bi-arrow-right ms-1"></i>
+                                            </button>
+                                        @endif
+                                        @if ($pill)
+                                            <a href="{{ $pill['url'] }}" target="_blank" rel="noopener"
+                                               class="wa-pill wa-pill-icon {{ $pill['fallback'] ? 'wa-pill-warn' : '' }}"
+                                               title="{{ $pill['label'] }}{{ $pill['fallback'] ? ' — finish WhatsApp setup' : '' }}"
+                                               aria-label="{{ $pill['label'] }}">
+                                                <i class="bi bi-whatsapp"></i>
+                                            </a>
+                                        @endif
                                     @endif
                                     <a href="{{ route('tenant.orders.pdf', $order) }}" target="_blank"
                                        class="action-icon-btn" title="PDF receipt" aria-label="PDF receipt">

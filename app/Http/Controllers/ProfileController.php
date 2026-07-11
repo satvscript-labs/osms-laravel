@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\ProfileUpdateRequest;
 use App\Models\User;
+use App\Models\WhatsAppConfig;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -19,9 +20,17 @@ class ProfileController extends Controller
     {
         // Unified Settings hub: account sections for everyone, plus store
         // sections when the user is a store admin (tenant is null otherwise).
+        $tenant = $request->user()->tenant;
+
         return view('profile.edit', [
             'user' => $request->user(),
-            'tenant' => $request->user()->tenant,
+            'tenant' => $tenant,
+            // FT-WhatsApp — existing config or a zero-config Manual default to seed the panel.
+            'whatsapp' => $tenant
+                ? ($tenant->whatsappConfig ?? WhatsAppConfig::defaultFor($tenant))
+                : null,
+            // Automated mode is frozen as "Coming soon" in production (see config).
+            'automatedEnabled' => (bool) config('whatsapp.automated_enabled'),
         ]);
     }
 

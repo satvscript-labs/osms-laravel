@@ -7,7 +7,6 @@
         ['key' => 'axis', 'label' => 'Axis'],
         ['key' => 'add', 'label' => 'ADD'],
         ['key' => 'va', 'label' => 'VA'],
-        ['key' => 'spl', 'label' => 'Spl'],
         ['key' => 'dv', 'label' => 'D.V.'],
         ['key' => 'nv', 'label' => 'N.V.'],
     ];

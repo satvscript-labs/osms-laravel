@@ -6,6 +6,7 @@ use App\Exports\LedgerExport;
 use App\Http\Controllers\Controller;
 use App\Models\Order;
 use App\Models\Payment;
+use App\Models\WhatsAppConfig;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -134,9 +135,14 @@ class AnalyticsController extends Controller
         $fromStr = $from->format('Y-m-d');
         $toStr = $to->format('Y-m-d');
 
+        // FT-WhatsApp — resolve the store's config (or a Manual default) so each
+        // pending-due row can offer a pre-filled "settle your balance" reminder.
+        $tenant = $request->user()->tenant;
+        $waConfig = $tenant->whatsappConfig ?? WhatsAppConfig::defaultFor($tenant);
+
         return view('tenant.analytics.index', compact(
             'stats', 'topBrands', 'ledger', 'dues', 'fromStr', 'toStr', 'showAllLedger', 'showAllDues',
-            'collectedByMethod', 'collectedTotal',
+            'collectedByMethod', 'collectedTotal', 'waConfig',
         ));
     }
 

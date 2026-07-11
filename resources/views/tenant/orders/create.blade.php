@@ -377,7 +377,8 @@
                         <label class="form-label small fw-medium mb-1">Advance paid</label>
                         <div class="input-group">
                             <span class="input-group-text">₹</span>
-                            <input type="number" step="0.01" min="0" class="form-control font-monospace" x-model="advancePaid">
+                            <input type="number" step="0.01" min="0" class="form-control font-monospace"
+                                   x-model="advancePaid" placeholder="0">
                         </div>
                         <label class="form-label small fw-medium mb-1 mt-3">Payment method</label>
                         <select class="form-select" x-model="paymentMethod">
@@ -447,7 +448,7 @@
             eyeRecords: [], eyeRecordId: '',
             items: [], itemSearch: '', scanFlash: null,
             customMode: false, customName: '', customPrice: '', customQty: 1,
-            advancePaid: '0', paymentMethod: 'cash',
+            advancePaid: '', paymentMethod: 'cash',
             unit: '₹', discountValue: '',
             fulfillmentType: 'instant', estimatedReadyAt: @json(now()->addDays(3)->toDateString()),
 

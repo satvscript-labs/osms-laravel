@@ -9,7 +9,11 @@ use App\Models\Order;
 use App\Models\Customer;
 use App\Models\Payment;
 use App\Models\StockMovement;
+use App\Models\WhatsAppConfig;
+use App\Models\WhatsAppMessage;
+use App\Services\WhatsApp\WhatsAppScheduler;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Collection;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -38,6 +42,10 @@ class OrderController extends Controller
                                 ->where('balance_due', '>', 0)->sum('balance_due'),
         ];
 
+        // Resolve the store's WhatsApp config once (real row or a Manual default)
+        // so every card can decide whether to show a manual "Send" pill (FT-WhatsApp).
+        $waConfig = $this->waConfig();
+
         // ---- Kanban: grouped by status (workflow board) ----
         if ($view === 'kanban') {
             $orders = Order::with('customer:id,name,phone')
@@ -50,6 +58,8 @@ class OrderController extends Controller
                 'view' => 'kanban',
                 'orders' => $orders,
                 'stats' => $stats,
+                'waConfig' => $waConfig,
+                'waPending' => $this->waPendingFor($orders->flatten(1)->pluck('id')),
             ]);
         }
 
@@ -88,6 +98,8 @@ class OrderController extends Controller
         // results partial and swap it in. Keeps one Blade source of truth for the
         // table (sort headers, pagination, row actions) instead of a parallel JS
         // template, while staying reload-free per the liquid-motion standard.
+        $waPending = $this->waPendingFor($orders->getCollection()->pluck('id'));
+
         if ($isPartial) {
             return response()->view('tenant.orders.partials._results', [
                 'orders'  => $orders,
@@ -96,6 +108,8 @@ class OrderController extends Controller
                 'payment' => $payment,
                 'sort'    => $sort,
                 'dir'     => $dir,
+                'waConfig' => $waConfig,
+                'waPending' => $waPending,
             ]);
         }
 
@@ -108,7 +122,91 @@ class OrderController extends Controller
             'payment' => $payment,
             'sort'    => $sort,
             'dir'     => $dir,
+            'waConfig' => $waConfig,
+            'waPending' => $waPending,
         ]);
+    }
+
+    /**
+     * FT-WhatsApp — the pending (still-cancellable) automated messages for a set
+     * of orders, keyed by order_id. Only ready/delivered events surface an undo
+     * ring; a placed receipt sends quietly.
+     */
+    private function waPendingFor($ids): Collection
+    {
+        $ids = collect($ids)->filter()->values();
+        if ($ids->isEmpty()) {
+            return collect();
+        }
+
+        return WhatsAppMessage::whereIn('order_id', $ids)
+            ->whereIn('event', ['order_ready', 'order_delivered'])
+            ->where('status', 'scheduled')
+            ->where('scheduled_for', '>', now())
+            ->latest('scheduled_for')
+            ->get()
+            ->keyBy('order_id');
+    }
+
+    /** The store's WhatsApp config (existing row or a zero-config Manual default). */
+    private function waConfig(): WhatsAppConfig
+    {
+        $tenant = auth()->user()->tenant;
+
+        return $tenant->whatsappConfig ?? WhatsAppConfig::defaultFor($tenant);
+    }
+
+    /**
+     * FT-WhatsApp — schedule an automated message for an order event (a no-op for
+     * Off / Manual stores; the manual pill covers those). Called after the write
+     * commits. Never lets a messaging hiccup break the order flow.
+     */
+    private function scheduleWhatsApp(Order $order, string $event): void
+    {
+        try {
+            app(WhatsAppScheduler::class)->handle($order, $event);
+        } catch (\Throwable $e) {
+            report($e); // messaging must never break placing/advancing an order
+        }
+    }
+
+    /**
+     * FT-WhatsApp (Phase 6) — the "undo" behind the countdown ring. While an
+     * automated ready/delivered message is still within its grace window, cancel
+     * it and step the order back one status. Reverting delivered→ready uses a
+     * direct status write (NOT updateStatus), so it never re-schedules the
+     * already-sent ready message. Refused once the message has gone out.
+     */
+    public function revert(Request $request, Order $order): JsonResponse
+    {
+        $message = WhatsAppMessage::where('order_id', $order->id)
+            ->whereIn('event', ['order_ready', 'order_delivered'])
+            ->where('status', 'scheduled')
+            ->where('scheduled_for', '>', now())
+            ->latest('scheduled_for')
+            ->first();
+
+        if (! $message) {
+            return response()->json([
+                'ok' => false,
+                'message' => 'Too late to undo — the message has already been sent.',
+            ], 422);
+        }
+
+        // event → [status it advanced TO, status to revert back to]
+        [$advancedTo, $revertTo] = match ($message->event) {
+            'order_ready' => ['ready_for_pickup', 'pending'],
+            'order_delivered' => ['delivered', 'ready_for_pickup'],
+            default => [null, null],
+        };
+
+        $message->update(['status' => 'cancelled']);
+
+        if ($revertTo !== null && $order->status === $advancedTo) {
+            $order->update(['status' => $revertTo]); // direct write — no re-trigger
+        }
+
+        return response()->json(['ok' => true, 'status' => $order->status]);
     }
 
     public function create(Request $request): View
@@ -310,6 +408,10 @@ class OrderController extends Controller
             return $order;
         });
 
+        // Automated receipt (D-INSTANT: instant sales get the receipt only, never a
+        // separate delivered message). No-op for Off/Manual stores.
+        $this->scheduleWhatsApp($order, 'order_placed');
+
         return redirect()->route('tenant.orders.show', $order)->with('status', 'Order created.');
     }
 
@@ -323,8 +425,10 @@ class OrderController extends Controller
             'payments.recorder:id,name',
         ]);
         $tenant = $order->tenant;
+        $waConfig = $this->waConfig();
+        $waPending = $this->waPendingFor([$order->id]);
 
-        return view('tenant.orders.show', compact('order', 'tenant'));
+        return view('tenant.orders.show', compact('order', 'tenant', 'waConfig', 'waPending'));
     }
 
     /**
@@ -659,6 +763,12 @@ class OrderController extends Controller
 
         $order->update(['status' => $validated['status']]);
 
+        // Automated ready/delivered message (no-op for Off/Manual; dedupe means a
+        // status that bounces back and forward never re-sends).
+        if ($event = WhatsAppConfig::eventForStatus($order->status)) {
+            $this->scheduleWhatsApp($order, $event);
+        }
+
         if ($request->expectsJson()) {
             return response()->json(['ok' => true, 'status' => $order->status]);
         }
@@ -748,6 +858,11 @@ class OrderController extends Controller
                 return response()->json(['ok' => false, 'errors' => $e->errors()], 422);
             }
             throw $e;
+        }
+
+        // Automated thank-you when this settle marked the order delivered (6.1).
+        if (! empty($validated['mark_delivered']) && $order->fresh()->status === 'delivered') {
+            $this->scheduleWhatsApp($order->fresh(), 'order_delivered');
         }
 
         if ($request->expectsJson()) {

@@ -83,6 +83,7 @@
                         this.$refs.results.innerHTML = html;
                         this.loading = false;
                         window.bindAdvanceButtons?.(this.$refs.results);
+                        window.hydrateUndoRings?.(this.$refs.results);
                         const clean = new URL(url);
                         clean.searchParams.delete('partial');
                         window.history.replaceState({}, '', clean);

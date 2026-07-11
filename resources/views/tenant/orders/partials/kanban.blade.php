@@ -30,8 +30,9 @@
                 @forelse ($colOrders as $order)
                     @php
                         $phone = $order->customer?->phone;
-                        $waDigits = $phone ? preg_replace('/\D/', '', $phone) : null;
-                        $telNumber = $phone ? preg_replace('/[^\d+]/', '', $phone) : null;
+                        // Mode-aware manual "Send on WhatsApp" pill (FT-WhatsApp); null when
+                        // Off / Automated / no phone / event disabled.
+                        $pill = $waConfig->orderPill($order);
                     @endphp
                     <div class="kanban-card card border-0 shadow-sm rounded-3 mb-2" data-id="{{ $order->id }}"
                          data-customer="{{ $order->customer?->name ?? 'Customer' }}"
@@ -75,39 +76,48 @@
                             </a>
 
                             {{-- Actions --}}
-                            <div class="d-flex align-items-center gap-1 mt-2">
+                            @php $waPend = $waPending[$order->id] ?? null; @endphp
+                            @if ($waPend)
+                                {{-- Automated message counting down — offer the undo ring instead. --}}
+                                @include('tenant.orders.partials._wa-undo', ['order' => $order, 'msg' => $waPend, 'variant' => 'block'])
+                            @else
                                 @if ($col['key'] !== 'delivered')
                                     @php $next = $col['key'] === 'pending' ? 'ready_for_pickup' : 'delivered'; @endphp
-                                    <button type="button" class="btn btn-primary btn-sm flex-grow-1 advance-btn"
-                                            data-id="{{ $order->id }}" data-next="{{ $next }}"
-                                            @if ($next === 'delivered')
-                                                data-settle="1"
-                                                data-customer="{{ $order->customer?->name ?? 'Customer' }}"
-                                                data-subtotal="{{ $order->subtotal }}"
-                                                data-total="{{ $order->total_amount }}"
-                                                data-advance="{{ $order->advance_paid }}"
-                                                data-balance="{{ $order->balance_due }}"
-                                                data-discount-type="{{ $order->discount_type }}"
-                                                data-discount-value="{{ $order->discount_value }}"
-                                            @endif>
-                                        <span class="spinner-border spinner-border-sm d-none me-1" role="status"></span>
-                                        {{ $col['key'] === 'pending' ? 'Mark ready' : 'Mark delivered' }}
-                                        <i class="bi bi-arrow-right ms-1"></i>
-                                    </button>
+                                    <div class="d-flex align-items-center gap-1 mt-2">
+                                        <button type="button" class="advance-liquid flex-grow-1 advance-btn"
+                                                data-id="{{ $order->id }}" data-next="{{ $next }}"
+                                                @if ($next === 'delivered')
+                                                    data-settle="1"
+                                                    data-customer="{{ $order->customer?->name ?? 'Customer' }}"
+                                                    data-subtotal="{{ $order->subtotal }}"
+                                                    data-total="{{ $order->total_amount }}"
+                                                    data-advance="{{ $order->advance_paid }}"
+                                                    data-balance="{{ $order->balance_due }}"
+                                                    data-discount-type="{{ $order->discount_type }}"
+                                                    data-discount-value="{{ $order->discount_value }}"
+                                                @endif>
+                                            <span class="spinner-border spinner-border-sm d-none me-1" role="status"></span>
+                                            {{ $col['key'] === 'pending' ? 'Mark ready' : 'Mark delivered' }}
+                                            <i class="bi bi-arrow-right ms-1"></i>
+                                        </button>
+                                    </div>
                                 @endif
-                                @if ($waDigits)
-                                    <a href="https://wa.me/{{ $waDigits }}" target="_blank" rel="noopener"
-                                       class="action-icon-btn action-whatsapp" title="Message on WhatsApp" aria-label="Message on WhatsApp">
+
+                                {{-- Manual "Send on WhatsApp" pill (FT-WhatsApp, Manual mode). --}}
+                                @if ($pill)
+                                    <a href="{{ $pill['url'] }}" target="_blank" rel="noopener"
+                                       class="wa-pill w-100 mt-2 {{ $pill['fallback'] ? 'wa-pill-warn' : '' }}"
+                                       aria-label="{{ $pill['label'] }}">
                                         <i class="bi bi-whatsapp"></i>
+                                        <span>{{ $pill['label'] }}</span>
                                     </a>
+                                    @if ($pill['fallback'])
+                                        <a href="{{ route('profile.edit') }}" class="wa-setup-hint mt-1">
+                                            <i class="bi bi-exclamation-circle"></i> Finish WhatsApp setup
+                                        </a>
+                                    @endif
                                 @endif
-                                @if ($telNumber)
-                                    <a href="tel:{{ $telNumber }}"
-                                       class="action-icon-btn action-call" title="Call customer" aria-label="Call customer">
-                                        <i class="bi bi-telephone"></i>
-                                    </a>
-                                @endif
-                            </div>
+                            @endif
                         </div>
                     </div>
                 @empty

@@ -14,7 +14,7 @@
      x-data="customersIndex({
         endpoint: @js(route('tenant.customers.index')),
         query: @js($search),
-        filter: @js($filter === 'patients' ? 'patients' : 'all'),
+        filter: @js(in_array($filter, ['patients', 'birthdays'], true) ? $filter : 'all'),
         serverTotal: {{ $customers->total() }},
      })">
 
@@ -63,6 +63,9 @@
             <button type="button" class="segmented-item" :class="{ 'active': filter==='patients' }" @click="setFilter('patients')">
                 <i class="bi bi-clipboard2-pulse"></i> Patients
             </button>
+            <button type="button" class="segmented-item" :class="{ 'active': filter==='birthdays' }" @click="setFilter('birthdays')">
+                <i class="bi bi-balloon"></i> Birthdays
+            </button>
         </div>
     </div>
 
@@ -70,6 +73,7 @@
     <p class="text-muted-foreground text-sm mb-3" x-cloak>
         <span x-text="displayTotal()"></span>
         <template x-if="filter==='patients'"><span> with a prescription on file</span></template>
+        <template x-if="filter==='birthdays'"><span> with a birthday in the next 7 days 🎂</span></template>
     </p>
 
     {{-- ============ LIVE (Alpine) results ============ --}}
@@ -104,6 +108,9 @@
                                         <span class="osms-badge osms-badge-blue" title="Has a prescription on file">
                                             <span class="osms-badge-dot"></span> Patient
                                         </span>
+                                    </template>
+                                    <template x-if="c.days_until_birthday !== null && c.days_until_birthday <= 7">
+                                        <span class="birthday-chip" x-text="birthdayLabel(c.days_until_birthday)"></span>
                                     </template>
                                 </div>
                                 <div class="text-muted-foreground text-sm mt-1">
@@ -164,6 +171,10 @@
                                         <span class="osms-badge-dot"></span> Patient
                                     </span>
                                 @endif
+                                @php $bdayDays = $c->daysUntilBirthday(); @endphp
+                                @if (! is_null($bdayDays) && $bdayDays <= 7)
+                                    <span class="birthday-chip">🎂 {{ $bdayDays === 0 ? 'Today' : ($bdayDays === 1 ? 'Tomorrow' : 'in ' . $bdayDays . ' days') }}</span>
+                                @endif
                             </div>
                             <div class="text-muted-foreground text-sm mt-1">
                                 <i class="bi bi-telephone me-1"></i>{{ $c->phone }}
@@ -190,19 +201,29 @@
                 <div class="mt-3">{{ $customers->links() }}</div>
             @endif
         @else
-            @php $isPatientFilter = $filter === 'patients'; @endphp
+            @php
+                $isPatientFilter = $filter === 'patients';
+                $isBirthdayFilter = $filter === 'birthdays';
+                $emptyIcon = $isBirthdayFilter ? 'bi-balloon' : 'bi-people';
+            @endphp
             <div class="glass card-lift rounded-4 text-center p-5 animate-fade-up">
                 <span class="d-inline-flex align-items-center justify-content-center rounded-circle person-avatar mx-auto mb-3"
-                      style="width:3.25rem;height:3.25rem;font-size:1.3rem;"><i class="bi bi-people"></i></span>
+                      style="width:3.25rem;height:3.25rem;font-size:1.3rem;"><i class="bi {{ $emptyIcon }}"></i></span>
                 <h2 class="h5 fw-semibold font-display">
-                    {{ $isPatientFilter ? 'No patients yet' : 'No customers yet' }}
+                    @if ($isBirthdayFilter) No birthdays this week
+                    @elseif ($isPatientFilter) No patients yet
+                    @else No customers yet @endif
                 </h2>
                 <p class="text-muted-foreground mb-3">
-                    {{ $isPatientFilter
-                        ? 'Customers with a prescription on file appear here. Add an eye record to a customer to make them a patient.'
-                        : 'Add your first customer to start tracking prescriptions and orders.' }}
+                    @if ($isBirthdayFilter)
+                        No customers have a birthday in the next 7 days. Add birthdays on customer profiles to see them here. 🎂
+                    @elseif ($isPatientFilter)
+                        Customers with a prescription on file appear here. Add an eye record to a customer to make them a patient.
+                    @else
+                        Add your first customer to start tracking prescriptions and orders.
+                    @endif
                 </p>
-                @unless ($isPatientFilter)
+                @unless ($isPatientFilter || $isBirthdayFilter)
                     <a href="{{ route('tenant.customers.create') }}" class="btn btn-primary">
                         <i class="bi bi-plus-lg me-1"></i> Add your first customer
                     </a>
@@ -233,6 +254,13 @@
                     .map(w => (w[0] || '').toUpperCase()).join('')) || '?';
             },
 
+            // Festive chip label for an upcoming birthday (days from today).
+            birthdayLabel(days) {
+                if (days === 0) return '🎂 Today';
+                if (days === 1) return '🎂 Tomorrow';
+                return '🎂 in ' + days + ' days';
+            },
+
             displayTotal() {
                 const n = this.mode === 'live' ? this.total : this.serverTotal;
                 return n + ' ' + (n === 1 ? 'customer' : 'customers');
@@ -252,7 +280,7 @@
             _url(forFetch) {
                 const u = new URL(this.endpoint, window.location.origin);
                 if (this.query.trim()) u.searchParams.set('q', this.query.trim());
-                if (this.filter === 'patients') u.searchParams.set('filter', 'patients');
+                if (this.filter !== 'all') u.searchParams.set('filter', this.filter);
                 return u.toString();
             },
 
