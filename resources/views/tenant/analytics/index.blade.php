@@ -258,16 +258,28 @@
                                     <td class="text-end font-monospace">₹ {{ number_format($o->advance_paid, 2) }}</td>
                                     <td class="text-end font-monospace text-danger fw-medium">₹ {{ number_format($o->balance_due, 2) }}</td>
                                     <td class="text-end pe-4" onclick="event.stopPropagation()">
-                                        {{-- 6.3 — settle this due via the shared modal (record-only, no status change) --}}
-                                        <button type="button" class="btn btn-sm btn-primary dues-settle-btn"
-                                                data-id="{{ $o->id }}"
-                                                data-customer="{{ $o->customer?->name ?? 'Customer' }}"
-                                                data-subtotal="{{ $o->subtotal }}"
-                                                data-advance="{{ $o->advance_paid }}"
-                                                data-discount-type="{{ $o->discount_type }}"
-                                                data-discount-value="{{ $o->discount_value }}">
-                                            <i class="bi bi-cash-coin me-1"></i> Settle
-                                        </button>
+                                        <div class="d-inline-flex align-items-center gap-2">
+                                            {{-- FT-WhatsApp — one-tap pre-filled "settle your balance" reminder. --}}
+                                            @php $waDues = $waConfig->duesReminderUrl($o); @endphp
+                                            @if ($waDues)
+                                                <a href="{{ $waDues }}" target="_blank" rel="noopener"
+                                                   class="wa-pill wa-pill-icon"
+                                                   title="Send a WhatsApp payment reminder"
+                                                   aria-label="Send a WhatsApp payment reminder to {{ $o->customer?->name ?? 'this customer' }}">
+                                                    <i class="bi bi-whatsapp"></i>
+                                                </a>
+                                            @endif
+                                            {{-- 6.3 — settle this due via the shared modal (record-only, no status change) --}}
+                                            <button type="button" class="btn btn-sm btn-primary dues-settle-btn"
+                                                    data-id="{{ $o->id }}"
+                                                    data-customer="{{ $o->customer?->name ?? 'Customer' }}"
+                                                    data-subtotal="{{ $o->subtotal }}"
+                                                    data-advance="{{ $o->advance_paid }}"
+                                                    data-discount-type="{{ $o->discount_type }}"
+                                                    data-discount-value="{{ $o->discount_value }}">
+                                                <i class="bi bi-cash-coin me-1"></i> Settle
+                                            </button>
+                                        </div>
                                     </td>
                                 </tr>
                             @empty

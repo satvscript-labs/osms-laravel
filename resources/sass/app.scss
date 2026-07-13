@@ -124,6 +124,16 @@ $enable-negative-margins:  true;
   --osms-amber:          #b45309;
   --osms-amber-bg:       #fef3c7;
 
+  // --- Tax invoice identity (FT-TaxInvoice) ---
+  // Deliberately its own pair, not a semantic tone: evokes the pale-yellow
+  // carbon bill-book paper of a typical Indian shop counter, so the formal
+  // tax invoice reads as a visually distinct document from the primary-blue
+  // receipt at a glance — on screen, in the PDF, and on the toggle in the
+  // order builder that flags which items belong on it.
+  --invoice-paper:        #fdf6d8;
+  --invoice-paper-border: #eadfa0;
+  --invoice-accent:       #8a6d1a;
+
   // --- Layered shadow scale (cool, soft) ---
   --shadow-sm:      0 1px 2px rgba(16, 24, 40, 0.05);
   --shadow-card:    0 1px 2px rgba(16, 24, 40, 0.04), 0 4px 14px rgba(16, 24, 40, 0.04);
@@ -406,6 +416,25 @@ body {
       box-shadow: var(--shadow-sm);
     }
   }
+  // Frozen option (e.g. Automated WhatsApp "coming soon") — visible but inert.
+  .segmented-item-disabled {
+    cursor: not-allowed;
+    color: var(--osms-faint);
+    opacity: 0.85;
+    &:hover { color: var(--osms-faint); background: transparent; }
+  }
+  .segmented-soon {
+    margin-left: 0.4rem;
+    padding: 0.05rem 0.4rem;
+    border-radius: var(--radius-pill);
+    background: var(--tone-amber-bg);
+    color: var(--tone-amber);
+    font-size: var(--text-3xs);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    vertical-align: middle;
+  }
 }
 
 // Quick date-range chips (analytics). Pill filters that echo the segmented
@@ -594,10 +623,11 @@ body {
   font-size: var(--text-xs); font-weight: 600; white-space: nowrap;
 }
 .osms-badge-dot { width: 0.45rem; height: 0.45rem; border-radius: 50%; flex-shrink: 0; background: currentColor; }
-.osms-badge-amber { background: var(--tone-amber-bg); color: var(--tone-amber); }
-.osms-badge-blue  { background: var(--tone-blue-bg);  color: var(--tone-blue); }
-.osms-badge-green { background: var(--tone-green-bg); color: var(--tone-green); }
-.osms-badge-red   { background: var(--tone-red-bg);   color: var(--tone-red); }
+.osms-badge-amber   { background: var(--tone-amber-bg);   color: var(--tone-amber); }
+.osms-badge-blue    { background: var(--tone-blue-bg);    color: var(--tone-blue); }
+.osms-badge-green   { background: var(--tone-green-bg);   color: var(--tone-green); }
+.osms-badge-red     { background: var(--tone-red-bg);     color: var(--tone-red); }
+.osms-badge-neutral { background: var(--tone-neutral-bg); color: var(--tone-neutral); }
 
 // ============================================================
 // 16. KANBAN
@@ -698,6 +728,14 @@ body {
 // Danger variant of the meta-chip (overdue ready-by dates).
 .meta-chip-danger { background: var(--tone-red-bg); color: var(--tone-red); }
 
+// Festive birthday chip (customers "Birthdays" tab) — warm amber, celebratory.
+.birthday-chip {
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  padding: 0.15rem 0.6rem; border-radius: var(--radius-pill);
+  background: var(--tone-amber-bg); color: var(--tone-amber);
+  font-size: var(--text-xs); font-weight: 600; white-space: nowrap;
+}
+
 // ------------------------------------------------------------
 // Row action icon buttons (orders: WhatsApp / call / PDF)
 // ------------------------------------------------------------
@@ -719,9 +757,312 @@ body {
   box-shadow: var(--shadow-sm);
 }
 .action-icon-btn:active { transform: scale(0.94); }
-// Brand-tinted hovers so the temp WhatsApp / call affordances read at a glance.
-.action-whatsapp:hover { color: #128c4b; border-color: #b7e4c7; background: #e9f9ef; }
+// Brand-tinted hover for the customer-page call affordance (req 2).
 .action-call:hover     { color: var(--osms-primary); border-color: var(--osms-primary-soft); background: var(--osms-primary-soft); }
+
+// ------------------------------------------------------------
+// WhatsApp "Send" pill — manual messaging affordance (FT-WhatsApp)
+// ------------------------------------------------------------
+// WhatsApp green is a third-party brand colour, kept as local SCSS vars (not
+// OSMS palette tokens) so it never leaks into the brand system.
+$wa-green:        #0f9d58;
+$wa-green-bg:     #e9f9ef;
+$wa-green-border: #b7e4c7;
+$wa-green-strong: #0b8043;
+
+.wa-pill {
+  display: inline-flex; align-items: center; justify-content: center;
+  gap: .4rem;
+  padding: .42rem .85rem;
+  border-radius: var(--radius-pill);
+  background: $wa-green-bg;
+  border: 1px solid $wa-green-border;
+  color: $wa-green-strong;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  line-height: 1;
+  text-decoration: none;
+  position: relative;
+  overflow: hidden;
+  transition: all var(--duration-base) var(--ease-spring);
+
+  i { font-size: 1rem; }
+
+  // Liquid sheen sweep on hover.
+  &::after {
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(120deg, transparent 30%, rgba(255, 255, 255, .55) 50%, transparent 70%);
+    transform: translateX(-120%);
+    transition: transform var(--duration-slow) var(--ease-spring);
+  }
+  &:hover {
+    background: $wa-green; border-color: $wa-green; color: #fff;
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-raised);
+  }
+  &:hover::after { transform: translateX(120%); }
+  &:active { transform: scale(0.97); }
+  &:focus-visible { outline: 2px solid $wa-green; outline-offset: 2px; }
+}
+
+// Compact icon-only variant (dense table rows).
+.wa-pill-icon {
+  width: 2rem; height: 2rem; padding: 0; gap: 0; flex-shrink: 0;
+  span { display: none; }
+}
+
+// Fallback (automated chosen but not yet connected) — amber "needs setup" tone.
+.wa-pill-warn {
+  background: var(--tone-amber-bg); border-color: var(--tone-amber-bg); color: var(--tone-amber);
+  &:hover { background: var(--tone-amber); border-color: var(--tone-amber); color: #fff; }
+  &:focus-visible { outline-color: var(--tone-amber); }
+}
+
+.wa-setup-hint {
+  display: inline-flex; align-items: center; gap: .3rem;
+  font-size: var(--text-xs); color: var(--tone-amber);
+  text-decoration: none;
+  transition: color var(--duration-fast) var(--ease-out);
+  i { font-size: .9rem; }
+  &:hover { color: var(--osms-fg); text-decoration: underline; }
+}
+
+// ------------------------------------------------------------
+// Liquid advance button — "Mark ready / Mark delivered" (FT-WhatsApp req 5)
+// ------------------------------------------------------------
+// The board's primary workflow action, redesigned for tactile iOS fluidity: a
+// gradient fill, a light "well-up" on hover, a sheen sweep, an arrow that slides
+// right, and a spring press. The automated undo-ring (Phase 6) layers on top of
+// this same button when a store runs in Automated mode.
+.advance-liquid {
+  position: relative;
+  display: inline-flex; align-items: center; justify-content: center;
+  gap: .4rem;
+  padding: .5rem 1rem;
+  border: none;
+  border-radius: var(--radius);
+  background: linear-gradient(135deg, var(--osms-primary), var(--osms-primary-hover));
+  color: #fff;
+  font-size: var(--text-sm); font-weight: 600; line-height: 1;
+  overflow: hidden;
+  cursor: pointer;
+  box-shadow: var(--shadow-card);
+  transition: transform var(--duration-base) var(--ease-spring),
+              box-shadow var(--duration-base) var(--ease-spring);
+
+  // Liquid light welling up from the base on hover.
+  &::before {
+    content: ""; position: absolute; inset: 0; z-index: 0;
+    background: radial-gradient(circle at 50% 135%, rgba(255, 255, 255, .38), transparent 62%);
+    opacity: 0;
+    transition: opacity var(--duration-base) var(--ease-spring);
+  }
+  // Diagonal sheen sweep.
+  &::after {
+    content: ""; position: absolute; inset: 0; z-index: 0;
+    background: linear-gradient(120deg, transparent 30%, rgba(255, 255, 255, .5) 50%, transparent 70%);
+    transform: translateX(-130%);
+    transition: transform var(--duration-slow) var(--ease-spring);
+  }
+  // Keep label / spinner / arrow above the effect layers.
+  > * { position: relative; z-index: 1; }
+  .bi-arrow-right { transition: transform var(--duration-base) var(--ease-spring); }
+
+  &:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-raised);
+    color: #fff;
+  }
+  &:hover::before { opacity: 1; }
+  &:hover::after { transform: translateX(130%); }
+  &:hover .bi-arrow-right { transform: translateX(3px); }
+  &:active { transform: scale(0.97); }
+  &:focus-visible { outline: 2px solid var(--osms-primary); outline-offset: 2px; }
+  &:disabled { opacity: .7; cursor: default; transform: none; }
+}
+// Compact variant for dense table rows.
+.advance-liquid-sm { padding: .38rem .75rem; font-size: var(--text-xs); }
+
+// ------------------------------------------------------------
+// Automated "undo ring" — the 60s revert window (FT-WhatsApp req 3.1 / 4)
+// ------------------------------------------------------------
+// The dial's stroke depletes over the grace window (driven client-side from the
+// message's scheduled_for) — the ring *is* the timer, no digits. Tapping reverts.
+.wa-undo {
+  display: inline-flex; align-items: center; gap: .55rem;
+  padding: .35rem .7rem .35rem .4rem;
+  border: 1px solid var(--osms-border);
+  border-radius: var(--radius);
+  background: var(--surface-card);
+  color: var(--osms-fg);
+  text-align: left;
+  cursor: pointer;
+  transition: all var(--duration-base) var(--ease-spring);
+
+  &:hover {
+    border-color: var(--tone-amber);
+    background: var(--tone-amber-bg);
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-sm);
+  }
+  &:active { transform: scale(0.98); }
+  &:focus-visible { outline: 2px solid var(--osms-primary); outline-offset: 2px; }
+  &:disabled { cursor: default; }
+}
+.wa-undo-dial {
+  position: relative; flex-shrink: 0;
+  width: 2.1rem; height: 2.1rem;
+  display: inline-flex; align-items: center; justify-content: center;
+
+  svg { position: absolute; inset: 0; width: 100%; height: 100%; transform: rotate(-90deg); }
+  .wa-undo-track { fill: none; stroke: var(--surface-sunken); stroke-width: 3; }
+  .wa-undo-progress { fill: none; stroke: var(--osms-primary); stroke-width: 3; stroke-linecap: round; }
+  i {
+    font-size: .95rem; color: var(--osms-primary);
+    transition: transform var(--duration-base) var(--ease-spring), color var(--duration-base) var(--ease-spring);
+  }
+}
+.wa-undo:hover .wa-undo-dial i { transform: rotate(-45deg); color: var(--tone-amber); }
+.wa-undo-text { display: inline-flex; flex-direction: column; line-height: 1.15; min-width: 0; }
+.wa-undo-title { font-size: var(--text-sm); font-weight: 600; }
+.wa-undo-sub { font-size: var(--text-2xs); color: var(--osms-muted); }
+
+// Completed (message sent) — settle to a calm green confirmation.
+.wa-undo-done {
+  border-color: var(--tone-green-bg); background: var(--tone-green-bg);
+  .wa-undo-title { color: var(--tone-green); }
+  .wa-undo-dial i { color: var(--tone-green); transform: none; }
+  .wa-undo-progress { stroke: var(--tone-green); }
+}
+
+// Dial-only, for dense table rows.
+.wa-undo-compact { padding: .2rem; gap: 0; }
+.wa-undo-compact .wa-undo-text { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .wa-undo-progress { transition: none !important; }
+}
+
+// Brand-tinted "Call" pill — the twin of .wa-pill for the customer page (req 2).
+.call-pill {
+  display: inline-flex; align-items: center; justify-content: center;
+  gap: .4rem;
+  padding: .42rem .85rem;
+  border-radius: var(--radius-pill);
+  background: var(--osms-primary-soft);
+  border: 1px solid var(--osms-primary-soft);
+  color: var(--osms-primary);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  line-height: 1;
+  text-decoration: none;
+  position: relative;
+  overflow: hidden;
+  transition: all var(--duration-base) var(--ease-spring);
+
+  i { font-size: 1rem; }
+
+  &::after {
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(120deg, transparent 30%, rgba(255, 255, 255, .55) 50%, transparent 70%);
+    transform: translateX(-120%);
+    transition: transform var(--duration-slow) var(--ease-spring);
+  }
+  &:hover {
+    background: var(--osms-primary); border-color: var(--osms-primary); color: #fff;
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-raised);
+  }
+  &:hover::after { transform: translateX(120%); }
+  &:active { transform: scale(0.97); }
+  &:focus-visible { outline: 2px solid var(--osms-primary); outline-offset: 2px; }
+
+  i.bi-telephone-fill { transition: transform var(--duration-base) var(--ease-spring); }
+  &:hover i.bi-telephone-fill { transform: scale(1.12) rotate(-8deg); }
+}
+
+// ------------------------------------------------------------
+// Tax invoice — light-yellow identity (FT-TaxInvoice)
+// ------------------------------------------------------------
+// Per-line opt-in toggle in the order builder: outlined/muted at rest, fills
+// with the invoice-paper yellow once a line is flagged.
+.invoice-toggle {
+  display: inline-flex; align-items: center; gap: .3rem;
+  padding: .15rem .5rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--osms-border);
+  background: transparent;
+  color: var(--osms-faint);
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  line-height: 1.4;
+  transition: all var(--duration-base) var(--ease-spring);
+
+  i { font-size: .8rem; }
+
+  &:hover {
+    border-color: var(--invoice-paper-border);
+    color: var(--invoice-accent);
+    background: var(--invoice-paper);
+    transform: translateY(-1px);
+  }
+  &:active { transform: scale(0.96); }
+  &:focus-visible { outline: 2px solid var(--invoice-accent); outline-offset: 2px; }
+}
+.invoice-toggle-active {
+  border-color: var(--invoice-paper-border);
+  background: var(--invoice-paper);
+  color: var(--invoice-accent);
+  &:hover { background: var(--invoice-paper); color: var(--invoice-accent); }
+}
+
+// Summary-panel reassurance strip (order builder) once ≥1 line is flagged.
+.invoice-note {
+  display: flex; align-items: flex-start; gap: .5rem;
+  padding: .65rem .75rem;
+  border-radius: var(--radius);
+  background: var(--invoice-paper);
+  border: 1px solid var(--invoice-paper-border);
+  color: var(--invoice-accent);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+  i { font-size: .95rem; margin-top: .1rem; flex-shrink: 0; }
+}
+
+// "Tax invoice" pill on the order show page — twin of .wa-pill, yellow identity.
+.invoice-pill {
+  display: inline-flex; align-items: center; justify-content: center;
+  gap: .4rem;
+  padding: .42rem .85rem;
+  border-radius: var(--radius-pill);
+  background: var(--invoice-paper);
+  border: 1px solid var(--invoice-paper-border);
+  color: var(--invoice-accent);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  line-height: 1;
+  text-decoration: none;
+  position: relative;
+  overflow: hidden;
+  transition: all var(--duration-base) var(--ease-spring);
+
+  i { font-size: 1rem; }
+
+  &::after {
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(120deg, transparent 30%, rgba(255, 255, 255, .55) 50%, transparent 70%);
+    transform: translateX(-120%);
+    transition: transform var(--duration-slow) var(--ease-spring);
+  }
+  &:hover {
+    background: var(--invoice-accent); border-color: var(--invoice-accent); color: #fff;
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-raised);
+  }
+  &:hover::after { transform: translateX(120%); }
+  &:active { transform: scale(0.97); }
+  &:focus-visible { outline: 2px solid var(--invoice-accent); outline-offset: 2px; }
+}
 
 // Live results swap — dim + lock while the next partial is fetching, so the
 // content cross-fades instead of flickering to blank.

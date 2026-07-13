@@ -9,7 +9,12 @@ use App\Models\Order;
 use App\Models\Customer;
 use App\Models\Payment;
 use App\Models\StockMovement;
+use App\Models\TaxInvoice;
+use App\Models\WhatsAppConfig;
+use App\Models\WhatsAppMessage;
+use App\Services\WhatsApp\WhatsAppScheduler;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Collection;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -38,6 +43,10 @@ class OrderController extends Controller
                                 ->where('balance_due', '>', 0)->sum('balance_due'),
         ];
 
+        // Resolve the store's WhatsApp config once (real row or a Manual default)
+        // so every card can decide whether to show a manual "Send" pill (FT-WhatsApp).
+        $waConfig = $this->waConfig();
+
         // ---- Kanban: grouped by status (workflow board) ----
         if ($view === 'kanban') {
             $orders = Order::with('customer:id,name,phone')
@@ -50,6 +59,8 @@ class OrderController extends Controller
                 'view' => 'kanban',
                 'orders' => $orders,
                 'stats' => $stats,
+                'waConfig' => $waConfig,
+                'waPending' => $this->waPendingFor($orders->flatten(1)->pluck('id')),
             ]);
         }
 
@@ -88,6 +99,8 @@ class OrderController extends Controller
         // results partial and swap it in. Keeps one Blade source of truth for the
         // table (sort headers, pagination, row actions) instead of a parallel JS
         // template, while staying reload-free per the liquid-motion standard.
+        $waPending = $this->waPendingFor($orders->getCollection()->pluck('id'));
+
         if ($isPartial) {
             return response()->view('tenant.orders.partials._results', [
                 'orders'  => $orders,
@@ -96,6 +109,8 @@ class OrderController extends Controller
                 'payment' => $payment,
                 'sort'    => $sort,
                 'dir'     => $dir,
+                'waConfig' => $waConfig,
+                'waPending' => $waPending,
             ]);
         }
 
@@ -108,7 +123,91 @@ class OrderController extends Controller
             'payment' => $payment,
             'sort'    => $sort,
             'dir'     => $dir,
+            'waConfig' => $waConfig,
+            'waPending' => $waPending,
         ]);
+    }
+
+    /**
+     * FT-WhatsApp — the pending (still-cancellable) automated messages for a set
+     * of orders, keyed by order_id. Only ready/delivered events surface an undo
+     * ring; a placed receipt sends quietly.
+     */
+    private function waPendingFor($ids): Collection
+    {
+        $ids = collect($ids)->filter()->values();
+        if ($ids->isEmpty()) {
+            return collect();
+        }
+
+        return WhatsAppMessage::whereIn('order_id', $ids)
+            ->whereIn('event', ['order_ready', 'order_delivered'])
+            ->where('status', 'scheduled')
+            ->where('scheduled_for', '>', now())
+            ->latest('scheduled_for')
+            ->get()
+            ->keyBy('order_id');
+    }
+
+    /** The store's WhatsApp config (existing row or a zero-config Manual default). */
+    private function waConfig(): WhatsAppConfig
+    {
+        $tenant = auth()->user()->tenant;
+
+        return $tenant->whatsappConfig ?? WhatsAppConfig::defaultFor($tenant);
+    }
+
+    /**
+     * FT-WhatsApp — schedule an automated message for an order event (a no-op for
+     * Off / Manual stores; the manual pill covers those). Called after the write
+     * commits. Never lets a messaging hiccup break the order flow.
+     */
+    private function scheduleWhatsApp(Order $order, string $event): void
+    {
+        try {
+            app(WhatsAppScheduler::class)->handle($order, $event);
+        } catch (\Throwable $e) {
+            report($e); // messaging must never break placing/advancing an order
+        }
+    }
+
+    /**
+     * FT-WhatsApp (Phase 6) — the "undo" behind the countdown ring. While an
+     * automated ready/delivered message is still within its grace window, cancel
+     * it and step the order back one status. Reverting delivered→ready uses a
+     * direct status write (NOT updateStatus), so it never re-schedules the
+     * already-sent ready message. Refused once the message has gone out.
+     */
+    public function revert(Request $request, Order $order): JsonResponse
+    {
+        $message = WhatsAppMessage::where('order_id', $order->id)
+            ->whereIn('event', ['order_ready', 'order_delivered'])
+            ->where('status', 'scheduled')
+            ->where('scheduled_for', '>', now())
+            ->latest('scheduled_for')
+            ->first();
+
+        if (! $message) {
+            return response()->json([
+                'ok' => false,
+                'message' => 'Too late to undo — the message has already been sent.',
+            ], 422);
+        }
+
+        // event → [status it advanced TO, status to revert back to]
+        [$advancedTo, $revertTo] = match ($message->event) {
+            'order_ready' => ['ready_for_pickup', 'pending'],
+            'order_delivered' => ['delivered', 'ready_for_pickup'],
+            default => [null, null],
+        };
+
+        $message->update(['status' => 'cancelled']);
+
+        if ($revertTo !== null && $order->status === $advancedTo) {
+            $order->update(['status' => $revertTo]); // direct write — no re-trigger
+        }
+
+        return response()->json(['ok' => true, 'status' => $order->status]);
     }
 
     public function create(Request $request): View
@@ -154,6 +253,9 @@ class OrderController extends Controller
             'items.*.description' => ['nullable', 'string', 'max:255'],
             'items.*.quantity' => ['required', 'integer', 'min:1', 'max:10000'],
             'items.*.unit_price' => ['nullable', 'numeric', 'min:0', 'max:99999999'],
+            // FT-TaxInvoice — per-line opt-in, only the items a customer wants a
+            // formal invoice for (e.g. a branded frame), not necessarily the whole order.
+            'items.*.tax_invoice' => ['nullable', 'boolean'],
         ], [
             'customer_phone.regex' => 'Enter a valid phone number (7–15 digits).',
             'estimated_ready_at.required_if' => 'A special order needs an estimated ready date.',
@@ -228,6 +330,7 @@ class OrderController extends Controller
                     'quantity' => $qty,
                     'unit_price' => $unit,
                     'list_price' => $list,
+                    'on_tax_invoice' => (bool) ($line['tax_invoice'] ?? false),
                 ];
             }
             // Local/custom lines (6.4): no inventory, list_price = unit_price (no MRP
@@ -242,6 +345,7 @@ class OrderController extends Controller
                     'quantity' => $qty,
                     'unit_price' => $unit,
                     'list_price' => $unit,
+                    'on_tax_invoice' => (bool) ($line['tax_invoice'] ?? false),
                 ];
             }
             $subtotal = round($subtotal, 2);
@@ -280,6 +384,13 @@ class OrderController extends Controller
 
             $order->items()->createMany($lines);
 
+            // FT-TaxInvoice — issue the formal invoice now (same transaction as the
+            // order) when at least one line was opted in, so the two can never
+            // disagree: either both exist or neither does.
+            if (collect($lines)->contains('on_tax_invoice', true)) {
+                TaxInvoice::issueFor($order);
+            }
+
             // Draw down stock now that the order is committed, logging each
             // movement so the item's stock ledger stays complete (FG-StockLog).
             foreach ($wanted as $id => $qty) {
@@ -310,6 +421,10 @@ class OrderController extends Controller
             return $order;
         });
 
+        // Automated receipt (D-INSTANT: instant sales get the receipt only, never a
+        // separate delivered message). No-op for Off/Manual stores.
+        $this->scheduleWhatsApp($order, 'order_placed');
+
         return redirect()->route('tenant.orders.show', $order)->with('status', 'Order created.');
     }
 
@@ -323,8 +438,13 @@ class OrderController extends Controller
             'payments.recorder:id,name',
         ]);
         $tenant = $order->tenant;
+        $waConfig = $this->waConfig();
+        $waPending = $this->waPendingFor([$order->id]);
+        // FT-TaxInvoice — only surface the button when the invoice exists AND at
+        // least one item is currently flagged (an edit could have unflagged all of them).
+        $taxInvoice = $order->items->contains('on_tax_invoice', true) ? $order->taxInvoice : null;
 
-        return view('tenant.orders.show', compact('order', 'tenant'));
+        return view('tenant.orders.show', compact('order', 'tenant', 'waConfig', 'waPending', 'taxInvoice'));
     }
 
     /**
@@ -398,6 +518,7 @@ class OrderController extends Controller
             'items.*.description' => ['nullable', 'string', 'max:255'],
             'items.*.quantity' => ['required', 'integer', 'min:1', 'max:10000'],
             'items.*.unit_price' => ['nullable', 'numeric', 'min:0', 'max:99999999'],
+            'items.*.tax_invoice' => ['nullable', 'boolean'],
         ]);
 
         // A re-attached prescription must belong to this order's customer (the
@@ -419,11 +540,15 @@ class OrderController extends Controller
             // (collapse duplicate lines; the builder emits one line per inventory_id).
             $wanted = [];
             $postedPrice = [];
+            $postedTaxInvoice = [];
             foreach ($catalog as $line) {
                 $id = $line['inventory_id'];
                 $wanted[$id] = ($wanted[$id] ?? 0) + (int) $line['quantity'];
                 if (isset($line['unit_price'])) {
                     $postedPrice[$id] = round((float) $line['unit_price'], 2);
+                }
+                if (array_key_exists('tax_invoice', $line)) {
+                    $postedTaxInvoice[$id] = (bool) $line['tax_invoice'];
                 }
             }
 
@@ -434,6 +559,7 @@ class OrderController extends Controller
             $oldQty = [];
             $oldUnit = [];
             $oldList = [];
+            $oldTaxInvoice = [];
             foreach ($order->items as $it) {
                 if ($it->inventory_id === null) {
                     continue; // local/custom line — no stock reconciliation
@@ -441,6 +567,10 @@ class OrderController extends Controller
                 $oldQty[$it->inventory_id] = ($oldQty[$it->inventory_id] ?? 0) + (int) $it->quantity;
                 $oldUnit[$it->inventory_id] = (float) $it->unit_price;
                 $oldList[$it->inventory_id] = $it->list_price !== null ? (float) $it->list_price : (float) $it->unit_price;
+                // FT-TaxInvoice — the edit form has no toggle for this yet, so a
+                // previously-flagged catalog item must survive an unrelated edit
+                // (e.g. a quantity bump) rather than silently losing its invoice flag.
+                $oldTaxInvoice[$it->inventory_id] = $oldTaxInvoice[$it->inventory_id] ?? (bool) $it->on_tax_invoice;
             }
 
             // Lock every item this edit touches (old ∪ new). Open-order items can
@@ -481,10 +611,14 @@ class OrderController extends Controller
                     'quantity' => $qty,
                     'unit_price' => $unit,
                     'list_price' => $list,
+                    // Preserve unless this edit explicitly posts a value for it.
+                    'on_tax_invoice' => $postedTaxInvoice[$id] ?? ($oldTaxInvoice[$id] ?? false),
                 ];
             }
             // Local/custom lines (6.4): rebuilt fresh each edit (no stock diff), with
-            // list_price = unit_price and a sentence-cased description.
+            // list_price = unit_price and a sentence-cased description. There's no
+            // stable key to match a custom line to its pre-edit self, so (like its
+            // price) the invoice flag only survives if this edit re-posts it.
             foreach ($custom as $line) {
                 $qty = (int) $line['quantity'];
                 $unit = round((float) ($line['unit_price'] ?? 0), 2);
@@ -495,6 +629,7 @@ class OrderController extends Controller
                     'quantity' => $qty,
                     'unit_price' => $unit,
                     'list_price' => $unit,
+                    'on_tax_invoice' => (bool) ($line['tax_invoice'] ?? false),
                 ];
             }
             $subtotal = round($subtotal, 2);
@@ -554,6 +689,12 @@ class OrderController extends Controller
                 'discount_amount' => $discountAmount,
                 'total_amount' => $total,
             ]);
+
+            // FT-TaxInvoice — issue the invoice if this edit is what first flags an
+            // item (idempotent; a no-op once one already exists for this order).
+            if (collect($lines)->contains('on_tax_invoice', true)) {
+                TaxInvoice::issueFor($order);
+            }
         });
 
         return redirect()->route('tenant.orders.show', $order)->with('status', 'Order updated.');
@@ -659,6 +800,12 @@ class OrderController extends Controller
 
         $order->update(['status' => $validated['status']]);
 
+        // Automated ready/delivered message (no-op for Off/Manual; dedupe means a
+        // status that bounces back and forward never re-sends).
+        if ($event = WhatsAppConfig::eventForStatus($order->status)) {
+            $this->scheduleWhatsApp($order, $event);
+        }
+
         if ($request->expectsJson()) {
             return response()->json(['ok' => true, 'status' => $order->status]);
         }
@@ -748,6 +895,11 @@ class OrderController extends Controller
                 return response()->json(['ok' => false, 'errors' => $e->errors()], 422);
             }
             throw $e;
+        }
+
+        // Automated thank-you when this settle marked the order delivered (6.1).
+        if (! empty($validated['mark_delivered']) && $order->fresh()->status === 'delivered') {
+            $this->scheduleWhatsApp($order->fresh(), 'order_delivered');
         }
 
         if ($request->expectsJson()) {
@@ -868,6 +1020,28 @@ class OrderController extends Controller
             ->setPaper('a4');
 
         return $pdf->stream('receipt-' . substr($order->id, 0, 8) . '.pdf');
+    }
+
+    /**
+     * FT-TaxInvoice — the formal tax invoice PDF, covering only the items the
+     * shop owner opted in for (not necessarily the whole order). 404s when
+     * nothing is currently flagged, so a stale link can't leak an empty invoice.
+     */
+    public function taxInvoicePdf(Order $order)
+    {
+        $order->load(['customer', 'items.inventory:id,sku,brand,model_name,item_type', 'taxInvoice']);
+        $tenant = $order->tenant;
+        $invoice = $order->taxInvoice;
+        $items = $order->items->where('on_tax_invoice', true);
+
+        if (! $invoice || $items->isEmpty()) {
+            abort(404);
+        }
+
+        $pdf = Pdf::loadView('tenant.orders.tax-invoice-pdf', compact('order', 'tenant', 'invoice', 'items'))
+            ->setPaper('a4');
+
+        return $pdf->stream($invoice->number . '.pdf');
     }
 
     /** JSON list of a customer's eye records for the order builder. */

@@ -1,20 +1,23 @@
 @props(['record'])
 
 @php
-    $cols = [
+    // Distance vision (SPH/CYL/Axis/VA) is the primary Rx — present on nearly
+    // every record, so it gets its own prominent table. ADD/N.V. are secondary
+    // (only relevant for presbyopia) and near-always blank for younger patients,
+    // so they're rendered as compact chips — and omitted entirely when neither
+    // eye has a value, instead of padding the table with dashes no one reads.
+    $primaryCols = [
         ['key' => 'sph', 'label' => 'SPH'],
         ['key' => 'cyl', 'label' => 'CYL'],
         ['key' => 'axis', 'label' => 'Axis'],
-        ['key' => 'add', 'label' => 'ADD'],
         ['key' => 'va', 'label' => 'VA'],
-        ['key' => 'spl', 'label' => 'Spl'],
-        ['key' => 'dv', 'label' => 'D.V.'],
-        ['key' => 'nv', 'label' => 'N.V.'],
     ];
     $val = function ($eye, $key) use ($record) {
         $v = $record->{"{$eye}_{$key}"};
         return ($v === null || $v === '') ? '—' : $v;
     };
+    $hasAdd = ! is_null($record->od_add) || ! is_null($record->os_add);
+    $hasNv = ! is_null($record->od_nv) || ! is_null($record->os_nv);
 @endphp
 
 <div class="card card-lift border-0 shadow-sm rounded-4">
@@ -68,26 +71,46 @@
             </div>
         </div>
 
+        {{-- Primary Rx — the numbers almost every record has, kept large and clear. --}}
         <div class="table-responsive">
-            <table class="table table-sm mb-0" style="font-size:.85rem;">
+            <table class="table table-sm mb-0" style="font-size:.95rem;">
                 <thead class="text-muted-foreground text-uppercase" style="font-size:.68rem;letter-spacing:.04em;">
                     <tr>
                         <th style="width:3rem;"></th>
-                        @foreach ($cols as $c)<th>{{ $c['label'] }}</th>@endforeach
+                        @foreach ($primaryCols as $c)<th>{{ $c['label'] }}</th>@endforeach
                     </tr>
                 </thead>
                 <tbody class="font-monospace">
                     <tr>
-                        <td class="fw-semibold text-muted-foreground">OD</td>
-                        @foreach ($cols as $c)<td>{{ $val('od', $c['key']) }}</td>@endforeach
+                        <td><span class="osms-badge osms-badge-blue"><span class="osms-badge-dot"></span> OD</span></td>
+                        @foreach ($primaryCols as $c)<td class="fw-medium">{{ $val('od', $c['key']) }}</td>@endforeach
                     </tr>
                     <tr>
-                        <td class="fw-semibold text-muted-foreground">OS</td>
-                        @foreach ($cols as $c)<td>{{ $val('os', $c['key']) }}</td>@endforeach
+                        <td><span class="osms-badge osms-badge-neutral"><span class="osms-badge-dot"></span> OS</span></td>
+                        @foreach ($primaryCols as $c)<td class="fw-medium">{{ $val('os', $c['key']) }}</td>@endforeach
                     </tr>
                 </tbody>
             </table>
         </div>
+
+        {{-- Secondary (near-vision) figures — only shown when actually recorded,
+             as compact chips rather than more mostly-empty table columns. --}}
+        @if ($hasAdd || $hasNv)
+            <div class="d-flex flex-wrap gap-2 mt-3">
+                @if ($hasAdd)
+                    <span class="meta-chip">
+                        <span class="text-muted-foreground text-uppercase" style="font-size:.62rem;letter-spacing:.04em;">ADD</span>
+                        <span class="font-monospace">OD {{ $val('od', 'add') }} · OS {{ $val('os', 'add') }}</span>
+                    </span>
+                @endif
+                @if ($hasNv)
+                    <span class="meta-chip">
+                        <span class="text-muted-foreground text-uppercase" style="font-size:.62rem;letter-spacing:.04em;">N.V.</span>
+                        <span class="font-monospace">OD {{ $val('od', 'nv') }} · OS {{ $val('os', 'nv') }}</span>
+                    </span>
+                @endif
+            </div>
+        @endif
 
         @if ($record->notes)
             <p class="mt-3 mb-0 bg-light rounded-3 px-3 py-2 text-muted-foreground" style="font-size:.85rem;">

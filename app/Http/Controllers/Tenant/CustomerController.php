@@ -16,8 +16,11 @@ class CustomerController extends Controller
     public function index(Request $request): View|JsonResponse
     {
         $search = trim((string) $request->query('q', ''));
-        // "patients" = the derived role: customers who have at least one eye record.
-        $filter = $request->query('filter') === 'patients' ? 'patients' : '';
+        // "patients" = the derived role (≥1 eye record); "birthdays" = birthday in
+        // the next 7 days. Anything else = all customers.
+        $filter = in_array($request->query('filter'), ['patients', 'birthdays'], true)
+            ? $request->query('filter')
+            : '';
 
         $customers = Customer::query()
             ->withCount('eyeRecords') // powers the "Patient" badge without an N+1
@@ -28,9 +31,17 @@ class CustomerController extends Controller
                 });
             })
             ->when($filter === 'patients', fn ($query) => $query->patients())
+            ->when($filter === 'birthdays', fn ($query) => $query->upcomingBirthday(7))
             ->latest()
             ->paginate(50)
             ->withQueryString();
+
+        // Birthdays view: order the page by soonest upcoming birthday (small set).
+        if ($filter === 'birthdays') {
+            $customers->setCollection(
+                $customers->getCollection()->sortBy(fn (Customer $c) => $c->daysUntilBirthday())->values()
+            );
+        }
 
         // Live search/filter (fetched by Alpine) — return lightweight JSON rows.
         if ($request->wantsJson()) {
@@ -42,6 +53,7 @@ class CustomerController extends Controller
                     'age' => $c->age,
                     'gender' => $c->gender,
                     'is_patient' => $c->eye_records_count > 0,
+                    'days_until_birthday' => $c->daysUntilBirthday(),
                     'added' => $c->created_at->format('d M Y'),
                     'url' => route('tenant.customers.show', $c),
                 ])->values(),

@@ -42,6 +42,7 @@
                 </template>
                 <input type="hidden" :name="`items[${idx}][quantity]`" :value="it.quantity">
                 <input type="hidden" :name="`items[${idx}][unit_price]`" :value="it.unit_price">
+                <input type="hidden" :name="`items[${idx}][tax_invoice]`" :value="it.taxInvoice ? 1 : 0">
             </span>
         </template>
 
@@ -60,8 +61,8 @@
                             <div class="segmented" role="tablist" aria-label="Fulfillment type">
                                 @php
                                     $tiles = [
-                                        ['key' => 'instant', 'icon' => 'bi-bag-check', 'title' => 'Take today'],
-                                        ['key' => 'special', 'icon' => 'bi-clock-history', 'title' => 'Special order'],
+                                        ['key' => 'instant', 'icon' => 'bi-bag-check', 'title' => 'Sell now'],
+                                        ['key' => 'special', 'icon' => 'bi-clock-history', 'title' => 'Order for later'],
                                     ];
                                 @endphp
                                 @foreach ($tiles as $t)
@@ -286,6 +287,16 @@
                                                 <template x-if="!it.custom">
                                                     <span class="text-faint" style="font-size:.7rem;" x-text="'List ' + money(it.list_price)"></span>
                                                 </template>
+                                                {{-- FT-TaxInvoice — opt this line into the formal tax invoice
+                                                     (separate from the regular receipt, which always includes everything). --}}
+                                                <button type="button" class="invoice-toggle mt-1"
+                                                        :class="{ 'invoice-toggle-active': it.taxInvoice }"
+                                                        @click="it.taxInvoice = !it.taxInvoice"
+                                                        :aria-pressed="it.taxInvoice.toString()"
+                                                        :aria-label="(it.taxInvoice ? 'Remove ' : 'Add ') + it.label + (it.taxInvoice ? ' from' : ' to') + ' the formal tax invoice'">
+                                                    <i class="bi" :class="it.taxInvoice ? 'bi-receipt-cutoff' : 'bi-receipt'"></i>
+                                                    <span x-text="it.taxInvoice ? 'On tax invoice' : 'Add to tax invoice'"></span>
+                                                </button>
                                             </td>
                                             <td>
                                                 <div class="input-group input-group-sm mx-auto" style="width:6.75rem;">
@@ -377,7 +388,8 @@
                         <label class="form-label small fw-medium mb-1">Advance paid</label>
                         <div class="input-group">
                             <span class="input-group-text">₹</span>
-                            <input type="number" step="0.01" min="0" class="form-control font-monospace" x-model="advancePaid">
+                            <input type="number" step="0.01" min="0" class="form-control font-monospace"
+                                   x-model="advancePaid" placeholder="0">
                         </div>
                         <label class="form-label small fw-medium mb-1 mt-3">Payment method</label>
                         <select class="form-select" x-model="paymentMethod">
@@ -392,6 +404,17 @@
                         <p class="text-uppercase text-primary mb-1" style="font-size:.68rem;letter-spacing:.05em;">Balance due</p>
                         <p class="h4 fw-semibold font-display mb-0" x-animate-number="balance()">₹ 0.00</p>
                     </div>
+
+                    {{-- FT-TaxInvoice — reassurance that both documents will exist. --}}
+                    <div class="invoice-note mt-3" x-cloak x-show="taxInvoiceCount() > 0" x-transition>
+                        <i class="bi bi-receipt-cutoff"></i>
+                        <span>
+                            <strong x-text="taxInvoiceCount()"></strong>
+                            <span x-text="taxInvoiceCount() === 1 ? 'item' : 'items'"></span> will get a formal tax invoice
+                            — you'll get both this receipt and the tax invoice after creating the order.
+                        </span>
+                    </div>
+
                     <button type="submit" class="btn btn-primary w-100 mt-3" :disabled="!canSubmit()">
                         <i class="bi me-1" :class="fulfillmentType === 'instant' ? 'bi-bag-check' : 'bi-plus-lg'"></i>
                         <span x-text="fulfillmentType === 'instant' ? 'Complete sale' : 'Create order'"></span>
@@ -447,7 +470,7 @@
             eyeRecords: [], eyeRecordId: '',
             items: [], itemSearch: '', scanFlash: null,
             customMode: false, customName: '', customPrice: '', customQty: 1,
-            advancePaid: '0', paymentMethod: 'cash',
+            advancePaid: '', paymentMethod: 'cash',
             unit: '₹', discountValue: '',
             fulfillmentType: 'instant', estimatedReadyAt: @json(now()->addDays(3)->toDateString()),
 
@@ -495,6 +518,7 @@
                     label: (inv.brand||'—') + (inv.model_name ? ' · '+inv.model_name : ''),
                     unit_price: price, list_price: price,
                     quantity: Math.min(inv.stock_qty, qty), max_stock: inv.stock_qty,
+                    taxInvoice: false,
                 });
             },
             canAddCustom() {
@@ -512,6 +536,7 @@
                     label: this.customName.trim(),
                     unit_price: price, list_price: price,
                     quantity: qty, max_stock: null, // untracked — no stock cap
+                    taxInvoice: false,
                 });
                 this.customName = ''; this.customPrice = ''; this.customQty = 1; this.customMode = false;
             },
@@ -565,6 +590,7 @@
             },
             total() { return Math.max(this.subtotal() - this.discountAmount(), 0); },
             itemCount() { return this.items.reduce((s,i)=> s + i.quantity, 0); },
+            taxInvoiceCount() { return this.items.filter(i => i.taxInvoice).length; },
             balance() { return Math.max(this.total() - (Number(this.advancePaid)||0), 0); },
             hasCustomer() { return this.customerId !== '' || (this.newMode && this.newName.trim() !== '' && this.newPhone.trim() !== ''); },
             canSubmit() {

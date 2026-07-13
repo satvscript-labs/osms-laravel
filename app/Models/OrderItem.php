@@ -12,12 +12,14 @@ class OrderItem extends Model
 
     protected $fillable = [
         'order_id', 'inventory_id', 'description', 'quantity', 'unit_price', 'list_price',
+        'on_tax_invoice',
     ];
 
     protected $casts = [
         'quantity' => 'integer',
         'unit_price' => 'decimal:2',
         'list_price' => 'decimal:2',
+        'on_tax_invoice' => 'boolean',
     ];
 
     public function order(): BelongsTo

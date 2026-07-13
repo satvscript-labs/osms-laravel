@@ -7,6 +7,7 @@ use App\Models\Concerns\HasUuid;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Order extends Model
 {
@@ -59,6 +60,18 @@ class Order extends Model
         return $this->hasMany(Payment::class);
     }
 
+    /** FT-TaxInvoice — the formal invoice issued for this order, if any. */
+    public function taxInvoice(): HasOne
+    {
+        return $this->hasOne(TaxInvoice::class);
+    }
+
+    /** Line items the shop owner opted into the formal tax invoice. */
+    public function taxInvoiceItems()
+    {
+        return $this->items->where('on_tax_invoice', true);
+    }
+
     public function getStatusLabelAttribute(): string
     {
         return match ($this->status) {
@@ -90,8 +103,8 @@ class Order extends Model
     public function getFulfillmentLabelAttribute(): string
     {
         return match ($this->fulfillment_type) {
-            'instant' => 'Instant sale',
-            'special' => 'Special order',
+            'instant' => 'Sell now',
+            'special' => 'Order for later',
             default   => ucfirst((string) $this->fulfillment_type),
         };
     }

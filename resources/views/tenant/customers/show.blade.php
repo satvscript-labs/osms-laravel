@@ -8,8 +8,11 @@
         <i class="bi bi-chevron-left"></i> Back to customers
     </a>
 
-    {{-- Customer header --}}
-    <div class="glass card-lift rounded-4 p-4 mb-4 d-flex flex-column flex-md-row gap-3 align-items-md-end justify-content-between">
+    {{-- Customer header. `position-relative z-2` (Bootstrap utilities): .glass's
+         backdrop-filter creates its own stacking context, which otherwise traps
+         the ⋯ dropdown menu underneath the "History" section that follows in the
+         DOM — this lifts the whole header (dropdown included) above it. --}}
+    <div class="glass card-lift rounded-4 p-4 mb-4 d-flex flex-column flex-md-row gap-3 align-items-md-end justify-content-between position-relative z-2">
         <div class="d-flex align-items-start gap-3">
             <span class="d-inline-flex align-items-center justify-content-center rounded-4 bg-primary text-white"
                   style="width:3.25rem;height:3.25rem;"><i class="bi bi-person fs-4"></i></span>
@@ -24,9 +27,19 @@
             </div>
         </div>
         <div class="d-flex flex-wrap gap-2">
-            <a href="{{ route('tenant.customers.edit', $customer) }}" class="btn btn-light">
-                <i class="bi bi-pencil me-1"></i> Edit
-            </a>
+            {{-- Quick contact (FT-WhatsApp req 2) — open a chat / dial from your own device. --}}
+            @if ($customer->whatsappUrl())
+                <a href="{{ $customer->whatsappUrl() }}" target="_blank" rel="noopener"
+                   class="wa-pill" aria-label="Message {{ $customer->name }} on WhatsApp">
+                    <i class="bi bi-whatsapp"></i> <span>WhatsApp</span>
+                </a>
+            @endif
+            @if ($customer->telHref())
+                <a href="{{ $customer->telHref() }}"
+                   class="call-pill" aria-label="Call {{ $customer->name }}">
+                    <i class="bi bi-telephone-fill"></i> <span>Call</span>
+                </a>
+            @endif
             <a href="{{ route('tenant.eye-records.create', $customer) }}" class="btn btn-outline-primary">
                 <i class="bi bi-plus-lg me-1"></i> New eye record
             </a>
@@ -38,6 +51,12 @@
                     <i class="bi bi-three-dots"></i>
                 </button>
                 <ul class="dropdown-menu dropdown-menu-end shadow rounded-3 border-0" style="box-shadow: var(--shadow-overlay);">
+                    <li>
+                        <a class="dropdown-item d-flex align-items-center gap-2" href="{{ route('tenant.customers.edit', $customer) }}">
+                            <i class="bi bi-pencil"></i> Edit profile
+                        </a>
+                    </li>
+                    <li><hr class="dropdown-divider"></li>
                     <li>
                         <form method="POST" action="{{ route('tenant.customers.destroy', $customer) }}" class="m-0">
                             @csrf

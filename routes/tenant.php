@@ -17,6 +17,7 @@ use App\Http\Controllers\Tenant\OrderController;
 use App\Http\Controllers\Tenant\SearchController;
 use App\Http\Controllers\Tenant\SettingsController;
 use App\Http\Controllers\Tenant\StaffController;
+use App\Http\Controllers\Tenant\WhatsAppSettingsController;
 use Illuminate\Support\Facades\Route;
 
 // ---- Global search (Cmd+K) ----
@@ -62,10 +63,12 @@ Route::get('orders/{order}', [OrderController::class, 'show'])->name('orders.sho
 Route::get('orders/{order}/edit', [OrderController::class, 'edit'])->name('orders.edit'); // FG-OrderEdit
 Route::put('orders/{order}', [OrderController::class, 'update'])->name('orders.update');   // FG-OrderEdit
 Route::patch('orders/{order}/status', [OrderController::class, 'updateStatus'])->name('orders.status');
+Route::post('orders/{order}/revert', [OrderController::class, 'revert'])->name('orders.revert'); // FT-WhatsApp undo
 Route::post('orders/{order}/settle', [OrderController::class, 'settle'])->name('orders.settle'); // 6.1 / 6.3
 Route::post('orders/{order}/cancel', [OrderController::class, 'cancel'])->name('orders.cancel');
 Route::post('orders/{order}/payments', [OrderController::class, 'recordPayment'])->name('orders.payments.store');
 Route::get('orders/{order}/pdf', [OrderController::class, 'pdf'])->name('orders.pdf');
+Route::get('orders/{order}/tax-invoice/pdf', [OrderController::class, 'taxInvoicePdf'])->name('orders.tax-invoice.pdf'); // FT-TaxInvoice
 Route::middleware('throttle:120,1')->get('customers/{customer}/eye-records', [OrderController::class, 'eyeRecords'])->name('customers.eye-records');
 
 // ---- Analytics (store admins + superadmin only) ----
@@ -87,6 +90,10 @@ Route::middleware('role:store_admin,superadmin')->group(function () {
 Route::middleware('role:store_admin,superadmin')->group(function () {
     Route::get('settings', [SettingsController::class, 'edit'])->name('settings.edit');
     Route::put('settings', [SettingsController::class, 'update'])->name('settings.update');
+
+    // FT-WhatsApp — messaging preferences (mode, wording, credentials).
+    Route::put('settings/whatsapp', [WhatsAppSettingsController::class, 'update'])->name('whatsapp.update');
+    Route::post('settings/whatsapp/test', [WhatsAppSettingsController::class, 'test'])->name('whatsapp.test');
 });
 
 // ---- Team / staff management (store admins + superadmin only) ----

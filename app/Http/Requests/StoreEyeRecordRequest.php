@@ -27,8 +27,6 @@ class StoreEyeRecordRequest extends FormRequest
             $rules["{$eye}_axis"] = ['nullable', 'integer', 'min:0', 'max:180'];
             $rules["{$eye}_add"] = ['nullable', 'numeric', 'between:0,6'];
             $rules["{$eye}_va"] = ['nullable', 'string', 'max:20'];
-            $rules["{$eye}_spl"] = ['nullable', 'numeric', 'between:-50,50'];
-            $rules["{$eye}_dv"] = ['nullable', 'numeric', 'between:-50,50'];
             $rules["{$eye}_nv"] = ['nullable', 'numeric', 'between:-50,50'];
         }
 
@@ -41,7 +39,7 @@ class StoreEyeRecordRequest extends FormRequest
         $validator->after(function ($validator) {
             $fields = ['pd'];
             foreach (['od', 'os'] as $eye) {
-                foreach (['sph', 'cyl', 'axis', 'add', 'spl', 'dv', 'nv'] as $f) {
+                foreach (['sph', 'cyl', 'axis', 'add', 'nv'] as $f) {
                     $fields[] = "{$eye}_{$f}";
                 }
             }

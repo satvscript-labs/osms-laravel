@@ -19,6 +19,9 @@ window.JsBarcode = JsBarcode;
 // Shared "Settle" modal controller (6.1 settle-on-deliver + 6.3 dues settlement)
 import './settle-modal';
 
+// FT-WhatsApp — the automated "undo ring" on advanced orders (Phase 6)
+import './order-advance';
+
 // Auto-enable tooltips
 document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach((el) => {

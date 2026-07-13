@@ -6,6 +6,10 @@
     $p = $order->customer;
     $num = strtoupper(substr($order->id, 0, 8));
     $nz = fn ($v) => is_null($v) ? '—' : $v;
+    // Manual "Send on WhatsApp" pill for this order's current status (FT-WhatsApp).
+    $pill = $waConfig->orderPill($order);
+    // A pending automated message (still cancellable) supersedes the manual pill.
+    $waPend = $waPending[$order->id] ?? null;
 @endphp
 
 @section('content')
@@ -51,10 +55,32 @@
                 <a href="{{ route('tenant.orders.pdf', $order) }}" target="_blank" class="btn btn-light btn-sm">
                     <i class="bi bi-file-earmark-pdf me-1"></i> PDF
                 </a>
+                @if ($taxInvoice)
+                    <a href="{{ route('tenant.orders.tax-invoice.pdf', $order) }}" target="_blank" rel="noopener"
+                       class="invoice-pill" aria-label="Formal tax invoice {{ $taxInvoice->number }}">
+                        <i class="bi bi-receipt-cutoff"></i>
+                        <span>Tax invoice</span>
+                    </a>
+                @endif
                 <button type="button" class="btn btn-secondary btn-sm" onclick="window.print()">
                     <i class="bi bi-printer me-1"></i> Print
                 </button>
+                @if ($waPend)
+                    @include('tenant.orders.partials._wa-undo', ['order' => $order, 'msg' => $waPend])
+                @elseif ($pill)
+                    <a href="{{ $pill['url'] }}" target="_blank" rel="noopener"
+                       class="wa-pill {{ $pill['fallback'] ? 'wa-pill-warn' : '' }}"
+                       aria-label="{{ $pill['label'] }}">
+                        <i class="bi bi-whatsapp"></i>
+                        <span>{{ $pill['label'] }}</span>
+                    </a>
+                @endif
             </div>
+            @if (! $waPend && $pill && $pill['fallback'])
+                <a href="{{ route('profile.edit') }}" class="wa-setup-hint mt-2 ms-auto no-print">
+                    <i class="bi bi-exclamation-circle"></i> Finish WhatsApp setup to send automatically
+                </a>
+            @endif
         </div>
 
         @if ($order->isCancelled())

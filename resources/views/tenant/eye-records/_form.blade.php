@@ -102,16 +102,6 @@
                             <td class="text-center" colspan="3"></td>
                             <td class="pe-4 text-muted-foreground" style="font-size:.7rem;opacity:.6;">Addition</td>
                         </tr>
-
-                        {{-- Special (SPL) --}}
-                        <tr class="eye-record-row">
-                            <td class="ps-4 fw-medium text-muted-foreground" style="font-size:.85rem;">SPL</td>
-                            <td class="text-center"><input type="number" name="od_spl" step="0.25" value="{{ $val('od_spl') }}" class="form-control form-control-sm text-center @error('od_spl') is-invalid @enderror" placeholder="—"></td>
-                            <td class="text-center" colspan="3"></td>
-                            <td class="text-center ps-3 border-start"><input type="number" name="os_spl" step="0.25" value="{{ $val('os_spl') }}" class="form-control form-control-sm text-center @error('os_spl') is-invalid @enderror" placeholder="—"></td>
-                            <td class="text-center" colspan="3"></td>
-                            <td class="pe-4 text-muted-foreground" style="font-size:.7rem;opacity:.6;">Special</td>
-                        </tr>
                     </tbody>
                 </table>
             </div>
@@ -192,7 +182,7 @@
         };
 
         // 5.2.1 — mirror each OD field to OS until the user edits OS directly.
-        ['sph', 'cyl', 'axis', 'va', 'add', 'nv', 'spl'].forEach((f) => {
+        ['sph', 'cyl', 'axis', 'va', 'add', 'nv'].forEach((f) => {
             const od = el(`od_${f}`), os = el(`os_${f}`);
             if (! od || ! os) return;
             os.addEventListener('input', () => { dirty[`os_${f}`] = true; derive('os'); });
@@ -207,7 +197,7 @@
         // Client-side range validation mirroring StoreEyeRecordRequest (BUG-002).
         const bounds = {
             sph: [-30, 30], cyl: [-15, 15], axis: [0, 180], add: [0, 6],
-            spl: [-50, 50], dv: [-50, 50], nv: [-50, 50], pd: [0, 100],
+            nv: [-50, 50], pd: [0, 100],
         };
         Object.entries(bounds).forEach(([field, [lo, hi]]) => {
             (field === 'pd' ? ['pd'] : [`od_${field}`, `os_${field}`]).forEach((n) => {
