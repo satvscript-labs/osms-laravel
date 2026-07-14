@@ -104,7 +104,7 @@ class Order extends Model
     {
         return match ($this->fulfillment_type) {
             'instant' => 'Sell now',
-            'special' => 'Order for later',
+            'special' => 'Lab orders',
             default   => ucfirst((string) $this->fulfillment_type),
         };
     }

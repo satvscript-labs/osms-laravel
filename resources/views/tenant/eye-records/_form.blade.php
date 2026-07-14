@@ -3,7 +3,14 @@
     /** @var \App\Models\EyeRecord|null $record */
     $record = $record ?? null;
     $isEdit = (bool) $record;
-    $val = fn ($f) => old($f, $record?->$f ?? '');
+    $val = function ($f) use ($record) {
+        $v = old($f, $record?->$f ?? '');
+        if ($v === null || $v === '') return '';
+        if (preg_match('/_(sph|cyl|nv|add)$/', $f) && is_numeric($v)) {
+            return sprintf('%+.2f', (float) $v);
+        }
+        return $v;
+    };
 @endphp
 
 @if ($errors->any())
@@ -37,7 +44,7 @@
                 <div class="col-sm-4">
                     <label for="checked_by" class="form-label small fw-medium mb-2">Examined by</label>
                     <input id="checked_by" name="checked_by" type="text" class="form-control"
-                           value="{{ old('checked_by', auth()->user()->name) }}" placeholder="Optometrist name">
+                           value="{{ old('checked_by', auth()->user()->name) }}" placeholder="Optometrist name" tabindex="1">
                 </div>
             </div>
         </div>
@@ -57,14 +64,14 @@
                         </tr>
                         <tr style="border-top:1px solid #e2e6ec;">
                             <th class="ps-4 py-2"></th>
-                            <th class="text-center" style="width:5.5rem;">SPH</th>
-                            <th class="text-center" style="width:5.5rem;">CYL</th>
-                            <th class="text-center" style="width:5.5rem;">AXIS</th>
-                            <th class="text-center pe-3" style="width:5.5rem;">V/S</th>
-                            <th class="text-center ps-3" style="width:5.5rem;">SPH</th>
-                            <th class="text-center" style="width:5.5rem;">CYL</th>
-                            <th class="text-center" style="width:5.5rem;">AXIS</th>
-                            <th class="text-center pe-4" style="width:5.5rem;">V/S</th>
+                            <th class="text-center" style="width:6rem;">SPH</th>
+                            <th class="text-center" style="width:6rem;">CYL</th>
+                            <th class="text-center" style="width:6rem;">AXIS</th>
+                            <th class="text-center" style="width:6rem;">V/S</th>
+                            <th class="text-center" style="width:6rem;">SPH</th>
+                            <th class="text-center" style="width:6rem;">CYL</th>
+                            <th class="text-center" style="width:6rem;">AXIS</th>
+                            <th class="text-center" style="width:6rem;">V/S</th>
                             <th class="pe-4"></th>
                         </tr>
                     </thead>
@@ -72,23 +79,23 @@
                         {{-- Distance Vision (D.V.) --}}
                         <tr class="eye-record-row">
                             <td class="ps-4 fw-medium text-muted-foreground" style="font-size:.85rem;">D.V.</td>
-                            <td class="text-center"><input type="number" name="od_sph" step="0.25" value="{{ $val('od_sph') }}" class="form-control form-control-sm text-center @error('od_sph') is-invalid @enderror" placeholder="—"></td>
-                            <td class="text-center"><input type="number" name="od_cyl" step="0.25" value="{{ $val('od_cyl') }}" class="form-control form-control-sm text-center @error('od_cyl') is-invalid @enderror" placeholder="—"></td>
-                            <td class="text-center"><input type="number" name="od_axis" min="0" max="180" step="1" value="{{ $val('od_axis') }}" class="form-control form-control-sm text-center @error('od_axis') is-invalid @enderror" placeholder="—"></td>
-                            <td class="text-center pe-3"><input type="text" name="od_va" value="{{ $val('od_va') }}" class="form-control form-control-sm text-center @error('od_va') is-invalid @enderror" placeholder="6/6"></td>
-                            <td class="text-center ps-3 border-start"><input type="number" name="os_sph" step="0.25" value="{{ $val('os_sph') }}" class="form-control form-control-sm text-center @error('os_sph') is-invalid @enderror" placeholder="—"></td>
-                            <td class="text-center"><input type="number" name="os_cyl" step="0.25" value="{{ $val('os_cyl') }}" class="form-control form-control-sm text-center @error('os_cyl') is-invalid @enderror" placeholder="—"></td>
-                            <td class="text-center"><input type="number" name="os_axis" min="0" max="180" step="1" value="{{ $val('os_axis') }}" class="form-control form-control-sm text-center @error('os_axis') is-invalid @enderror" placeholder="—"></td>
-                            <td class="text-center pe-4"><input type="text" name="os_va" value="{{ $val('os_va') }}" class="form-control form-control-sm text-center @error('os_va') is-invalid @enderror" placeholder="6/6"></td>
+                            <td class="text-center"><input type="text" inputmode="text" data-step="0.25" name="od_sph" value="{{ $val('od_sph') }}" class="form-control form-control-sm text-center is-numeric @error('od_sph') is-invalid @enderror" placeholder="—" tabindex="2"></td>
+                            <td class="text-center"><input type="text" inputmode="text" data-step="0.25" name="od_cyl" value="{{ $val('od_cyl') }}" class="form-control form-control-sm text-center is-numeric @error('od_cyl') is-invalid @enderror" placeholder="—" tabindex="3"></td>
+                            <td class="text-center"><input type="text" inputmode="text" data-step="1" name="od_axis" value="{{ $val('od_axis') }}" class="form-control form-control-sm text-center is-numeric @error('od_axis') is-invalid @enderror" placeholder="—" tabindex="4"></td>
+                            <td class="text-center"><input type="text" name="od_va" value="{{ $val('od_va') }}" class="form-control form-control-sm text-center @error('od_va') is-invalid @enderror" placeholder="6/6" tabindex="5"></td>
+                            <td class="text-center border-start"><input type="text" inputmode="text" data-step="0.25" name="os_sph" value="{{ $val('os_sph') }}" class="form-control form-control-sm text-center is-numeric @error('os_sph') is-invalid @enderror" placeholder="—" tabindex="8"></td>
+                            <td class="text-center"><input type="text" inputmode="text" data-step="0.25" name="os_cyl" value="{{ $val('os_cyl') }}" class="form-control form-control-sm text-center is-numeric @error('os_cyl') is-invalid @enderror" placeholder="—" tabindex="9"></td>
+                            <td class="text-center"><input type="text" inputmode="text" data-step="1" name="os_axis" value="{{ $val('os_axis') }}" class="form-control form-control-sm text-center is-numeric @error('os_axis') is-invalid @enderror" placeholder="—" tabindex="10"></td>
+                            <td class="text-center"><input type="text" name="os_va" value="{{ $val('os_va') }}" class="form-control form-control-sm text-center @error('os_va') is-invalid @enderror" placeholder="6/6" tabindex="11"></td>
                             <td class="pe-4 text-muted-foreground" style="font-size:.7rem;opacity:.6;">Distance</td>
                         </tr>
 
                         {{-- Near Vision (N.V.) --}}
                         <tr class="eye-record-row">
                             <td class="ps-4 fw-medium text-muted-foreground" style="font-size:.85rem;">N.V.</td>
-                            <td class="text-center"><input type="number" name="od_nv" step="0.25" value="{{ $val('od_nv') }}" class="form-control form-control-sm text-center @error('od_nv') is-invalid @enderror" placeholder="—"></td>
+                            <td class="text-center"><input type="text" inputmode="text" data-step="0.25" name="od_nv" value="{{ $val('od_nv') }}" class="form-control form-control-sm text-center is-numeric @error('od_nv') is-invalid @enderror" placeholder="—" tabindex="6"></td>
                             <td class="text-center" colspan="3"></td>
-                            <td class="text-center ps-3 border-start"><input type="number" name="os_nv" step="0.25" value="{{ $val('os_nv') }}" class="form-control form-control-sm text-center @error('os_nv') is-invalid @enderror" placeholder="—"></td>
+                            <td class="text-center border-start"><input type="text" inputmode="text" data-step="0.25" name="os_nv" value="{{ $val('os_nv') }}" class="form-control form-control-sm text-center is-numeric @error('os_nv') is-invalid @enderror" placeholder="—" tabindex="12"></td>
                             <td class="text-center" colspan="3"></td>
                             <td class="pe-4 text-muted-foreground" style="font-size:.7rem;opacity:.6;">Near</td>
                         </tr>
@@ -96,9 +103,9 @@
                         {{-- Addition (ADD) --}}
                         <tr class="eye-record-row">
                             <td class="ps-4 fw-medium text-muted-foreground" style="font-size:.85rem;">ADD</td>
-                            <td class="text-center"><input type="number" name="od_add" step="0.25" value="{{ $val('od_add') }}" class="form-control form-control-sm text-center @error('od_add') is-invalid @enderror" placeholder="—"></td>
+                            <td class="text-center"><input type="text" inputmode="text" data-step="0.25" name="od_add" value="{{ $val('od_add') }}" class="form-control form-control-sm text-center is-numeric @error('od_add') is-invalid @enderror" placeholder="—" tabindex="7"></td>
                             <td class="text-center" colspan="3"></td>
-                            <td class="text-center ps-3 border-start"><input type="number" name="os_add" step="0.25" value="{{ $val('os_add') }}" class="form-control form-control-sm text-center @error('os_add') is-invalid @enderror" placeholder="—"></td>
+                            <td class="text-center border-start"><input type="text" inputmode="text" data-step="0.25" name="os_add" value="{{ $val('os_add') }}" class="form-control form-control-sm text-center is-numeric @error('os_add') is-invalid @enderror" placeholder="—" tabindex="13"></td>
                             <td class="text-center" colspan="3"></td>
                             <td class="pe-4 text-muted-foreground" style="font-size:.7rem;opacity:.6;">Addition</td>
                         </tr>
@@ -113,19 +120,19 @@
         <div class="col-sm-3">
             <label for="pd" class="form-label small fw-medium mb-2">PD (mm)</label>
             <input id="pd" name="pd" type="number" min="0" max="100" step="0.5"
-                   value="{{ $val('pd') }}" class="form-control @error('pd') is-invalid @enderror" placeholder="62">
+                   value="{{ $val('pd') }}" class="form-control @error('pd') is-invalid @enderror" placeholder="62" tabindex="14">
             <div class="text-muted-foreground" style="font-size:.7rem;margin-top:.3rem;">Pupillary distance</div>
         </div>
         <div class="col-sm-9">
             <label for="notes" class="form-label small fw-medium mb-2">Clinical notes</label>
-            <textarea id="notes" name="notes" rows="2" class="form-control" placeholder="Remarks, special observations, follow-up notes…">{{ $val('notes') }}</textarea>
+            <textarea id="notes" name="notes" rows="2" class="form-control" placeholder="Remarks, special observations, follow-up notes…" tabindex="15">{{ $val('notes') }}</textarea>
         </div>
     </div>
 
     {{-- Actions --}}
     <div class="d-flex justify-content-end gap-2">
-        <a href="{{ route('tenant.customers.show', $customer) }}" class="btn btn-secondary">Cancel</a>
-        <button type="submit" class="btn btn-primary">
+        <a href="{{ route('tenant.customers.show', $customer) }}" class="btn btn-secondary" tabindex="17">Cancel</a>
+        <button type="submit" class="btn btn-primary" tabindex="16">
             <i class="bi bi-check-lg me-2"></i>{{ $isEdit ? 'Save changes' : 'Save prescription' }}
         </button>
     </div>
@@ -150,6 +157,16 @@
     .table thead th {
         border-bottom: 2px solid #e2e6ec;
         padding: 0.75rem 0.5rem;
+    }
+
+    /* Remove number spinners for cleaner UI while preserving keyboard navigation */
+    .eye-record-row input[type=number]::-webkit-inner-spin-button, 
+    .eye-record-row input[type=number]::-webkit-outer-spin-button { 
+        -webkit-appearance: none; 
+        margin: 0; 
+    }
+    .eye-record-row input[type=number] {
+        -moz-appearance: textfield;
     }
 </style>
 @endpush
@@ -209,6 +226,20 @@
                 };
                 e.addEventListener('input', validate);
                 validate();
+            });
+        });
+
+        // Restore up/down arrow functionality for desktop users on the new text inputs
+        document.querySelectorAll('.is-numeric').forEach(input => {
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    let v = parseFloat(input.value) || 0;
+                    let step = parseFloat(input.getAttribute('data-step')) || 1;
+                    if (e.key === 'ArrowDown') step = -step;
+                    input.value = (v + step).toFixed(step < 1 ? 2 : 0);
+                    input.dispatchEvent(new Event('input', { bubbles: true }));
+                }
             });
         });
     })();
