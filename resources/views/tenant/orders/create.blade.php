@@ -23,7 +23,7 @@
         <input type="hidden" name="customer_phone" :value="newMode ? newPhone : ''">
         <input type="hidden" name="customer_country_code" :value="newCode">
         <input type="hidden" name="eye_record_id" :value="eyeRecordId">
-        <input type="hidden" name="advance_paid" :value="advancePaid">
+        <input type="hidden" name="advance_paid" :value="effectiveAdvance()">
         <input type="hidden" name="payment_method" :value="paymentMethod">
         <input type="hidden" name="discount_type" :value="discountType()">
         <input type="hidden" name="discount_value" :value="discountValue || 0">
@@ -62,7 +62,7 @@
                                 @php
                                     $tiles = [
                                         ['key' => 'instant', 'icon' => 'bi-bag-check', 'title' => 'Sell now'],
-                                        ['key' => 'special', 'icon' => 'bi-clock-history', 'title' => 'Order for later'],
+                                        ['key' => 'special', 'icon' => 'bi-clock-history', 'title' => 'Lab orders'],
                                     ];
                                 @endphp
                                 @foreach ($tiles as $t)
@@ -275,7 +275,7 @@
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <template x-for="it in items" :key="it.inventory_id">
+                                    <template x-for="it in items" :key="it.uid">
                                         <tr class="animate-fade-up">
                                             <td>
                                                 <span class="fw-medium d-block" x-text="it.label"></span>
@@ -389,7 +389,7 @@
                         <div class="input-group">
                             <span class="input-group-text">₹</span>
                             <input type="number" step="0.01" min="0" class="form-control font-monospace"
-                                   x-model="advancePaid" placeholder="0">
+                                   x-model="advancePaid" :placeholder="fulfillmentType === 'instant' ? total() : '0'">
                         </div>
                         <label class="form-label small fw-medium mb-1 mt-3">Payment method</label>
                         <select class="form-select" x-model="paymentMethod">
@@ -591,7 +591,11 @@
             total() { return Math.max(this.subtotal() - this.discountAmount(), 0); },
             itemCount() { return this.items.reduce((s,i)=> s + i.quantity, 0); },
             taxInvoiceCount() { return this.items.filter(i => i.taxInvoice).length; },
-            balance() { return Math.max(this.total() - (Number(this.advancePaid)||0), 0); },
+            effectiveAdvance() {
+                if (this.advancePaid !== '') return Number(this.advancePaid);
+                return this.fulfillmentType === 'instant' ? this.total() : 0;
+            },
+            balance() { return Math.max(this.total() - this.effectiveAdvance(), 0); },
             hasCustomer() { return this.customerId !== '' || (this.newMode && this.newName.trim() !== '' && this.newPhone.trim() !== ''); },
             canSubmit() {
                 return this.hasCustomer() && this.items.length > 0
