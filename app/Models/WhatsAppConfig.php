@@ -109,9 +109,11 @@ class WhatsAppConfig extends Model
     /** Automated mode needs a phone number id + an access token to send. */
     public function hasCredentials(): bool
     {
-        // The log driver (local/tests) sends nowhere, so it needs no credentials —
-        // this lets a store exercise the full automated flow locally.
-        if (config('whatsapp.driver') === 'log') {
+        // The log driver sends nowhere, so it needs no credentials — this lets a
+        // store exercise the full automated flow locally. Deliberately NOT allowed
+        // in production: there, "no credentials" must never look like "connected",
+        // or messages would silently vanish into a log file.
+        if (config('whatsapp.driver') === 'log' && ! app()->environment('production')) {
             return true;
         }
 
@@ -126,10 +128,18 @@ class WhatsAppConfig extends Model
         return $column && filled($this->{$column}) ? (string) $this->{$column} : $event;
     }
 
-    /** Whether the Cloud API path is actually usable right now. */
+    /**
+     * Whether the Cloud API path is actually usable right now.
+     *
+     * `automated_enabled` is a RUNTIME kill-switch, not just a settings guard: a
+     * store whose row still says `automated` (set before the freeze, or carried in
+     * from a non-production database) must degrade to the manual pill rather than
+     * silently scheduling sends nobody receives.
+     */
     public function isReady(): bool
     {
-        return $this->enabled
+        return (bool) config('whatsapp.automated_enabled')
+            && $this->enabled
             && $this->verified_at !== null
             && ! $this->needs_attention
             && $this->hasCredentials();

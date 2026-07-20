@@ -1,23 +1,14 @@
 @props(['record'])
 
 @php
-    // Distance vision (SPH/CYL/Axis/VA) is the primary Rx — present on nearly
-    // every record, so it gets its own prominent table. ADD/N.V. are secondary
-    // (only relevant for presbyopia) and near-always blank for younger patients,
-    // so they're rendered as compact chips — and omitted entirely when neither
-    // eye has a value, instead of padding the table with dashes no one reads.
-    $primaryCols = [
-        ['key' => 'sph', 'label' => 'SPH'],
-        ['key' => 'cyl', 'label' => 'CYL'],
-        ['key' => 'axis', 'label' => 'Axis'],
-        ['key' => 'va', 'label' => 'VA'],
-    ];
     $val = function ($eye, $key) use ($record) {
         $v = $record->{"{$eye}_{$key}"};
-        return ($v === null || $v === '') ? '—' : $v;
+        if ($v === null || $v === '') return '—';
+        if (in_array($key, ['sph', 'cyl', 'nv', 'add']) && is_numeric($v)) {
+            return sprintf('%+.2f', (float) $v);
+        }
+        return $v;
     };
-    $hasAdd = ! is_null($record->od_add) || ! is_null($record->os_add);
-    $hasNv = ! is_null($record->od_nv) || ! is_null($record->os_nv);
 @endphp
 
 <div class="card card-lift border-0 shadow-sm rounded-4">
@@ -71,46 +62,66 @@
             </div>
         </div>
 
-        {{-- Primary Rx — the numbers almost every record has, kept large and clear. --}}
+        {{-- Prescription table (Form layout) --}}
         <div class="table-responsive">
-            <table class="table table-sm mb-0" style="font-size:.95rem;">
-                <thead class="text-muted-foreground text-uppercase" style="font-size:.68rem;letter-spacing:.04em;">
+            <table class="table align-middle mb-0" style="font-size:.9rem;">
+                <thead class="text-muted-foreground text-uppercase bg-light" style="font-size:.7rem;letter-spacing:.03em;">
                     <tr>
-                        <th style="width:3rem;"></th>
-                        @foreach ($primaryCols as $c)<th>{{ $c['label'] }}</th>@endforeach
+                        <th class="ps-4" style="width:8rem;">Measurement</th>
+                        <th colspan="4" class="text-center py-3">RIGHT EYE (OD)</th>
+                        <th colspan="4" class="text-center py-3 border-start">LEFT EYE (OS)</th>
+                        <th class="pe-4"></th>
+                    </tr>
+                    <tr style="border-top:1px solid #e2e6ec;">
+                        <th class="ps-4 py-2"></th>
+                        <th class="text-center" style="width:6.5rem;">SPH</th>
+                        <th class="text-center" style="width:6.5rem;">CYL</th>
+                        <th class="text-center" style="width:6.5rem;">AXIS</th>
+                        <th class="text-center" style="width:6.5rem;">V/S</th>
+                        <th class="text-center" style="width:6.5rem;">SPH</th>
+                        <th class="text-center" style="width:6.5rem;">CYL</th>
+                        <th class="text-center" style="width:6.5rem;">AXIS</th>
+                        <th class="text-center" style="width:6.5rem;">V/S</th>
+                        <th class="pe-4"></th>
                     </tr>
                 </thead>
-                <tbody class="font-monospace">
+                <tbody>
+                    {{-- Distance Vision (D.V.) --}}
                     <tr>
-                        <td><span class="osms-badge osms-badge-blue"><span class="osms-badge-dot"></span> OD</span></td>
-                        @foreach ($primaryCols as $c)<td class="fw-medium">{{ $val('od', $c['key']) }}</td>@endforeach
+                        <td class="ps-4 fw-medium text-muted-foreground" style="font-size:.85rem;">D.V.</td>
+                        <td class="text-center font-monospace">{{ $val('od', 'sph') }}</td>
+                        <td class="text-center font-monospace">{{ $val('od', 'cyl') }}</td>
+                        <td class="text-center font-monospace">{{ $val('od', 'axis') }}</td>
+                        <td class="text-center font-monospace">{{ $val('od', 'va') }}</td>
+                        <td class="text-center font-monospace border-start">{{ $val('os', 'sph') }}</td>
+                        <td class="text-center font-monospace">{{ $val('os', 'cyl') }}</td>
+                        <td class="text-center font-monospace">{{ $val('os', 'axis') }}</td>
+                        <td class="text-center font-monospace">{{ $val('os', 'va') }}</td>
+                        <td class="pe-4 text-muted-foreground" style="font-size:.7rem;opacity:.6;">Distance</td>
                     </tr>
+
+                    {{-- Near Vision (N.V.) --}}
                     <tr>
-                        <td><span class="osms-badge osms-badge-neutral"><span class="osms-badge-dot"></span> OS</span></td>
-                        @foreach ($primaryCols as $c)<td class="fw-medium">{{ $val('os', $c['key']) }}</td>@endforeach
+                        <td class="ps-4 fw-medium text-muted-foreground" style="font-size:.85rem;">N.V.</td>
+                        <td class="text-center font-monospace">{{ $val('od', 'nv') }}</td>
+                        <td class="text-center" colspan="3"></td>
+                        <td class="text-center font-monospace border-start">{{ $val('os', 'nv') }}</td>
+                        <td class="text-center" colspan="3"></td>
+                        <td class="pe-4 text-muted-foreground" style="font-size:.7rem;opacity:.6;">Near</td>
+                    </tr>
+
+                    {{-- Addition (ADD) --}}
+                    <tr>
+                        <td class="ps-4 fw-medium text-muted-foreground" style="font-size:.85rem;">ADD</td>
+                        <td class="text-center font-monospace">{{ $val('od', 'add') }}</td>
+                        <td class="text-center" colspan="3"></td>
+                        <td class="text-center font-monospace border-start">{{ $val('os', 'add') }}</td>
+                        <td class="text-center" colspan="3"></td>
+                        <td class="pe-4 text-muted-foreground" style="font-size:.7rem;opacity:.6;">Addition</td>
                     </tr>
                 </tbody>
             </table>
         </div>
-
-        {{-- Secondary (near-vision) figures — only shown when actually recorded,
-             as compact chips rather than more mostly-empty table columns. --}}
-        @if ($hasAdd || $hasNv)
-            <div class="d-flex flex-wrap gap-2 mt-3">
-                @if ($hasAdd)
-                    <span class="meta-chip">
-                        <span class="text-muted-foreground text-uppercase" style="font-size:.62rem;letter-spacing:.04em;">ADD</span>
-                        <span class="font-monospace">OD {{ $val('od', 'add') }} · OS {{ $val('os', 'add') }}</span>
-                    </span>
-                @endif
-                @if ($hasNv)
-                    <span class="meta-chip">
-                        <span class="text-muted-foreground text-uppercase" style="font-size:.62rem;letter-spacing:.04em;">N.V.</span>
-                        <span class="font-monospace">OD {{ $val('od', 'nv') }} · OS {{ $val('os', 'nv') }}</span>
-                    </span>
-                @endif
-            </div>
-        @endif
 
         @if ($record->notes)
             <p class="mt-3 mb-0 bg-light rounded-3 px-3 py-2 text-muted-foreground" style="font-size:.85rem;">

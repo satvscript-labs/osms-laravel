@@ -28,7 +28,7 @@
     @endphp
     <style>
         * { font-family: DejaVu Sans, sans-serif; }
-        body { color: #4a3c0a; font-size: 12px; margin: 0; background: #fffdf5; }
+        body { color: #4a3c0a; font-size: 12px; margin: 0; padding: 32px; background: #fffdf5; }
         .muted { color: #8a7a3d; }
         .small { font-size: 10px; }
         h1, h2 { margin: 0; }
