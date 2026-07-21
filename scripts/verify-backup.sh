@@ -58,11 +58,26 @@ if [ "$BACKUP_FILE" = "latest" ]; then
 fi
 [ -f "$BACKUP_FILE" ] || die "Backup file not found: $BACKUP_FILE"
 
-CNF="$(mktemp)"; chmod 600 "$CNF"
-trap 'rm -f "$CNF"' EXIT
+# Scratch-DB credentials. Some hosts (Hostinger) create one dedicated user per
+# database, so the production user often CANNOT reach the scratch DB. Set
+# DRILL_USER to use a separate account; the password is prompted for (never passed
+# on the command line, so it stays out of shell history and `ps`).
+DRILL_USER="${DRILL_USER:-$DB_USERNAME}"
+DRILL_PASS="${DRILL_PASS:-}"
+if [ "$DRILL_USER" != "$DB_USERNAME" ] && [ -z "$DRILL_PASS" ]; then
+    printf 'Password for scratch-DB user %s: ' "$DRILL_USER" >&2
+    read -rs DRILL_PASS; printf '\n' >&2
+fi
+[ -n "$DRILL_PASS" ] || DRILL_PASS="$DB_PASSWORD"
+
 # MySQL option files treat '#' as a start-of-comment, so values MUST be quoted
 # (the production password contains '#'). Backslash escapes apply inside quotes.
 cnf_escape() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'; }
+
+# Two connections: PROD (read-only) and DRILL (the scratch DB we overwrite).
+CNF="$(mktemp)"; chmod 600 "$CNF"
+CNF_DRILL="$(mktemp)"; chmod 600 "$CNF_DRILL"
+trap 'rm -f "$CNF" "$CNF_DRILL"' EXIT
 
 cat > "$CNF" <<EOF
 [client]
@@ -72,18 +87,30 @@ host="$(cnf_escape "$DB_HOST")"
 port=${DB_PORT}
 EOF
 
+cat > "$CNF_DRILL" <<EOF
+[client]
+user="$(cnf_escape "$DRILL_USER")"
+password="$(cnf_escape "$DRILL_PASS")"
+host="$(cnf_escape "$DB_HOST")"
+port=${DB_PORT}
+EOF
+
 log "Backup under test : $BACKUP_FILE"
-log "Production DB     : $PROD_DB  (read-only)"
-log "Scratch DB        : $TARGET_DB  (will be OVERWRITTEN)"
+log "Production DB     : $PROD_DB  (read-only, as $DB_USERNAME)"
+log "Scratch DB        : $TARGET_DB  (will be OVERWRITTEN, as $DRILL_USER)"
+
+# Fail early with a clear message rather than a confusing error mid-restore.
+mysql --defaults-extra-file="$CNF_DRILL" -e "SELECT 1" "$TARGET_DB" >/dev/null 2>&1 \
+    || die "Cannot connect to scratch DB '$TARGET_DB' as '$DRILL_USER'. If your host gives each database its own user, re-run with: DRILL_USER=<that_user> bash scripts/verify-backup.sh $TARGET_DB"
 
 # Wipe the scratch DB so the drill is honest (no leftovers from a previous run).
 log "Clearing scratch DB..."
-mysqldump --defaults-extra-file="$CNF" --add-drop-table --no-data "$TARGET_DB" 2>/dev/null \
+mysqldump --defaults-extra-file="$CNF_DRILL" --add-drop-table --no-data "$TARGET_DB" 2>/dev/null \
     | grep -E '^DROP TABLE' \
-    | mysql --defaults-extra-file="$CNF" "$TARGET_DB" 2>/dev/null || true
+    | mysql --defaults-extra-file="$CNF_DRILL" "$TARGET_DB" 2>/dev/null || true
 
 log "Restoring backup into scratch DB..."
-gunzip < "$BACKUP_FILE" | mysql --defaults-extra-file="$CNF" "$TARGET_DB" \
+gunzip < "$BACKUP_FILE" | mysql --defaults-extra-file="$CNF_DRILL" "$TARGET_DB" \
     || die "RESTORE FAILED — this backup is NOT usable."
 
 # ---- Compare row counts: production vs restored copy.
@@ -94,7 +121,7 @@ printf '%s\n' "-------------------------------------------------------------"
 FAILED=0
 for t in $TABLES; do
     p="$(mysql --defaults-extra-file="$CNF" -N -B -e "SELECT COUNT(*) FROM \`$t\`;" "$PROD_DB" 2>/dev/null || echo "n/a")"
-    r="$(mysql --defaults-extra-file="$CNF" -N -B -e "SELECT COUNT(*) FROM \`$t\`;" "$TARGET_DB" 2>/dev/null || echo "MISSING")"
+    r="$(mysql --defaults-extra-file="$CNF_DRILL" -N -B -e "SELECT COUNT(*) FROM \`$t\`;" "$TARGET_DB" 2>/dev/null || echo "MISSING")"
     if [ "$p" = "$r" ]; then
         printf '%-16s %12s %12s   OK\n' "$t" "$p" "$r"
     else
