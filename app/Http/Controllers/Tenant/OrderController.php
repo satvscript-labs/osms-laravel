@@ -26,6 +26,9 @@ use Barryvdh\DomPDF\Facade\Pdf;
 
 class OrderController extends Controller
 {
+    /** PERF-01 — how many days a delivered order stays on the kanban board. */
+    private const KANBAN_DELIVERED_DAYS = 7;
+
     /**
      * Orders workspace. Defaults to a scalable, searchable/filterable/sortable
      * table; `?view=kanban` falls back to the drag-and-drop workflow board.
@@ -50,8 +53,20 @@ class OrderController extends Controller
 
         // ---- Kanban: grouped by status (workflow board) ----
         if ($view === 'kanban') {
+            // PERF-01 — the board is a *working* view, not a historical ledger.
+            // Load all open work (pending + ready_for_pickup, naturally bounded)
+            // plus only recently-delivered orders, so a store with thousands of
+            // delivered orders doesn't hydrate its entire history on every board
+            // view. Cancelled orders never appear on the board. Full history lives
+            // in the paginated table view.
+            $recentDeliveredSince = now()->subDays(self::KANBAN_DELIVERED_DAYS);
             $orders = Order::with('customer:id,name,phone')
                 ->withCount('items')
+                ->where(function ($q) use ($recentDeliveredSince) {
+                    $q->whereIn('status', ['pending', 'ready_for_pickup'])
+                      ->orWhere(fn ($d) => $d->where('status', 'delivered')
+                          ->where('updated_at', '>=', $recentDeliveredSince));
+                })
                 ->latest()
                 ->get()
                 ->groupBy('status');

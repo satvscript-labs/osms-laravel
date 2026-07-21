@@ -2,7 +2,7 @@
     $columns = [
         ['key' => 'pending',          'title' => 'In lab',           'desc' => 'Being prepared',      'icon' => 'bi-clock-history'],
         ['key' => 'ready_for_pickup', 'title' => 'Ready for pickup', 'desc' => 'Waiting for customer','icon' => 'bi-bag-check'],
-        ['key' => 'delivered',        'title' => 'Delivered',        'desc' => 'Completed',           'icon' => 'bi-check-circle'],
+        ['key' => 'delivered',        'title' => 'Delivered',        'desc' => 'Completed · last 7 days', 'icon' => 'bi-check-circle'],
     ];
 @endphp
 
