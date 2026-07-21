@@ -62,11 +62,16 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# MySQL option files treat '#' as a start-of-comment and strip trailing spaces, so
+# every value MUST be quoted — the production password contains '#'. Inside quotes,
+# backslash is the escape character, so escape \ and " first.
+cnf_escape() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'; }
+
 cat > "$CNF" <<EOF
 [client]
-user=${DB_USERNAME}
-password=${DB_PASSWORD}
-host=${DB_HOST}
+user="$(cnf_escape "$DB_USERNAME")"
+password="$(cnf_escape "$DB_PASSWORD")"
+host="$(cnf_escape "$DB_HOST")"
 port=${DB_PORT}
 EOF
 
