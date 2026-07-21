@@ -23,8 +23,17 @@ class SendWhatsAppMessage implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
+    /** WA-02 — transient provider failures get retried instead of dying silently. */
+    public int $tries = 3;
+
     public function __construct(public string $messageId)
     {
+    }
+
+    /** WA-02 — spaced retries (seconds); the cron drains the queue each minute. */
+    public function backoff(): array
+    {
+        return [60, 300];
     }
 
     public function handle(WhatsAppGateway $gateway): void
@@ -41,12 +50,21 @@ class SendWhatsAppMessage implements ShouldQueue
             ->first();
 
         if (! $config) {
-            $message->update(['status' => 'failed', 'error' => 'No WhatsApp configuration for this store.']);
+            $this->stopWith($message, 'No WhatsApp configuration for this store.');
             return;
         }
 
         // Load the store name for drivers that surface it (e.g. the log driver).
         $config->setRelation('tenant', $config->tenant);
+
+        // WA-01 — re-check the runtime kill-switch at SEND time, not just at schedule
+        // time. The Automated freeze (or a store disconnecting / being flagged for
+        // attention) can land between scheduling and this run; a message must never
+        // go out from a store that is no longer in a genuinely ready Automated state.
+        if (! $config->isReady()) {
+            $this->stopWith($message, 'Automated messaging is not active for this store — not sent.', 'cancelled');
+            return;
+        }
 
         try {
             $providerId = $gateway->sendTemplate(
@@ -64,15 +82,38 @@ class SendWhatsAppMessage implements ShouldQueue
             ]);
         } catch (WhatsAppException $e) {
             $message->increment('attempts');
-            // Clear dedupe_key on failure so a later retry can be scheduled
-            // (matches the app-level guard, which only blocks on scheduled/sent).
-            $message->update(['status' => 'failed', 'error' => $e->getMessage(), 'dedupe_key' => null]);
 
             // A credential failure isn't transient — flag the store so future
             // events fall back to the manual pill instead of failing silently.
             if ($e->isAuthError()) {
                 $config->update(['needs_attention' => true]);
+                $this->stopWith($message, $e->getMessage());
+
+                return;
             }
+
+            // WA-02 — anything else may be transient (rate limit, provider blip).
+            // Let the queue retry; only record a permanent failure on the last try.
+            if ($this->attempts() >= $this->tries) {
+                $this->stopWith($message, $e->getMessage());
+
+                return;
+            }
+
+            throw $e; // re-queue with backoff
         }
+    }
+
+    /**
+     * Close a message out without sending. Clearing `dedupe_key` frees the
+     * (order, event) slot so a legitimate later attempt can be scheduled (DATA-01).
+     */
+    private function stopWith(WhatsAppMessage $message, string $error, string $status = 'failed'): void
+    {
+        $message->update([
+            'status' => $status,
+            'error' => $error,
+            'dedupe_key' => null,
+        ]);
     }
 }

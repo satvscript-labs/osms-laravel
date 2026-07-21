@@ -82,25 +82,49 @@ class WhatsAppScheduler
     }
 
     /**
-     * Ordered template body parameters per event. A store's approved template must
-     * be authored to this parameter order (documented in the tech artifact §12).
+     * WA-03 — the SINGLE source of truth for template body-parameter order. A store's
+     * approved Meta template must declare its {{1}}, {{2}}… variables in exactly this
+     * order for the event, or the send fails at Meta with a mismatched-parameter error.
+     *
+     * Keep this in step with the tech artifact and the settings help text: it is what
+     * `bodyParams()` builds from and what `paramSpec()` publishes to the UI/docs.
+     */
+    private const BODY_PARAM_SPEC = [
+        'order_placed'    => ['customer name', 'store name', 'order number', 'order total', 'balance due'],
+        'order_ready'     => ['customer name', 'store name', 'order number', 'balance due'],
+        'order_delivered' => ['customer name', 'store name', 'order number'],
+        'birthday'        => ['customer name', 'store name'],
+    ];
+
+    /**
+     * The ordered, human-readable parameter list a tenant's template must match for
+     * an event (for the settings screen and the integration docs).
+     *
+     * @return array<int,string>
+     */
+    public static function paramSpec(string $event): array
+    {
+        return self::BODY_PARAM_SPEC[$event] ?? ['customer name'];
+    }
+
+    /**
+     * Ordered template body parameters per event, built to match BODY_PARAM_SPEC.
      *
      * @return array<int,string>
      */
     private function bodyParams(WhatsAppConfig $config, Order $order, string $event): array
     {
-        $name = $order->customer?->name ?? 'there';
-        $store = $order->tenant?->store_name ?? 'our store';
-        $num = strtoupper(substr((string) $order->id, 0, 8));
-        $total = '₹ ' . number_format((float) $order->total_amount, 2);
-        $balance = '₹ ' . number_format((float) $order->balance_due, 2);
+        $values = [
+            'customer name' => $order->customer?->name ?? 'there',
+            'store name'    => $order->tenant?->store_name ?? 'our store',
+            'order number'  => strtoupper(substr((string) $order->id, 0, 8)),
+            'order total'   => '₹ ' . number_format((float) $order->total_amount, 2),
+            'balance due'   => '₹ ' . number_format((float) $order->balance_due, 2),
+        ];
 
-        return match ($event) {
-            'order_placed' => [$name, $store, $num, $total, $balance],
-            'order_ready' => [$name, $store, $num, $balance],
-            'order_delivered' => [$name, $store, $num],
-            'birthday' => [$name, $store],
-            default => [$name],
-        };
+        return array_map(
+            fn (string $label) => (string) ($values[$label] ?? ''),
+            self::paramSpec($event),
+        );
     }
 }

@@ -27,8 +27,18 @@ class MonitorFailedJobs extends Command
     {
         $count = DB::table('failed_jobs')->count();
 
+        // WA-02 — failed WhatsApp sends have no UI surface, so report them here too.
+        $failedMessages = DB::table('whatsapp_messages')->where('status', 'failed')->count();
+        if ($failedMessages > 0) {
+            Log::warning("OPS: {$failedMessages} WhatsApp message(s) failed to send.", [
+                'count' => $failedMessages,
+            ]);
+        }
+
         if ($count === 0) {
-            $this->info('No failed jobs.');
+            $this->info($failedMessages > 0
+                ? "No failed jobs. ({$failedMessages} failed WhatsApp message(s) logged.)"
+                : 'No failed jobs.');
 
             return self::SUCCESS;
         }
