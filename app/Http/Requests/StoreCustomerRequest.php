@@ -29,6 +29,10 @@ class StoreCustomerRequest extends FormRequest
             'age' => ['nullable', 'integer', 'min:0', 'max:150'],
             'birthday' => ['nullable', 'date', 'before:today', 'after:1900-01-01'],
             'gender' => ['nullable', Rule::in(['male', 'female', 'other'])],
+            // PRIV-01 — consent capture (both optional to record; a checkbox is
+            // absent when unchecked, so nullable boolean is correct).
+            'data_consent' => ['nullable', 'boolean'],
+            'whatsapp_opt_in' => ['nullable', 'boolean'],
         ];
     }
 

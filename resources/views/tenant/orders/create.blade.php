@@ -22,6 +22,8 @@
         <input type="hidden" name="customer_name" :value="newMode ? newName.trim() : ''">
         <input type="hidden" name="customer_phone" :value="newMode ? newPhone : ''">
         <input type="hidden" name="customer_country_code" :value="newCode">
+        <input type="hidden" name="customer_consent" :value="newMode && newConsent ? 1 : 0">
+        <input type="hidden" name="customer_whatsapp_opt_in" :value="newMode && newWhatsapp ? 1 : 0">
         <input type="hidden" name="eye_record_id" :value="eyeRecordId">
         <input type="hidden" name="advance_paid" :value="effectiveAdvance()">
         <input type="hidden" name="payment_method" :value="paymentMethod">
@@ -149,6 +151,19 @@
                                         <input type="tel" class="form-control" x-model="newPhone" placeholder="98765 43210">
                                     </div>
                                 </div>
+                            </div>
+                            {{-- PRIV-01 — consent at the counter for a new walk-in. --}}
+                            <div class="form-check mt-2">
+                                <input class="form-check-input" type="checkbox" id="newConsent" x-model="newConsent">
+                                <label class="form-check-label" for="newConsent" style="font-size:.75rem;">
+                                    Customer consents to storing their details for their care.
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="newWhatsapp" x-model="newWhatsapp">
+                                <label class="form-check-label" for="newWhatsapp" style="font-size:.75rem;">
+                                    Agrees to receive WhatsApp updates.
+                                </label>
                             </div>
                             <p class="text-muted-foreground mb-0 mt-2" style="font-size:.72rem;">
                                 Saved automatically when you create the order. An existing phone links to that customer.
@@ -466,7 +481,7 @@
             inventory: @json($inventory),
             codes: ['+91', '+1', '+44', '+971', '+61', '+65', '+880', '+977'],
             customerId: '', selectedCustomer: null, customerSearch: '',
-            newMode: false, newName: '', newPhone: '', newCode: '+91',
+            newMode: false, newName: '', newPhone: '', newCode: '+91', newConsent: false, newWhatsapp: false,
             eyeRecords: [], eyeRecordId: '',
             items: [], itemSearch: '', scanFlash: null,
             customMode: false, customName: '', customPrice: '', customQty: 1,

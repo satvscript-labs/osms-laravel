@@ -23,6 +23,15 @@
                     @if ($customer->age)<span><i class="bi bi-calendar3 me-1"></i>{{ $customer->age }} yrs</span>@endif
                     @if ($customer->gender)<span class="text-capitalize">{{ $customer->gender }}</span>@endif
                     <span style="font-size:.78rem;">Added {{ $customer->created_at->format('d M Y') }}</span>
+                    {{-- PRIV-01 — consent status at a glance. --}}
+                    @if ($customer->data_consent_at)
+                        <span class="osms-badge osms-badge-green"><span class="osms-badge-dot"></span> Consent on file</span>
+                    @else
+                        <span class="osms-badge osms-badge-amber"><span class="osms-badge-dot"></span> Consent not recorded</span>
+                    @endif
+                    @if ($customer->whatsapp_opt_in)
+                        <span class="osms-badge osms-badge-blue"><span class="osms-badge-dot"></span> WhatsApp opt-in</span>
+                    @endif
                 </div>
             </div>
         </div>

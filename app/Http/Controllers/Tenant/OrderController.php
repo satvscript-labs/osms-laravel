@@ -238,6 +238,10 @@ class OrderController extends Controller
             'customer_id'    => ['nullable', 'required_without:customer_name', 'exists:customers,id'],
             'customer_name'  => ['nullable', 'required_without:customer_id', 'string', 'max:255'],
             'customer_phone' => ['nullable', 'required_with:customer_name', 'string', 'max:30', 'regex:/^\+\d{1,4}\s\d{7,15}$/'],
+            // PRIV-01 — consent for an inline walk-in add (applied only to a
+            // newly-created customer; an existing match is never overwritten).
+            'customer_consent' => ['nullable', 'boolean'],
+            'customer_whatsapp_opt_in' => ['nullable', 'boolean'],
             'eye_record_id' => ['nullable', 'exists:eye_records,id'],
             'fulfillment_type' => ['nullable', 'in:instant,special'],
             // Required only for a special order (a prepared job needs a promised date).
@@ -271,7 +275,13 @@ class OrderController extends Controller
                 ? Customer::findOrFail($validated['customer_id'])
                 : Customer::firstOrCreate(
                     ['tenant_id' => auth()->user()->tenant_id, 'phone' => $validated['customer_phone']],
-                    ['name' => $validated['customer_name']],
+                    [
+                        'name' => $validated['customer_name'],
+                        // PRIV-01 — consent captured at the counter only stamps a
+                        // brand-new customer; an existing phone match is untouched.
+                        'data_consent_at' => ! empty($validated['customer_consent']) ? now() : null,
+                        'whatsapp_opt_in' => ! empty($validated['customer_whatsapp_opt_in']),
+                    ],
                 );
 
             // A prescription, if attached, must belong to this customer (the exists

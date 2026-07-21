@@ -26,12 +26,22 @@ class Customer extends Model
         'age',
         'birthday',
         'gender',
+        'data_consent_at',
+        'whatsapp_opt_in',
     ];
 
     protected $casts = [
         'age' => 'integer',
         'birthday' => 'date',
+        'data_consent_at' => 'datetime',
+        'whatsapp_opt_in' => 'boolean',
     ];
+
+    /** PRIV-01 — whether the store has recorded this customer's data consent. */
+    public function hasDataConsent(): bool
+    {
+        return $this->data_consent_at !== null;
+    }
 
     /**
      * Age is derived from the birthday when one is on file (always current);

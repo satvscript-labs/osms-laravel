@@ -72,11 +72,29 @@ class CustomerController extends Controller
 
     public function store(StoreCustomerRequest $request): RedirectResponse
     {
-        $customer = Customer::create($request->validated());
+        $customer = Customer::create($this->withConsent($request));
 
         return redirect()
             ->route('tenant.customers.show', $customer)
             ->with('status', 'Customer added.');
+    }
+
+    /**
+     * PRIV-01 — fold the two consent checkboxes into the DB shape. `data_consent`
+     * (a non-column checkbox) becomes a `data_consent_at` timestamp; an existing
+     * consent date is preserved so re-saving never rewrites when consent was given.
+     */
+    private function withConsent(StoreCustomerRequest $request, ?Customer $existing = null): array
+    {
+        $data = $request->validated();
+        unset($data['data_consent']); // not a column
+
+        $data['whatsapp_opt_in'] = $request->boolean('whatsapp_opt_in');
+        $data['data_consent_at'] = $request->boolean('data_consent')
+            ? ($existing?->data_consent_at ?? now())
+            : null;
+
+        return $data;
     }
 
     public function edit(Customer $customer): View
@@ -86,7 +104,7 @@ class CustomerController extends Controller
 
     public function update(StoreCustomerRequest $request, Customer $customer): RedirectResponse
     {
-        $customer->update($request->validated());
+        $customer->update($this->withConsent($request, $customer));
 
         return redirect()
             ->route('tenant.customers.show', $customer)

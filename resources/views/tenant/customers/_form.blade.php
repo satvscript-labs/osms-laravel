@@ -77,6 +77,36 @@
                     </select>
                 </div>
             </div>
+
+            {{-- PRIV-01 — consent capture (DPDP). Optional to record, but always
+                 present so the store can note that notice/consent was given. --}}
+            @php
+                $consentChecked = old('data_consent', ($customer && $customer->data_consent_at) ? '1' : null);
+                $waOptIn = old('whatsapp_opt_in', ($customer && $customer->whatsapp_opt_in) ? '1' : null);
+            @endphp
+            <div class="rounded-3 p-3" style="background: var(--surface-sunken);">
+                <p class="section-label mb-2">Consent</p>
+                <div class="form-check mb-2">
+                    <input class="form-check-input" type="checkbox" name="data_consent" value="1"
+                           id="data_consent" @checked($consentChecked)>
+                    <label class="form-check-label small" for="data_consent">
+                        The customer consents to this store keeping their contact details and prescription for their care.
+                    </label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="whatsapp_opt_in" value="1"
+                           id="whatsapp_opt_in" @checked($waOptIn)>
+                    <label class="form-check-label small" for="whatsapp_opt_in">
+                        The customer agrees to receive WhatsApp messages (order updates, reminders).
+                    </label>
+                </div>
+                @if ($isEdit && $customer->data_consent_at)
+                    <p class="text-muted-foreground mb-0 mt-2" style="font-size:.7rem;">
+                        Consent recorded {{ $customer->data_consent_at->format('d M Y') }}.
+                    </p>
+                @endif
+            </div>
+
             <div class="d-flex justify-content-end gap-2 mt-2">
                 <a href="{{ $cancelUrl }}" class="btn btn-light">Cancel</a>
                 <button type="submit" class="btn btn-primary">
