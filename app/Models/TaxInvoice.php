@@ -20,10 +20,11 @@ class TaxInvoice extends Model
 
     protected $table = 'tax_invoices';
 
-    protected $fillable = ['tenant_id', 'order_id', 'financial_year', 'sequence'];
+    protected $fillable = ['tenant_id', 'order_id', 'financial_year', 'sequence', 'snapshot'];
 
     protected $casts = [
         'sequence' => 'integer',
+        'snapshot' => 'array',
     ];
 
     public function order(): BelongsTo
@@ -70,7 +71,75 @@ class TaxInvoice extends Model
                 'order_id' => $order->id,
                 'financial_year' => $fy,
                 'sequence' => $next,
+                // BIZ-03 — freeze the invoice's contents at issue time.
+                'snapshot' => self::buildSnapshot($order),
             ]);
         });
+    }
+
+    /**
+     * BIZ-03 — build the immutable content snapshot for an order's invoice: the
+     * store + customer details, each invoiced line (name/qty/price + GST split),
+     * and the totals, all as they are RIGHT NOW. Stored at issue time so the
+     * numbered document never changes when the order or the GST rate later does.
+     * Also used as the live fallback for legacy invoices that predate the column.
+     */
+    public static function buildSnapshot(Order $order): array
+    {
+        $tenant = $order->tenant;
+        $hasGst = $tenant?->hasGst() ?? false;
+        $rate = $tenant?->effectiveGstRate() ?? 0.0;
+
+        // Fresh query so a just-created order (store()) reflects its new items.
+        $items = $order->items()->where('on_tax_invoice', true)->with('inventory')->get();
+
+        $lines = [];
+        $totals = ['taxable' => 0.0, 'cgst' => 0.0, 'sgst' => 0.0, 'grand' => 0.0];
+
+        foreach ($items as $it) {
+            $amount = round((float) $it->unit_price * $it->quantity, 2);
+            $split = $hasGst ? \App\Support\Gst::splitInclusive($amount, $rate) : null;
+
+            $lines[] = [
+                'name' => $it->is_custom
+                    ? $it->display_name
+                    : trim(($it->inventory?->brand ?? '—') . ' ' . ($it->inventory?->model_name ?? '')),
+                'qty' => (int) $it->quantity,
+                'unit_price' => (float) $it->unit_price,
+                'amount' => $amount,
+                'taxable' => $split['taxable'] ?? null,
+                'cgst' => $split['cgst'] ?? null,
+                'sgst' => $split['sgst'] ?? null,
+            ];
+
+            $totals['grand'] += $amount;
+            if ($split) {
+                $totals['taxable'] += $split['taxable'];
+                $totals['cgst'] += $split['cgst'];
+                $totals['sgst'] += $split['sgst'];
+            }
+        }
+
+        return [
+            'has_gst' => $hasGst,
+            'gst_rate' => $rate,
+            'store' => [
+                'name' => $tenant?->store_name,
+                'address' => $tenant?->address,
+                'gstin' => $tenant?->tax_id,
+            ],
+            'customer' => [
+                'name' => $order->customer?->name,
+                'phone' => $order->customer?->phone,
+            ],
+            'order_ref' => strtoupper(substr((string) $order->id, 0, 8)),
+            'lines' => $lines,
+            'totals' => [
+                'taxable' => round($totals['taxable'], 2),
+                'cgst' => round($totals['cgst'], 2),
+                'sgst' => round($totals['sgst'], 2),
+                'grand' => round($totals['grand'], 2),
+            ],
+        ];
     }
 }

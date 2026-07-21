@@ -468,9 +468,10 @@ class OrderController extends Controller
         $tenant = $order->tenant;
         $waConfig = $this->waConfig();
         $waPending = $this->waPendingFor([$order->id]);
-        // FT-TaxInvoice — only surface the button when the invoice exists AND at
-        // least one item is currently flagged (an edit could have unflagged all of them).
-        $taxInvoice = $order->items->contains('on_tax_invoice', true) ? $order->taxInvoice : null;
+        // FT-TaxInvoice — surface the button whenever an invoice has been issued.
+        // Once numbered it is a permanent document (BIZ-03), so it stays reachable
+        // even if the order's items are later edited.
+        $taxInvoice = $order->taxInvoice;
 
         return view('tenant.orders.show', compact('order', 'tenant', 'waConfig', 'waPending', 'taxInvoice'));
     }
@@ -1129,16 +1130,25 @@ class OrderController extends Controller
      */
     public function taxInvoicePdf(Order $order)
     {
-        $order->load(['customer', 'items.inventory:id,sku,brand,model_name,item_type', 'taxInvoice']);
-        $tenant = $order->tenant;
         $invoice = $order->taxInvoice;
-        $items = $order->items->where('on_tax_invoice', true);
 
-        if (! $invoice || $items->isEmpty()) {
+        // No invoice was ever issued for this order → nothing to render.
+        if (! $invoice) {
             abort(404);
         }
 
-        $pdf = Pdf::loadView('tenant.orders.tax-invoice-pdf', compact('order', 'tenant', 'invoice', 'items'))
+        // BIZ-03 — render from the frozen snapshot taken at issue time. A legacy
+        // invoice (issued before the snapshot column) has none, so rebuild it live.
+        $snapshot = $invoice->snapshot ?: TaxInvoice::buildSnapshot(
+            $order->loadMissing('customer', 'items.inventory', 'tenant')
+        );
+
+        // A legacy invoice whose items were all later unflagged has no lines.
+        if (empty($snapshot['lines'])) {
+            abort(404);
+        }
+
+        $pdf = Pdf::loadView('tenant.orders.tax-invoice-pdf', compact('order', 'invoice', 'snapshot'))
             ->setPaper('a4');
 
         return $pdf->stream($invoice->number . '.pdf');
