@@ -33,16 +33,15 @@ class CustomerController extends Controller
             // PRIV-02 — the birthdays view is a marketing-outreach list, so minors
             // are excluded (bornAdult) per DPDP's ban on marketing to children.
             ->when($filter === 'birthdays', fn ($query) => $query->upcomingBirthday(7)->bornAdult())
-            ->latest()
+            // WEB-02 — the birthdays view sorts by soonest birthday in SQL (so
+            // pagination is correct); every other view is newest-first.
+            ->when(
+                $filter === 'birthdays',
+                fn ($query) => $query->orderByUpcomingBirthday(7),
+                fn ($query) => $query->latest(),
+            )
             ->paginate(50)
             ->withQueryString();
-
-        // Birthdays view: order the page by soonest upcoming birthday (small set).
-        if ($filter === 'birthdays') {
-            $customers->setCollection(
-                $customers->getCollection()->sortBy(fn (Customer $c) => $c->daysUntilBirthday())->values()
-            );
-        }
 
         // Live search/filter (fetched by Alpine) — return lightweight JSON rows.
         if ($request->wantsJson()) {

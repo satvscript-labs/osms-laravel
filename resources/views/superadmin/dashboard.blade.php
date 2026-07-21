@@ -12,7 +12,10 @@
     {{-- KPIs --}}
     <div class="row g-3 mb-4 stagger">
         <div class="col-6 col-lg-3">
-            <x-metric-card label="MRR" value="₹ {{ number_format($stats['mrr'], 0) }}" icon="bi-graph-up-arrow" tone="primary" />
+            {{-- WEB-03 — MRR excludes comped (manual) subscriptions; they're surfaced
+                 in the label so the number is real revenue without hiding them. --}}
+            <x-metric-card label="{{ ($stats['comped'] ?? 0) > 0 ? 'MRR · ' . $stats['comped'] . ' comped' : 'MRR' }}"
+                           value="₹ {{ number_format($stats['mrr'], 0) }}" icon="bi-graph-up-arrow" tone="primary" />
         </div>
         <div class="col-6 col-lg-3">
             <x-metric-card label="Active subscriptions" value="{{ $stats['active'] }}" icon="bi-patch-check" tone="default" />

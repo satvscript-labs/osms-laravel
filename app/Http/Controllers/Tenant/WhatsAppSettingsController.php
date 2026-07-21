@@ -112,7 +112,13 @@ class WhatsAppSettingsController extends Controller
 
             $config->update(['enabled' => true, 'verified_at' => now(), 'needs_attention' => false]);
 
-            return back()->with('status', 'Test message sent — automated messaging is now active.');
+            // UX-05 — the runtime kill-switch (WA-01) means automated sending stays
+            // off in production regardless of this connection succeeding. Claiming
+            // "automated messaging is now active" was simply untrue, so the copy is
+            // mode-aware: it only promises activation when sending is actually on.
+            return back()->with('status', config('whatsapp.automated_enabled')
+                ? 'Test message sent — automated messaging is now active.'
+                : 'Test message sent — your connection works. Automated sending is not enabled yet, so messages are still sent manually.');
         } catch (WhatsAppException $e) {
             return back()->with('error', 'Test failed: ' . $e->getMessage());
         }
