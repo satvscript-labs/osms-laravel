@@ -25,4 +25,16 @@ return [
     'support_email' => env('SAAS_SUPPORT_EMAIL', 'support@osms.satvscript.com'),
     'contact_address' => env('SAAS_CONTACT_ADDRESS', '[Your Registered Business Address]'),
 
+    /*
+    | OPS-01 — backup health monitoring.
+    | The nightly dump is a cron-driven shell script (PHP exec() is disabled on the
+    | host), so the app cannot see whether it ran. `osms:monitor-backups` instead
+    | checks that a RECENT backup file exists — which also catches the cron being
+    | deleted or never firing, a failure mode that produces no output to alert on.
+    | Empty dir => resolved at runtime to $HOME/backups.
+    */
+    'backup_dir' => env('OSMS_BACKUP_DIR', ''),
+    'backup_max_age_hours' => (int) env('OSMS_BACKUP_MAX_AGE_HOURS', 26),
+    'backup_min_bytes' => (int) env('OSMS_BACKUP_MIN_BYTES', 1024),
+
 ];

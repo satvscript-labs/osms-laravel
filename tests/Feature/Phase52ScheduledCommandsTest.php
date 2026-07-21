@@ -24,9 +24,15 @@ class Phase52ScheduledCommandsTest extends TestCase
     private function tenantWithTrial(int $daysLeft, string $status = 'trialing'): Tenant
     {
         $tenant = Tenant::create(['store_name' => 'Sched ' . uniqid(), 'address' => 'X']);
+        // TEST-04 — build the period end in the BILLING timezone, exactly as
+        // Tenant::booted() does. Using a bare now() (APP_TIMEZONE=UTC) made this an
+        // off-by-one whenever UTC and IST were on different calendar dates, i.e. the
+        // suite failed every night between 18:30–24:00 UTC because trialDaysLeft()
+        // compares against Carbon::today('Asia/Kolkata').
+        $tz = config('billing.timezone', 'Asia/Kolkata');
         $tenant->subscription->update([
             'status' => $status,
-            'current_period_end' => now()->addDays($daysLeft),
+            'current_period_end' => now($tz)->addDays($daysLeft),
         ]);
         User::factory()->create(['tenant_id' => $tenant->id, 'role' => 'store_admin']);
 
