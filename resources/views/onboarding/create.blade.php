@@ -34,7 +34,10 @@
         <div>
             <label for="tax_id" class="form-label small fw-medium mb-1">GST / Tax ID</label>
             <input id="tax_id" type="text" name="tax_id" value="{{ old('tax_id') }}"
-                   class="form-control" placeholder="22AAAAA0000A1Z5">
+                   class="form-control @error('tax_id') is-invalid @enderror" placeholder="22AAAAA0000A1Z5"
+                   maxlength="15" style="text-transform:uppercase;"
+                   oninput="this.value=this.value.toUpperCase().replace(/[^0-9A-Z]/g,'').slice(0,15)">
+            @error('tax_id')<div class="invalid-feedback">{{ $message }}</div>@enderror
         </div>
 
         <div>
