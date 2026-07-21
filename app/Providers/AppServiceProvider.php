@@ -6,6 +6,7 @@ use App\Services\WhatsApp\LogDriver;
 use App\Services\WhatsApp\MetaCloudDriver;
 use App\Services\WhatsApp\WhatsAppGateway;
 use Illuminate\Pagination\Paginator;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -30,5 +31,26 @@ class AppServiceProvider extends ServiceProvider
     {
         // Render paginator links with Bootstrap 5 markup (matches the UI kit).
         Paginator::useBootstrapFive();
+
+        $this->hardenForProduction();
+    }
+
+    /**
+     * SEC-01 — production transport hardening, enforced in CODE (not left to an
+     * env file that is gitignored and easy to forget on the server):
+     *   • every generated URL is https, so a stray http link can't leak a session;
+     *   • the session cookie is marked Secure (never sent over plain http).
+     * Guarded to production so local http dev and the test suite are unaffected.
+     * `SESSION_ENCRYPT=true` is set in .env.prod (encryption is deploy-time, since
+     * it invalidates existing sessions once — see the deploy runbook).
+     */
+    protected function hardenForProduction(): void
+    {
+        if (! $this->app->environment('production')) {
+            return;
+        }
+
+        URL::forceScheme('https');
+        config(['session.secure' => true]);
     }
 }
