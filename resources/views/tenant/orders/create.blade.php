@@ -111,7 +111,8 @@
                             <div class="input-group">
                                 <span class="input-group-text bg-white"><i class="bi bi-search text-muted-foreground"></i></span>
                                 <input type="text" class="form-control" placeholder="Search customer by name or phone…"
-                                       x-model="customerSearch" data-barcode-target>
+                                       x-model="customerSearch" data-barcode-target
+                                       @input.debounce.250ms="searchCustomers()">
                             </div>
                             <div class="list-group position-absolute w-100 shadow-sm" style="z-index:5;"
                                  x-show="customerSearch.length > 0 && filteredCustomers().length">
@@ -479,7 +480,10 @@
 
     function orderBuilder() {
         return {
-            customers: @json($customers),
+            // PERF-03 — customers are searched server-side (never embedded); inventory
+            // stays embedded because it's bounded by the catalog and the local
+            // barcode-scan path resolves against it.
+            customerResults: [], customerSearchToken: 0,
             inventory: @json($inventory),
             codes: ['+91', '+1', '+44', '+971', '+61', '+65', '+880', '+977'],
             customerId: '', selectedCustomer: null, customerSearch: '',
@@ -492,17 +496,25 @@
             fulfillmentType: 'instant', estimatedReadyAt: @json(now()->addDays(3)->toDateString()),
 
             init() {
-                const pre = @json($selectedCustomerId);
-                if (pre) { const c = this.customers.find(x => x.id === pre); if (c) this.selectCustomer(c); }
+                const pre = @json($selectedCustomer);
+                if (pre) this.selectCustomer(pre);
                 window.addEventListener('osms-barcode', (e) => this.onScan(e.detail));
             },
             money(n) { return '₹ ' + Number(n || 0).toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2}); },
             uid() { return 'u' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); },
-            filteredCustomers() {
-                const q = this.customerSearch.trim().toLowerCase();
-                if (!q) return [];
-                return this.customers.filter(c => (c.name+' '+c.phone).toLowerCase().includes(q)).slice(0,6);
+            // PERF-03 — server-side customer search (debounced by the input binding).
+            // A token guards against a slow response overwriting a newer one.
+            searchCustomers() {
+                const q = this.customerSearch.trim();
+                if (q.length < 2) { this.customerResults = []; return; }
+                const token = ++this.customerSearchToken;
+                fetch(`{{ route('tenant.customers.index') }}?q=${encodeURIComponent(q)}`,
+                      { headers: { 'Accept': 'application/json' } })
+                    .then(r => r.json())
+                    .then(d => { if (token === this.customerSearchToken) this.customerResults = (d.customers || []).slice(0, 6); })
+                    .catch(() => { if (token === this.customerSearchToken) this.customerResults = []; });
             },
+            filteredCustomers() { return this.customerResults; },
             filteredInventory() {
                 const q = this.itemSearch.trim().toLowerCase();
                 if (!q) return [];
@@ -511,12 +523,13 @@
             },
             selectCustomer(c) {
                 this.customerId = c.id; this.selectedCustomer = c; this.customerSearch = '';
+                this.customerResults = [];
                 this.newMode = false; this.newName = ''; this.newPhone = '';
                 fetch(`{{ url('tenant/customers') }}/${c.id}/eye-records`, {headers:{'Accept':'application/json'}})
                     .then(r => r.json()).then(d => { this.eyeRecords = d; this.eyeRecordId = d[0]?.id || ''; });
             },
             clearCustomer() { this.customerId=''; this.selectedCustomer=null; this.eyeRecords=[]; this.eyeRecordId=''; },
-            startNew() { this.newName = this.customerSearch.trim(); this.customerSearch = ''; this.newMode = true; },
+            startNew() { this.newName = this.customerSearch.trim(); this.customerSearch = ''; this.customerResults = []; this.newMode = true; },
             cancelNew() { this.newMode = false; this.newName = ''; this.newPhone = ''; },
             localDate(daysAhead) {
                 const d = new Date(); d.setDate(d.getDate() + daysAhead);

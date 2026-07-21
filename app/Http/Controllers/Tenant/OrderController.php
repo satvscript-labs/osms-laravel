@@ -230,14 +230,18 @@ class OrderController extends Controller
 
     public function create(Request $request): View
     {
-        $customers = Customer::orderBy('name')->get(['id', 'name', 'phone']);
+        // PERF-03 — the customer list is unbounded, so it is NOT embedded in the page.
+        // The picker searches the customers JSON endpoint as you type; only a
+        // pre-selected customer (e.g. "New order" from a profile) is passed through.
         $inventory = Inventory::where('stock_qty', '>', 0)
             ->orderBy('brand')
             ->get(['id', 'sku', 'barcode', 'brand', 'model_name', 'selling_price', 'stock_qty']);
 
-        $selectedCustomerId = $request->query('customer');
+        $selectedCustomer = $request->filled('customer')
+            ? Customer::whereKey($request->query('customer'))->first(['id', 'name', 'phone'])
+            : null;
 
-        return view('tenant.orders.create', compact('customers', 'inventory', 'selectedCustomerId'));
+        return view('tenant.orders.create', compact('inventory', 'selectedCustomer'));
     }
 
     public function store(Request $request): RedirectResponse
