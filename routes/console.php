@@ -25,3 +25,9 @@ Schedule::command('queue:work --stop-when-empty --max-time=50')->everyMinute()->
 // OPS-02 — surface failed background jobs (the cron-only queue has no dashboard).
 // Alerts the superadmin(s) so a silently-broken queue doesn't go unnoticed.
 Schedule::command('osms:monitor-failed-jobs')->hourly()->withoutOverlapping();
+
+// OPS-01 — verify the nightly dump actually happened. The backup is a cron-driven
+// shell script the app can't observe directly, so this checks that a recent backup
+// FILE exists. Unlike cron's MAILTO, that also catches the cron being deleted or
+// never firing. Runs well after the 02:00/02:30 backup window.
+Schedule::command('osms:monitor-backups')->dailyAt('09:00')->withoutOverlapping();
