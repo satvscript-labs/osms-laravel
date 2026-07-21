@@ -47,12 +47,15 @@ return [
             'name' => 'Basic',
             'monthly_price' => 499,
             'yearly_price' => 4999,
+            // DOC-03 — this copy is customer-facing (billing page). Keep it to what
+            // actually ships: the Excel-export feature was removed, so it was dropped.
             'features' => [
                 'Patients & prescriptions',
                 'Inventory + barcode POS',
                 'Order kanban & receipts',
+                'Tax invoices & GST breakup',
                 'Analytics & profit reports',
-                'Excel export',
+                'WhatsApp customer messaging',
             ],
         ],
     ],

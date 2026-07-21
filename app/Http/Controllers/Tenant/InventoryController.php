@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers\Tenant;
 
-use App\Exports\InventoryExport;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\InventoryRequest;
 use App\Models\Inventory;
