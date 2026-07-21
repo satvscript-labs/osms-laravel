@@ -26,8 +26,8 @@ class EnsureSubscriptionActive
             return $next($request);
         }
 
-        // The pay page must stay reachable even while locked.
-        if ($request->routeIs('tenant.billing.*')) {
+        // The pay page (and the staff lock screen) must stay reachable while locked.
+        if ($request->routeIs('tenant.billing.*', 'tenant.locked')) {
             return $next($request);
         }
 
@@ -35,8 +35,11 @@ class EnsureSubscriptionActive
         $state = $subscription?->accessState() ?? 'locked';
 
         if ($state === 'locked') {
-            return redirect()->route('tenant.billing.index')
-                ->with('error', $this->lockedMessage($subscription));
+            // SEC-03 — billing is admin-only, so sending staff there is a 403 dead-end.
+            // Give them a lock screen that explains it and names who can renew.
+            return $user->isStoreAdmin()
+                ? redirect()->route('tenant.billing.index')->with('error', $this->lockedMessage($subscription))
+                : redirect()->route('tenant.locked');
         }
 
         return $next($request);

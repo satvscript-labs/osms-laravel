@@ -18,11 +18,16 @@ use App\Http\Controllers\Tenant\OrderController;
 use App\Http\Controllers\Tenant\SearchController;
 use App\Http\Controllers\Tenant\SettingsController;
 use App\Http\Controllers\Tenant\StaffController;
+use App\Http\Controllers\Tenant\SubscriptionLockController;
 use App\Http\Controllers\Tenant\WhatsAppSettingsController;
 use Illuminate\Support\Facades\Route;
 
 // ---- Global search (Cmd+K) ----
 Route::middleware('throttle:120,1')->get('search', SearchController::class)->name('search');
+
+// SEC-03 — lock screen for staff when the store's subscription lapses (billing is
+// admin-only, so they'd otherwise hit a bare 403). Exempt from `subscribed`.
+Route::get('locked', SubscriptionLockController::class)->name('locked');
 
 // ---- Customers ----
 Route::get('customers', [CustomerController::class, 'index'])->name('customers.index');
