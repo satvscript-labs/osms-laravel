@@ -118,7 +118,7 @@
 </div>
 
 @push('scripts')
-<script>
+<script nonce="{{ csp_nonce() }}">
     // PRIV-01 — ticking data consent auto-ticks WhatsApp opt-in (faster capture);
     // staff can still untick WhatsApp afterwards.
     (function () {

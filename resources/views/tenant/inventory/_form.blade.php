@@ -106,7 +106,7 @@
 
 @if ($isEdit)
     @push('scripts')
-    <script>
+    <script nonce="{{ csp_nonce() }}">
         document.addEventListener('DOMContentLoaded', () => {
             const el = document.getElementById('barcodePreview');
             if (el && el.dataset.barcode && window.JsBarcode) {
@@ -118,7 +118,7 @@
 @endif
 
 @push('scripts')
-<script>
+<script nonce="{{ csp_nonce() }}">
     // NB-004: warn (don't block) when selling price drops below cost — clearance sales are allowed.
     document.addEventListener('DOMContentLoaded', () => {
         const cost = document.getElementById('cost_price');

@@ -445,7 +445,7 @@
 
 @push('scripts')
 @include('partials.barcode-listener', ['onScan' => 'orderScan'])
-<script>
+<script nonce="{{ csp_nonce() }}">
     window.orderScan = (code) => window.dispatchEvent(new CustomEvent('osms-barcode', { detail: code }));
 
     // iOS-style count-up: tweens an element's number toward its computed value.

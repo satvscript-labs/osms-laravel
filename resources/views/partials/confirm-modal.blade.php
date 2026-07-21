@@ -27,7 +27,7 @@
 </div>
 
 @push('scripts')
-<script>
+<script nonce="{{ csp_nonce() }}">
     // Mirrors the global-search deferred-ESM guard: wait for DOMContentLoaded so
     // window.bootstrap (from the bundled module) exists before instantiating the modal.
     (function () {

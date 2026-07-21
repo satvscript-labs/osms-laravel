@@ -140,7 +140,7 @@
 </div>
 
 @push('scripts')
-<script>
+<script nonce="{{ csp_nonce() }}">
     // FT-Barcode — render the item's barcode as Code128 (client-side JsBarcode) and
     // wire Download (PNG named by SKU) + Print. Guarded like the other deferred-ESM
     // consumers (BUG-001 / NB-002): wait for DOMContentLoaded, bail if the global

@@ -204,7 +204,7 @@
 
 @push('scripts')
 @include('partials.barcode-listener', ['onScan' => 'fillSearch'])
-<script>
+<script nonce="{{ csp_nonce() }}">
     // Scanner → feed the code into the live Alpine search via a window event.
     function fillSearch(code) {
         window.dispatchEvent(new CustomEvent('barcode-scan', { detail: code }));

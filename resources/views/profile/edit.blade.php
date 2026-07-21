@@ -478,7 +478,7 @@
 </div>
 
 @push('scripts')
-<script>
+<script nonce="{{ csp_nonce() }}">
     // Which section opens by default: remember the last one (per browser); if a
     // form had validation errors, jump to its section so the user sees them.
     function settingsHub(cfg) {

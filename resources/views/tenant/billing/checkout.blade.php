@@ -17,7 +17,7 @@
 
 @push('scripts')
 <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
-<script>
+<script nonce="{{ csp_nonce() }}">
     const options = {
         key: @json($razorpayKey),
         subscription_id: @json($subscriptionId),

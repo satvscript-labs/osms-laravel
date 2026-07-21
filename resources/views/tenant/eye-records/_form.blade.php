@@ -172,7 +172,7 @@
 @endpush
 
 @push('scripts')
-<script>
+<script nonce="{{ csp_nonce() }}">
     // FT-SmartRx (5.2) — smart prescription entry: mirror OD→OS, derive the
     // near/add relationship, and validate ranges client-side (server still
     // enforces the same bounds authoritatively).

@@ -45,7 +45,7 @@
 </div>
 
 @push('scripts')
-<script>
+<script nonce="{{ csp_nonce() }}">
     function ordersLive(cfg) {
         return {
             base: cfg.base,

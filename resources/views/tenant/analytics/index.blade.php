@@ -298,7 +298,7 @@
 @endsection
 
 @push('scripts')
-<script>
+<script nonce="{{ csp_nonce() }}">
     // 6.2 — quick range chips fill the From/To pickers and submit the existing
     // GET form. The server re-renders with the matching chip highlighted; the
     // page-enter fade keeps the transition liquid rather than a hard reload snap.
