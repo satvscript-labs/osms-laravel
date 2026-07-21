@@ -113,13 +113,28 @@ class CustomerController extends Controller
     }
 
     /** FG-Delete — archived (soft-deleted) customers, restorable for 30 days. */
-    public function trash(): View
+    public function trash(Request $request): View
     {
-        $customers = Customer::onlyTrashed()
-            ->latest('deleted_at')
-            ->paginate(50);
+        // UX-04 — live archive search. Filtering happens in SQL (not on the rendered
+        // page) so it searches the whole archive rather than just the current page.
+        $search = trim((string) $request->query('search', ''));
 
-        return view('tenant.customers.trash', compact('customers'));
+        $customers = Customer::onlyTrashed()
+            ->when($search !== '', fn ($query) => $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                  ->orWhere('phone', 'like', "%{$search}%");
+            }))
+            ->latest('deleted_at')
+            ->paginate(50)
+            ->withQueryString();
+
+        // The live search swaps in this rendered fragment (rows keep their
+        // CSRF-protected restore/delete forms — see partials/trash-list-script).
+        if ($request->ajax()) {
+            return view('tenant.customers.partials.trash-rows', compact('customers', 'search'));
+        }
+
+        return view('tenant.customers.trash', compact('customers', 'search'));
     }
 
     /**

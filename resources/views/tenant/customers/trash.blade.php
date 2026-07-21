@@ -2,9 +2,13 @@
 @section('title', 'Archived customers')
 
 @section('content')
-<div class="p-4 p-md-5">
+{{-- UX-04 — live archive search. Debounced fetch swaps a server-rendered partial
+     (rather than client-rendering JSON) so each row keeps its CSRF-protected
+     restore / delete forms. Skeleton while loading, never a blank flash. --}}
+<div class="p-4 p-md-5"
+     x-data="trashList({ endpoint: @js(route('tenant.customers.trash')), query: @js($search ?? '') })">
     <a href="{{ route('tenant.customers.index') }}"
-       class="d-inline-flex align-items-center gap-1 text-muted-foreground text-decoration-none mb-3" style="font-size:var(--text-sm);">
+       class="d-inline-flex align-items-center gap-1 text-muted-foreground text-decoration-none mb-3 text-sm">
         <i class="bi bi-chevron-left"></i> Back to customers
     </a>
 
@@ -13,71 +17,42 @@
         <div>
             <p class="section-label mb-1">Customers</p>
             <h1 class="h3 fw-semibold font-display mb-1">Archive</h1>
-            <p class="text-muted-foreground mb-0" style="font-size:var(--text-md);">
+            <p class="text-muted-foreground mb-0 text-md">
                 Archived customers are recoverable for 30 days, then permanently removed.
             </p>
         </div>
     </div>
 
-    @if ($customers->isNotEmpty())
-        <div class="card border-0 shadow-sm rounded-4 stagger">
-            <div class="table-responsive">
-                <table class="table align-middle mb-0">
-                    <thead class="text-muted-foreground" style="font-size:var(--text-xs);">
-                        <tr>
-                            <th class="ps-4">Name</th>
-                            <th>Phone</th>
-                            <th>Archived</th>
-                            <th class="pe-4 text-end">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach ($customers as $c)
-                            <tr>
-                                <td class="ps-4 fw-medium">{{ $c->name }}</td>
-                                <td>{{ $c->phone }}</td>
-                                <td class="text-muted-foreground" style="font-size:var(--text-sm);">
-                                    {{ $c->deleted_at->format('d M Y') }}
-                                    <span class="text-faint">· purges {{ $c->deleted_at->copy()->addDays(30)->format('d M Y') }}</span>
-                                </td>
-                                <td class="pe-4">
-                                    <div class="d-flex justify-content-end gap-2">
-                                        <form method="POST" action="{{ route('tenant.customers.restore', $c) }}" class="m-0">
-                                            @csrf
-                                            @method('PATCH')
-                                            <button type="submit" class="btn btn-sm btn-light">
-                                                <i class="bi bi-arrow-counterclockwise me-1"></i> Restore
-                                            </button>
-                                        </form>
-                                        <form method="POST" action="{{ route('tenant.customers.force-delete', $c) }}" class="m-0">
-                                            @csrf
-                                            @method('DELETE')
-                                            <button type="button" class="btn btn-sm btn-light text-danger"
-                                                    data-confirm="Permanently delete {{ $c->name }}? This cannot be undone."
-                                                    data-confirm-title="Delete permanently"
-                                                    data-confirm-label="Delete forever">
-                                                <i class="bi bi-trash me-1"></i> Delete now
-                                            </button>
-                                        </form>
-                                    </div>
-                                </td>
-                            </tr>
-                        @endforeach
-                    </tbody>
-                </table>
-            </div>
-        </div>
+    {{-- Live search --}}
+    <div class="input-group flex-nowrap mb-3" style="max-width:30rem;">
+        <span class="input-group-text bg-white border-end-0">
+            <i class="bi bi-search text-muted-foreground"></i>
+        </span>
+        <input type="search" x-model="query" @input.debounce.220ms="refresh()"
+               class="form-control border-start-0"
+               placeholder="Search archived customers…" autocomplete="off" aria-label="Search archived customers">
+        <span class="input-group-text bg-white border-start-0" x-show="loading" x-cloak>
+            <span class="spinner-border spinner-border-sm text-primary" role="status" aria-hidden="true"></span>
+        </span>
+        <button type="button" class="btn btn-light border-start-0" x-show="query && !loading" x-cloak
+                @click="query=''; refresh()" aria-label="Clear search">
+            <i class="bi bi-x-lg"></i>
+        </button>
+    </div>
 
-        @if ($customers->hasPages())
-            <div class="mt-3">{{ $customers->links() }}</div>
-        @endif
-    @else
-        <div class="glass card-lift rounded-4 text-center p-5">
-            <span class="d-inline-flex align-items-center justify-content-center rounded-3 bg-primary-subtle text-primary mb-3"
-                  style="width:3rem;height:3rem;"><i class="bi bi-archive fs-4"></i></span>
-            <h2 class="h5 fw-semibold font-display">Archive is empty</h2>
-            <p class="text-muted-foreground mb-0">Archived customers will appear here for 30 days before being purged.</p>
-        </div>
-    @endif
+    {{-- Skeleton while fetching --}}
+    <div x-show="loading" x-cloak class="card border-0 shadow-sm rounded-4 p-4">
+        <template x-for="i in 4" :key="i">
+            <div class="skeleton mb-2" style="height:2.25rem; border-radius: var(--radius);"></div>
+        </template>
+    </div>
+
+    <div x-ref="rows" x-show="!loading">
+        @include('tenant.customers.partials.trash-rows')
+    </div>
 </div>
 @endsection
+
+@push('scripts')
+    @include('partials.trash-list-script')
+@endpush

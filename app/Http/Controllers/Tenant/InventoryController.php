@@ -147,13 +147,28 @@ class InventoryController extends Controller
     }
 
     /** FG-Delete — archived (soft-deleted) items, restorable for 30 days. */
-    public function trash(): View
+    public function trash(Request $request): View
     {
-        $items = Inventory::onlyTrashed()
-            ->latest('deleted_at')
-            ->paginate(50);
+        // UX-04 — live archive search, filtered in SQL so it covers the whole
+        // archive rather than just the rows on the current page.
+        $search = trim((string) $request->query('search', ''));
 
-        return view('tenant.inventory.trash', compact('items'));
+        $items = Inventory::onlyTrashed()
+            ->when($search !== '', fn ($query) => $query->where(function ($q) use ($search) {
+                $q->where('sku', 'like', "%{$search}%")
+                  ->orWhere('barcode', 'like', "%{$search}%")
+                  ->orWhere('brand', 'like', "%{$search}%")
+                  ->orWhere('model_name', 'like', "%{$search}%");
+            }))
+            ->latest('deleted_at')
+            ->paginate(50)
+            ->withQueryString();
+
+        if ($request->ajax()) {
+            return view('tenant.inventory.partials.trash-rows', compact('items', 'search'));
+        }
+
+        return view('tenant.inventory.trash', compact('items', 'search'));
     }
 
     /**
