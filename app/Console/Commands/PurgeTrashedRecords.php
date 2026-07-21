@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\Customer;
+use App\Models\EyeRecord;
 use App\Models\Inventory;
 use Illuminate\Console\Command;
 
@@ -27,6 +28,12 @@ class PurgeTrashedRecords extends Command
 
         // Customers are safe to purge — archiving is blocked while they have orders.
         $purged += Customer::withoutGlobalScopes()
+            ->onlyTrashed()
+            ->where('deleted_at', '<=', $cutoff)
+            ->forceDelete();
+
+        // DATA-07 — soft-deleted eye records past the retention window.
+        $purged += EyeRecord::withoutGlobalScopes()
             ->onlyTrashed()
             ->where('deleted_at', '<=', $cutoff)
             ->forceDelete();

@@ -154,6 +154,9 @@ class CustomerController extends Controller
     /** FG-Delete — permanently delete an archived customer (irreversible). */
     public function forceDelete(Customer $customer): RedirectResponse
     {
+        \App\Models\ActivityLog::record('customer.deleted', "Permanently deleted customer {$customer->name}",
+            'customer', $customer->id, ['phone' => $customer->phone]);
+
         $customer->forceDelete();
 
         return redirect()

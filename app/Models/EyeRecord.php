@@ -6,10 +6,11 @@ use App\Models\Concerns\BelongsToTenant;
 use App\Models\Concerns\HasUuid;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class EyeRecord extends Model
 {
-    use HasUuid, BelongsToTenant;
+    use HasUuid, BelongsToTenant, SoftDeletes;
 
     protected $fillable = [
         'tenant_id', 'customer_id', 'recorded_by', 'checked_by',
@@ -18,6 +19,11 @@ class EyeRecord extends Model
         // OS (left eye)
         'os_sph', 'os_cyl', 'os_axis', 'os_add', 'os_va', 'os_nv',
         'pd', 'notes',
+    ];
+
+    protected $casts = [
+        // PRIV-03 — clinical free-text notes are encrypted at rest.
+        'notes' => 'encrypted',
     ];
 
     public function customer(): BelongsTo

@@ -963,18 +963,23 @@ class OrderController extends Controller
 
                     // BIZ-02 — audit every settle-time discount change (the only path a
                     // discount can move after creation), so a rewrite is never silent.
+                    $after = [
+                        'discount_type'   => $dType,
+                        'discount_value'  => $dValue,
+                        'discount_amount' => $dAmount,
+                        'total_amount'    => $newTotal,
+                    ];
                     Log::info('order.discount_changed', [
                         'order_id'   => $order->id,
                         'tenant_id'  => $order->tenant_id,
                         'by_user_id' => auth()->id(),
                         'before'     => $before,
-                        'after'      => [
-                            'discount_type'   => $dType,
-                            'discount_value'  => $dValue,
-                            'discount_amount' => $dAmount,
-                            'total_amount'    => $newTotal,
-                        ],
+                        'after'      => $after,
                     ]);
+                    // PRIV-04 — also into the tenant-visible activity log.
+                    \App\Models\ActivityLog::record('order.discount_changed',
+                        'Changed the discount on order #' . strtoupper(substr($order->id, 0, 8)),
+                        'order', $order->id, ['before' => $before, 'after' => $after]);
                 }
 
                 // 2) Payment (optional): capped at the balance remaining *after* any
@@ -1075,6 +1080,10 @@ class OrderController extends Controller
                 'cancel_reason' => $validated['cancel_reason'] ?? null,
             ]);
         });
+
+        \App\Models\ActivityLog::record('order.cancelled',
+            'Cancelled order #' . strtoupper(substr($order->id, 0, 8)) . ' and restored stock',
+            'order', $order->id, ['reason' => $validated['cancel_reason'] ?? null]);
 
         return back()->with('status', 'Order cancelled and stock restored.');
     }

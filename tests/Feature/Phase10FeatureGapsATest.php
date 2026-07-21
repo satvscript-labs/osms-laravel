@@ -101,7 +101,10 @@ class Phase10FeatureGapsATest extends TestCase
         $this->actingAs($user)->delete(route('tenant.eye-records.destroy', $record))
             ->assertRedirect(route('tenant.customers.show', $customer));
 
-        $this->assertDatabaseMissing('eye_records', ['id' => $record->id]);
+        // DATA-07 — prescriptions are soft-deleted (recoverable for 30 days), so the
+        // row remains with a deleted_at stamp and disappears from normal queries.
+        $this->assertSoftDeleted('eye_records', ['id' => $record->id]);
+        $this->assertNull(EyeRecord::find($record->id));
     }
 
     public function test_cannot_delete_another_tenants_eye_record(): void

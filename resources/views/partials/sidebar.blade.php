@@ -11,9 +11,10 @@
         ['route' => 'tenant.analytics.index', 'label' => 'Analytics', 'icon' => 'bi-bar-chart', 'match' => 'tenant.analytics.*'],
     ];
 
-    // Team management is admin-only.
+    // Team management + activity log are admin-only.
     if ($user?->isStoreAdmin()) {
         $tenantLinks[] = ['route' => 'tenant.staff.index', 'label' => 'Team', 'icon' => 'bi-person-badge', 'match' => 'tenant.staff.*'];
+        $tenantLinks[] = ['route' => 'tenant.activity.index', 'label' => 'Activity', 'icon' => 'bi-clock-history', 'match' => 'tenant.activity.*'];
     }
 
     // Settings now lives in the unified hub reachable via the gear in the footer
