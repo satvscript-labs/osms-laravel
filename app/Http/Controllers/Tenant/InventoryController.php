@@ -193,6 +193,14 @@ class InventoryController extends Controller
     /** FG-Delete — permanently delete an archived item (irreversible). */
     public function forceDelete(Inventory $inventory): RedirectResponse
     {
+        // DATA-03 — an item referenced by any past order must never be hard-deleted:
+        // `order_items.inventory_id` is nullOnDelete, so deleting it would blank the
+        // link and every historical receipt/invoice line would degrade to "Custom
+        // item". Keep it archived instead.
+        if ($inventory->orderItems()->exists()) {
+            return back()->with('error', 'This item appears on past orders and cannot be permanently deleted — it stays archived so those receipts stay intact.');
+        }
+
         $inventory->forceDelete();
 
         return redirect()

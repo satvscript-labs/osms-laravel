@@ -25,12 +25,19 @@ class PurgeTrashedRecords extends Command
 
         $purged = 0;
 
-        foreach ([Customer::class, Inventory::class] as $model) {
-            $purged += $model::withoutGlobalScopes()
-                ->onlyTrashed()
-                ->where('deleted_at', '<=', $cutoff)
-                ->forceDelete();
-        }
+        // Customers are safe to purge — archiving is blocked while they have orders.
+        $purged += Customer::withoutGlobalScopes()
+            ->onlyTrashed()
+            ->where('deleted_at', '<=', $cutoff)
+            ->forceDelete();
+
+        // DATA-03 — never purge an item still referenced by an order; hard-deleting
+        // it would rewrite historical receipts to "Custom item". It stays archived.
+        $purged += Inventory::withoutGlobalScopes()
+            ->onlyTrashed()
+            ->where('deleted_at', '<=', $cutoff)
+            ->whereDoesntHave('orderItems')
+            ->forceDelete();
 
         $this->info("Purged {$purged} record(s) archived before {$cutoff->toDateString()}.");
 
