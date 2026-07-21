@@ -1,25 +1,26 @@
 # OSMS — Optical Store Management System
 
 A multi-tenant B2B SaaS for optical retail: patient & prescription records, barcode POS,
-frame/lens inventory, kanban order workflow, financial analytics, and Razorpay subscriptions.
+frame/lens inventory, kanban order workflow, financial analytics, WhatsApp customer
+messaging, and Razorpay subscriptions.
 
-Migrated from Next.js + Supabase to **Laravel 12 + Blade + Bootstrap 5 + MySQL** for
-cost-efficient hosting on Hostinger Premium Shared Hosting.
+Built on **Laravel 12 + Blade + Bootstrap 5 + MySQL**, with an iOS-inspired premium
+design system (design tokens, spring-eased motion, live-search list pages throughout).
 
 ## Tech stack
 
 | Layer | Tech |
 | --- | --- |
 | Backend | Laravel 12 (PHP 8.2+) |
-| Frontend | Blade + Bootstrap 5 (+ Alpine.js for the order builder) |
+| Frontend | Blade + Bootstrap 5 (+ Alpine.js for the order builder and live search) |
 | Database | MySQL (production) / SQLite (local dev) |
-| Auth | Laravel Breeze |
+| Auth | Laravel Breeze + TOTP two-factor authentication |
 | Multi-tenancy | Eloquent global scope (`TenantScope`) — app-layer row isolation |
 | PDF | barryvdh/laravel-dompdf |
 | Excel | maatwebsite/excel |
 | QR / Barcode | simplesoftwareio/simple-qrcode + JsBarcode (Code128) |
 | Payments | Razorpay subscriptions |
-| Hosting | Hostinger Premium Shared Hosting · osms.satvscript.com |
+| Security | Content-Security-Policy, self-hosted fonts, security response headers |
 
 ## Local setup
 
@@ -42,9 +43,10 @@ To serve locally, use **Laravel Herd** (the bundled PHP) — link the folder and
 
 ```
 app/
-├── Http/Controllers/Tenant/     # Patient, Inventory, Order, Analytics, Billing, Search
+├── Http/Controllers/Tenant/     # Patient, Inventory, Order, Analytics, Billing,
+│                                 # Search, WhatsApp Settings, Staff, Activity
 ├── Http/Controllers/Superadmin/ # Platform panel
-├── Http/Middleware/             # EnsureTenantOnboarded, EnsureUserRole
+├── Http/Middleware/             # EnsureTenantOnboarded, EnsureUserRole, SecurityHeaders
 ├── Models/                      # + Concerns/BelongsToTenant, Scopes/TenantScope
 ├── Services/                    # SkuService, BillingService
 └── Exports/                     # LedgerExport (Excel)
@@ -64,60 +66,7 @@ routes/
 
 Every store-owned model uses the `BelongsToTenant` trait, which applies `TenantScope` —
 a global query scope that constrains all reads/writes to the authenticated user's
-`tenant_id` (superadmins bypass it). This replaces Supabase Row-Level Security at the
-application layer. Verified by the test suite.
-
-## Production deploy & operations (Hostinger)
-
-After `git pull` on the server:
-
-```bash
-php artisan migrate --force
-php artisan optimize          # cache config/routes/views
-php artisan storage:link      # once, for logo uploads on the public disk
-```
-
-Set in the production `.env`: `APP_ENV=production`, `APP_DEBUG=false`, `APP_URL=https://…`.
-
-**Scheduler (required).** Subscription trials only expire and archived records only purge
-if the Laravel scheduler runs. Add one cron entry:
-
-```text
-* * * * * cd /path/to/osms && php artisan schedule:run >> /dev/null 2>&1
-```
-
-It drives `subscriptions:reconcile` (02:15, expires lapsed trials) and `model:purge-trashed`
-(02:00). Without it, the SaaS access enforcement still works live (it's derived), but stored
-subscription state and the trash purge won't advance.
-
-**Queue worker.** Transactional mail (staff invitations, trial-status reminders) runs on the
-`database` queue. No separate cron entry is needed — the scheduler above drains it once a minute
-(`queue:work --stop-when-empty`, registered in `routes/console.php`), which is why the
-`schedule:run` cron entry is required even outside of trials/purge.
-
-### Backups, monitoring & security (ST-Harden)
-
-**Backups (required before launch).** Nightly off-box backup of the MySQL DB and the `storage/app/public`
-uploads (logos). On Hostinger the simplest reliable approach is a cron `mysqldump` piped to a dated file
-plus a `tar` of the uploads, synced off the server (Hostinger's own backups are a fallback, not a
-substitute). **Run a restore drill before go-live** — an untested backup is not a backup.
-
-```text
-30 2 * * *  mysqldump -u USER -pPASS DBNAME | gzip > /backups/osms-$(date +\%F).sql.gz
-```
-
-**Monitoring (recommended).** Add Sentry for error visibility:
-
-```bash
-composer require sentry/sentry-laravel
-php artisan sentry:publish --dsn=YOUR_DSN   # sets SENTRY_LARAVEL_DSN in .env
-```
-
-Wire the health endpoint `/up` to an uptime pinger (UptimeRobot or similar).
-
-**Security headers** are applied to every web response by `App\Http\Middleware\SecurityHeaders`
-(nosniff, SAMEORIGIN, Referrer-Policy; HSTS over HTTPS). Ensure the server forces HTTPS and
-`APP_DEBUG=false` in production.
+`tenant_id` (superadmins bypass it). Verified by the test suite.
 
 ## Tests
 
