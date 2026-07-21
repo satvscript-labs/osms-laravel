@@ -18,7 +18,7 @@
 </div>
 
 @push('scripts')
-<script>
+<script nonce="{{ csp_nonce() }}">
 // Run after the deferred Vite module has defined window.bootstrap. An inline
 // classic script executes during parse — before the deferred ESM bundle — so
 // touching `bootstrap` synchronously here would throw and abort the whole IIFE

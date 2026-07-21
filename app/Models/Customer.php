@@ -133,15 +133,48 @@ class Customer extends Model
      */
     public function scopeUpcomingBirthday(Builder $query, int $days = 7): Builder
     {
-        $keys = collect(range(0, $days))
+        return $query->whereNotNull('birthday')
+            ->whereIn(DB::raw(self::birthdayKeyExpression($query)), self::upcomingBirthdayKeys($days));
+    }
+
+    /**
+     * WEB-02 — order by soonest upcoming birthday IN THE DATABASE, so pagination is
+     * correct. Previously the page was sorted in PHP *after* pagination, which only
+     * ordered the current 50 rows and put later pages out of sequence.
+     *
+     * Ordering by the raw "MM-DD" string would break across a year boundary
+     * (28 Dec → 3 Jan sorts "01-03" first), so we rank by each key's position in the
+     * already-wrapped window instead.
+     */
+    public function scopeOrderByUpcomingBirthday(Builder $query, int $days = 7): Builder
+    {
+        $keys = self::upcomingBirthdayKeys($days);
+        $expr = self::birthdayKeyExpression($query);
+
+        $cases = '';
+        $bindings = [];
+        foreach ($keys as $i => $key) {
+            $cases .= " WHEN ? THEN {$i}";
+            $bindings[] = $key;
+        }
+
+        return $query->orderByRaw("CASE {$expr}{$cases} ELSE 9999 END", $bindings);
+    }
+
+    /** Upcoming "MM-DD" keys from today through +$days, wrapping the year end. */
+    private static function upcomingBirthdayKeys(int $days): array
+    {
+        return collect(range(0, $days))
             ->map(fn ($i) => now()->addDays($i)->format('m-d'))
             ->unique()->values()->all();
+    }
 
-        $expr = $query->getConnection()->getDriverName() === 'sqlite'
+    /** DB-portable expression yielding a birthday's "MM-DD" (SQLite vs MySQL). */
+    private static function birthdayKeyExpression(Builder $query): string
+    {
+        return $query->getConnection()->getDriverName() === 'sqlite'
             ? "strftime('%m-%d', birthday)"
             : "DATE_FORMAT(birthday, '%m-%d')";
-
-        return $query->whereNotNull('birthday')->whereIn(DB::raw($expr), $keys);
     }
 
     /**

@@ -8,6 +8,15 @@
 // See the [VISUAL DESIGN SYSTEM DIRECTIVE] block in CLAUDE.md.
 // ============================================================
 
+// 0. SEC-04 — self-hosted Plus Jakarta Sans. Previously pulled from
+// fonts.googleapis.com, which shared every visitor's IP with Google (a DPDP
+// sub-processor concern) and made first paint depend on a third-party CDN.
+// Bundling it also lets the CSP keep font-src/style-src at 'self'.
+@import "@fontsource/plus-jakarta-sans/400.css";
+@import "@fontsource/plus-jakarta-sans/500.css";
+@import "@fontsource/plus-jakarta-sans/600.css";
+@import "@fontsource/plus-jakarta-sans/700.css";
+
 // 1. Bootstrap functions (needed before variable overrides)
 @import "bootstrap/scss/functions";
 

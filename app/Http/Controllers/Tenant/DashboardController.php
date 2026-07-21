@@ -25,25 +25,33 @@ class DashboardController extends Controller
         $pendingCount = Order::where('status', 'pending')->count();
         $readyCount = Order::where('status', 'ready_for_pickup')->count();
 
-        // Low stock (compare two columns)
-        $lowStockItems = Inventory::whereColumn('stock_qty', '<=', 'min_alert_qty')
-            ->orderBy('stock_qty')
-            ->get();
-        $lowStockCount = $lowStockItems->count();
-        $lowStock = $lowStockItems->take(5);
+        // Low stock (compare two columns).
+        // PERF-05 — count in SQL and fetch only the 5 shown, instead of loading
+        // every low-stock row into PHP just to count it.
+        $lowStockQuery = Inventory::whereColumn('stock_qty', '<=', 'min_alert_qty');
+        $lowStockCount = (clone $lowStockQuery)->count();
+        $lowStock = $lowStockQuery->orderBy('stock_qty')->limit(5)->get();
 
-        // Overdue ready-for-pickup orders (waiting > 3 days)
+        // Overdue ready-for-pickup orders (waiting > 3 days).
+        // WEB-01 — measured from ready_at (when it entered ready_for_pickup), not
+        // updated_at, which any later save (a payment, an edit) would reset. Falls
+        // back to updated_at for rows predating the column.
         $overduePickups = Order::with('customer:id,name')
             ->where('status', 'ready_for_pickup')
-            ->where('updated_at', '<', $threeDaysAgo)
+            ->whereRaw('COALESCE(ready_at, updated_at) < ?', [$threeDaysAgo])
+            ->orderByRaw('COALESCE(ready_at, updated_at)')
             ->limit(8)
             ->get()
-            ->map(fn (Order $o) => [
-                'id' => $o->id,
-                'customer_name' => $o->customer?->name,
-                'total_amount' => (float) $o->total_amount,
-                'days' => (int) $o->updated_at->diffInDays(now()),
-            ]);
+            ->map(function (Order $o) {
+                $since = $o->ready_at ?? $o->updated_at;
+
+                return [
+                    'id' => $o->id,
+                    'customer_name' => $o->customer?->name,
+                    'total_amount' => (float) $o->total_amount,
+                    'days' => (int) $since->diffInDays(now()),
+                ];
+            });
 
         // FT-Fulfillment — special orders in the lab that are due today or overdue
         // to prepare (by their promised estimated_ready_at).

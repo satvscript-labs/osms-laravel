@@ -1,6 +1,20 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\Vite;
+
+if (! function_exists('csp_nonce')) {
+    /**
+     * SEC-04 — the per-request CSP nonce (set by the SecurityHeaders middleware).
+     * Every inline <script> must carry it, or the browser will refuse to run it
+     * once the policy is enforced. Returns '' when no nonce is active (e.g. CSP
+     * disabled), which is harmless.
+     */
+    function csp_nonce(): string
+    {
+        return Vite::cspNonce() ?? '';
+    }
+}
 
 if (! function_exists('safe_route')) {
     /**

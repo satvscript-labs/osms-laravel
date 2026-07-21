@@ -5,7 +5,7 @@
 
     Usage: @include('partials.barcode-listener', ['onScan' => 'myHandlerFnName'])
 --}}
-<script>
+<script nonce="{{ csp_nonce() }}">
 (function () {
     var MAX_GAP_MS = 50, MIN_LENGTH = 4;
     var buffer = '', lastTime = 0;

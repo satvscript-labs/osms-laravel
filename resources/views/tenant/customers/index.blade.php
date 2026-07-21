@@ -235,7 +235,7 @@
 </div>
 
 @push('scripts')
-<script>
+<script nonce="{{ csp_nonce() }}">
     function customersIndex(config) {
         return {
             endpoint: config.endpoint,

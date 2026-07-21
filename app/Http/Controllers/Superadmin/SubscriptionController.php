@@ -53,11 +53,15 @@ class SubscriptionController extends Controller
         $subscription = $tenant->subscription;
         $before = $this->snapshot($tenant);
 
+        // DATA-06 — PRESERVE the existing value when a field is absent from the post.
+        // Previously these fell back to null, so submitting the form without them
+        // silently cleared the billing period: status=active + current_period_end=null
+        // means accessState() has no boundary to check, i.e. access forever.
         $subscription->update([
             'status' => $validated['status'],
             'tier' => $validated['tier'],
-            'interval' => $validated['interval'] ?? null,
-            'current_period_end' => $validated['current_period_end'] ?? null,
+            'interval' => $validated['interval'] ?? $subscription->interval,
+            'current_period_end' => $validated['current_period_end'] ?? $subscription->current_period_end,
             'cancel_at_period_end' => (bool) ($request->boolean('cancel_at_period_end')),
             'manual' => true,
         ]);

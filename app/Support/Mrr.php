@@ -17,6 +17,14 @@ class Mrr
             return 0.0;
         }
 
+        // WEB-03 — a `manual` subscription was granted by a superadmin rather than
+        // paid for (comped / internal), so counting it inflates MRR with revenue that
+        // does not exist. Excluded here; the superadmin dashboard reports the comped
+        // count separately so those stores stay visible rather than silently dropped.
+        if ($sub->manual) {
+            return 0.0;
+        }
+
         $plan = config('billing.plans.' . ($sub->tier ?? 'basic'));
         if (! $plan) {
             return 0.0;

@@ -94,7 +94,7 @@
 @include('tenant.orders.partials._settle-modal')
 
 @push('scripts')
-<script>
+<script nonce="{{ csp_nonce() }}">
     const CSRF = document.querySelector('meta[name="csrf-token"]').content;
     const STATUS_URL = (id) => `{{ url('tenant/orders') }}/${id}/status`;
 

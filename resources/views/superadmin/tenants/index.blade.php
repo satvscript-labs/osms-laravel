@@ -86,7 +86,7 @@
 </div>
 
 @push('scripts')
-<script>
+<script nonce="{{ csp_nonce() }}">
     function storeDirectory(config) {
         return {
             stores: config.stores || [],

@@ -34,13 +34,17 @@ class DashboardController extends Controller
             ->filter(fn ($s) => $s->status === 'canceled' && $s->updated_at?->gte(now()->subDays(30)))
             ->count();
 
+        // WEB-03 — comped (`manual`) subscriptions contribute 0 to MRR, so the figure
+        // reflects real revenue. They're counted separately rather than hidden.
         $mrr = $active->sum(fn ($s) => Mrr::monthlyValue($s));
+        $comped = $active->filter(fn ($s) => (bool) $s->manual)->count();
 
         $stats = [
             'stores' => $subscriptions->count(),
             'active' => $active->count(),
             'trialing' => $trialing->count(),
             'mrr' => $mrr,
+            'comped' => $comped,
             'churn30' => $churned,
             'users' => User::where('role', '!=', 'superadmin')->count(),
             'orders' => Order::count(),

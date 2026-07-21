@@ -18,7 +18,7 @@ class Order extends Model
         'fulfillment_type', 'estimated_ready_at',
         'subtotal', 'discount_type', 'discount_value', 'discount_amount',
         'total_amount', 'advance_paid', 'balance_due',
-        'cancelled_at', 'cancel_reason',
+        'cancelled_at', 'cancel_reason', 'ready_at',
     ];
 
     protected $casts = [
@@ -30,6 +30,7 @@ class Order extends Model
         'advance_paid' => 'decimal:2',
         'balance_due' => 'decimal:2',
         'cancelled_at' => 'datetime',
+        'ready_at' => 'datetime',
     ];
 
     protected static function booted(): void
@@ -37,6 +38,15 @@ class Order extends Model
         // Keep balance_due in sync (replaces the Supabase computed column).
         static::saving(function (Order $order) {
             $order->balance_due = (float) $order->total_amount - (float) $order->advance_paid;
+
+            // WEB-01 — stamp when the order ENTERS ready_for_pickup, so the
+            // dashboard's waiting clock survives unrelated later saves (a payment,
+            // an edit) that would otherwise bump updated_at and reset it. Done here
+            // rather than in the controller so every path is covered (status update,
+            // kanban drag, WhatsApp undo/revert).
+            if ($order->isDirty('status')) {
+                $order->ready_at = $order->status === 'ready_for_pickup' ? now() : null;
+            }
         });
     }
 

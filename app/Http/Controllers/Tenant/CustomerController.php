@@ -33,16 +33,15 @@ class CustomerController extends Controller
             // PRIV-02 — the birthdays view is a marketing-outreach list, so minors
             // are excluded (bornAdult) per DPDP's ban on marketing to children.
             ->when($filter === 'birthdays', fn ($query) => $query->upcomingBirthday(7)->bornAdult())
-            ->latest()
+            // WEB-02 — the birthdays view sorts by soonest birthday in SQL (so
+            // pagination is correct); every other view is newest-first.
+            ->when(
+                $filter === 'birthdays',
+                fn ($query) => $query->orderByUpcomingBirthday(7),
+                fn ($query) => $query->latest(),
+            )
             ->paginate(50)
             ->withQueryString();
-
-        // Birthdays view: order the page by soonest upcoming birthday (small set).
-        if ($filter === 'birthdays') {
-            $customers->setCollection(
-                $customers->getCollection()->sortBy(fn (Customer $c) => $c->daysUntilBirthday())->values()
-            );
-        }
 
         // Live search/filter (fetched by Alpine) — return lightweight JSON rows.
         if ($request->wantsJson()) {
@@ -114,13 +113,28 @@ class CustomerController extends Controller
     }
 
     /** FG-Delete — archived (soft-deleted) customers, restorable for 30 days. */
-    public function trash(): View
+    public function trash(Request $request): View
     {
-        $customers = Customer::onlyTrashed()
-            ->latest('deleted_at')
-            ->paginate(50);
+        // UX-04 — live archive search. Filtering happens in SQL (not on the rendered
+        // page) so it searches the whole archive rather than just the current page.
+        $search = trim((string) $request->query('search', ''));
 
-        return view('tenant.customers.trash', compact('customers'));
+        $customers = Customer::onlyTrashed()
+            ->when($search !== '', fn ($query) => $query->where(function ($q) use ($search) {
+                $q->where('name', 'like', "%{$search}%")
+                  ->orWhere('phone', 'like', "%{$search}%");
+            }))
+            ->latest('deleted_at')
+            ->paginate(50)
+            ->withQueryString();
+
+        // The live search swaps in this rendered fragment (rows keep their
+        // CSRF-protected restore/delete forms — see partials/trash-list-script).
+        if ($request->ajax()) {
+            return view('tenant.customers.partials.trash-rows', compact('customers', 'search'));
+        }
+
+        return view('tenant.customers.trash', compact('customers', 'search'));
     }
 
     /**
