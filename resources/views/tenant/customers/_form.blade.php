@@ -48,7 +48,9 @@
                         </select>
                         <input id="phone" name="phone" type="tel" value="{{ $oldNational }}"
                                class="form-control @error('phone') is-invalid @enderror"
-                               required placeholder="98765 43210">
+                               required placeholder="98765 43210"
+                               inputmode="numeric" maxlength="10" pattern="\d{10}"
+                               oninput="this.value=this.value.replace(/\D/g,'').slice(0,10)">
                         @error('phone')<div class="invalid-feedback">{{ $message }}</div>@enderror
                     </div>
                 </div>
@@ -57,13 +59,14 @@
                     @php $bday = old('birthday', optional($customer->birthday ?? null)->format('Y-m-d')); @endphp
                     <input id="birthday" name="birthday" type="date" max="{{ now()->toDateString() }}" value="{{ $bday }}"
                            class="form-control @error('birthday') is-invalid @enderror">
-                    <div class="text-muted-foreground" style="font-size:.7rem;margin-top:.25rem;">We'll calculate the age</div>
+                    <div class="text-muted-foreground" style="font-size:var(--text-2xs);margin-top:.25rem;">We'll calculate the age</div>
                     @error('birthday')<div class="invalid-feedback">{{ $message }}</div>@enderror
                 </div>
                 <div class="col-sm-4">
                     <label for="age" class="form-label small fw-medium mb-1">Age</label>
                     <input id="age" name="age" type="number" min="0" max="150" value="{{ old('age', $customer->age ?? '') }}"
-                           class="form-control @error('age') is-invalid @enderror" placeholder="or enter directly">
+                           class="form-control @error('age') is-invalid @enderror" placeholder="or enter directly"
+                           inputmode="numeric" oninput="if(this.value.length>3)this.value=this.value.slice(0,3)">
                     @error('age')<div class="invalid-feedback">{{ $message }}</div>@enderror
                 </div>
                 <div class="col-sm-4">
@@ -77,6 +80,33 @@
                     </select>
                 </div>
             </div>
+
+            {{-- PRIV-01 — consent capture (DPDP). Data consent is required; the whole
+                 row is tappable for speed. WhatsApp opt-in stays optional. --}}
+            @php
+                $consentChecked = old('data_consent', ($customer && $customer->data_consent_at) ? '1' : null);
+                $waOptIn = old('whatsapp_opt_in', ($customer && $customer->whatsapp_opt_in) ? '1' : null);
+            @endphp
+            <div class="rounded-3 p-2" style="background: var(--surface-sunken);">
+                <p class="section-label mb-1 px-2 pt-1">Consent</p>
+                <label class="consent-row" for="data_consent">
+                    <input class="form-check-input @error('data_consent') is-invalid @enderror" type="checkbox"
+                           name="data_consent" value="1" id="data_consent" @checked($consentChecked)>
+                    <span class="small">Consents to storing their details &amp; prescription <span class="text-danger">*</span></span>
+                </label>
+                <label class="consent-row" for="whatsapp_opt_in">
+                    <input class="form-check-input" type="checkbox" name="whatsapp_opt_in" value="1"
+                           id="whatsapp_opt_in" @checked($waOptIn)>
+                    <span class="small">Agrees to WhatsApp updates</span>
+                </label>
+                @error('data_consent')<div class="small text-danger px-2">{{ $message }}</div>@enderror
+                @if ($isEdit && $customer->isMinor())
+                    <p class="mb-0 mt-1 px-2 fw-semibold" style="font-size:var(--text-2xs); color: var(--tone-amber);">
+                        <i class="bi bi-exclamation-triangle me-1"></i>Under 18 — record the guardian's consent.
+                    </p>
+                @endif
+            </div>
+
             <div class="d-flex justify-content-end gap-2 mt-2">
                 <a href="{{ $cancelUrl }}" class="btn btn-light">Cancel</a>
                 <button type="submit" class="btn btn-primary">
@@ -89,6 +119,15 @@
 
 @push('scripts')
 <script>
+    // PRIV-01 — ticking data consent auto-ticks WhatsApp opt-in (faster capture);
+    // staff can still untick WhatsApp afterwards.
+    (function () {
+        const dc = document.getElementById('data_consent');
+        const wa = document.getElementById('whatsapp_opt_in');
+        if (!dc || !wa) return;
+        dc.addEventListener('change', () => { if (dc.checked) wa.checked = true; });
+    })();
+
     // 5.5 — derive age from the birthday. When a birthday is set, the age is
     // computed and the field locked; clearing the birthday makes age editable again.
     (function () {

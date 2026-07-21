@@ -10,6 +10,7 @@ use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Log;
 use Illuminate\View\View;
 
 class BillingController extends Controller
@@ -50,6 +51,24 @@ class BillingController extends Controller
         }
 
         $tenant = $request->user()->tenant;
+
+        // BIZ-04 — a store re-subscribing while `past_due` (or carrying a stale
+        // pending reference) would leave the PREVIOUS Razorpay subscription live and
+        // get billed twice. Cancel it first; best-effort so a Razorpay hiccup can't
+        // block the store from paying.
+        if ($existing?->razorpay_subscription_id
+            && $existing->status !== 'canceled'
+            && $billing->isConfigured()) {
+            try {
+                $billing->cancelSubscription($existing->razorpay_subscription_id);
+            } catch (\Throwable $e) {
+                Log::warning('Could not cancel the previous Razorpay subscription before re-subscribing.', [
+                    'tenant_id' => $tenant->id,
+                    'razorpay_subscription_id' => $existing->razorpay_subscription_id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+        }
 
         try {
             $result = $billing->createSubscription($tenant, $validated['tier'], $validated['interval']);

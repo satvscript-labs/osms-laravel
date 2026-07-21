@@ -4,7 +4,7 @@
 @section('content')
 <div class="p-4 p-md-5" x-data="orderBuilder()" x-init="init()">
     <a href="{{ route('tenant.orders.index') }}"
-       class="d-inline-flex align-items-center gap-1 text-muted-foreground text-decoration-none mb-3" style="font-size:.8rem;">
+       class="d-inline-flex align-items-center gap-1 text-muted-foreground text-decoration-none mb-3" style="font-size:var(--text-sm);">
         <i class="bi bi-chevron-left"></i> Back to orders
     </a>
     <p class="section-label mb-1">New order</p>
@@ -22,6 +22,8 @@
         <input type="hidden" name="customer_name" :value="newMode ? newName.trim() : ''">
         <input type="hidden" name="customer_phone" :value="newMode ? newPhone : ''">
         <input type="hidden" name="customer_country_code" :value="newCode">
+        <input type="hidden" name="customer_consent" :value="newMode && newConsent ? 1 : 0">
+        <input type="hidden" name="customer_whatsapp_opt_in" :value="newMode && newWhatsapp ? 1 : 0">
         <input type="hidden" name="eye_record_id" :value="eyeRecordId">
         <input type="hidden" name="advance_paid" :value="effectiveAdvance()">
         <input type="hidden" name="payment_method" :value="paymentMethod">
@@ -55,7 +57,7 @@
                         <div class="d-flex align-items-center justify-content-between gap-3 flex-wrap">
                             <div>
                                 <h2 class="section-label mb-1">Fulfillment</h2>
-                                <p class="text-muted-foreground mb-0" style="font-size:.75rem;"
+                                <p class="text-muted-foreground mb-0" style="font-size:var(--text-xs);"
                                    x-text="fulfillmentType === 'instant' ? 'Pay & walk out — completed on the spot' : 'Needs prep — set an estimated ready date'"></p>
                             </div>
                             <div class="segmented" role="tablist" aria-label="Fulfillment type">
@@ -109,7 +111,8 @@
                             <div class="input-group">
                                 <span class="input-group-text bg-white"><i class="bi bi-search text-muted-foreground"></i></span>
                                 <input type="text" class="form-control" placeholder="Search customer by name or phone…"
-                                       x-model="customerSearch" data-barcode-target>
+                                       x-model="customerSearch" data-barcode-target
+                                       @input.debounce.250ms="searchCustomers()">
                             </div>
                             <div class="list-group position-absolute w-100 shadow-sm" style="z-index:5;"
                                  x-show="customerSearch.length > 0 && filteredCustomers().length">
@@ -146,12 +149,27 @@
                                         <select class="form-select flex-grow-0 w-auto" x-model="newCode" aria-label="Country code">
                                             <template x-for="code in codes" :key="code"><option :value="code" x-text="code"></option></template>
                                         </select>
-                                        <input type="tel" class="form-control" x-model="newPhone" placeholder="98765 43210">
+                                        <input type="tel" class="form-control" x-model="newPhone" placeholder="98765 43210"
+                                               inputmode="numeric" maxlength="10"
+                                               @input="newPhone = newPhone.replace(/\D/g,'').slice(0,10)">
                                     </div>
                                 </div>
                             </div>
-                            <p class="text-muted-foreground mb-0 mt-2" style="font-size:.72rem;">
-                                Saved automatically when you create the order. An existing phone links to that customer.
+                            {{-- PRIV-01 — consent at the counter for a new walk-in (data consent required). --}}
+                            <div class="mt-2">
+                                <label class="consent-row" for="newConsent">
+                                    {{-- PRIV-01 — ticking consent auto-ticks WhatsApp opt-in (staff can untick it). --}}
+                                    <input class="form-check-input" type="checkbox" id="newConsent" x-model="newConsent"
+                                           @change="if (newConsent) newWhatsapp = true">
+                                    <span style="font-size:var(--text-xs);">Consents to storing their details <span class="text-danger">*</span></span>
+                                </label>
+                                <label class="consent-row" for="newWhatsapp">
+                                    <input class="form-check-input" type="checkbox" id="newWhatsapp" x-model="newWhatsapp">
+                                    <span style="font-size:var(--text-xs);">Agrees to WhatsApp updates</span>
+                                </label>
+                            </div>
+                            <p class="text-muted-foreground mb-0 mt-2" style="font-size:var(--text-xs);">
+                                Saved when you create the order. An existing phone links to that customer.
                             </p>
                         </div>
 
@@ -208,7 +226,7 @@
                                         <span>
                                             <span class="fw-medium" x-text="inv.brand || '—'"></span>
                                             <span class="text-muted-foreground" x-text="inv.model_name"></span>
-                                            <span class="d-block text-muted-foreground" style="font-size:.72rem;"
+                                            <span class="d-block text-muted-foreground" style="font-size:var(--text-xs);"
                                                   x-text="inv.sku + ' · stock ' + inv.stock_qty"></span>
                                         </span>
                                         <span class="font-monospace small" x-text="money(inv.selling_price)"></span>
@@ -251,7 +269,7 @@
                                                 </button>
                                             </div>
                                         </div>
-                                        <p class="text-muted-foreground mb-0 mt-2" style="font-size:.72rem;">
+                                        <p class="text-muted-foreground mb-0 mt-2" style="font-size:var(--text-xs);">
                                             Not tracked in inventory — no stock is drawn down. Counts toward the order total.
                                         </p>
                                     </div>
@@ -265,7 +283,7 @@
 
                         <div class="table-responsive" x-cloak x-show="items.length">
                             <table class="table align-top mb-0">
-                                <thead class="text-muted-foreground text-uppercase" style="font-size:.68rem;letter-spacing:.04em;">
+                                <thead class="text-muted-foreground text-uppercase" style="font-size:var(--text-2xs);letter-spacing:.04em;">
                                     <tr>
                                         <th>Item</th>
                                         <th class="text-center" style="width:7.5rem;">Qty</th>
@@ -280,12 +298,12 @@
                                             <td>
                                                 <span class="fw-medium d-block" x-text="it.label"></span>
                                                 <template x-if="it.custom">
-                                                    <span class="osms-badge osms-badge-blue" style="font-size:.6rem;">
+                                                    <span class="osms-badge osms-badge-blue" style="font-size:var(--text-3xs);">
                                                         <span class="osms-badge-dot"></span> Local item
                                                     </span>
                                                 </template>
                                                 <template x-if="!it.custom">
-                                                    <span class="text-faint" style="font-size:.7rem;" x-text="'List ' + money(it.list_price)"></span>
+                                                    <span class="text-faint" style="font-size:var(--text-2xs);" x-text="'List ' + money(it.list_price)"></span>
                                                 </template>
                                                 {{-- FT-TaxInvoice — opt this line into the formal tax invoice
                                                      (separate from the regular receipt, which always includes everything). --}}
@@ -318,7 +336,7 @@
                                                 <div class="text-end mt-1" style="height:.9rem;">
                                                     <button type="button" x-show="it.unit_price != it.list_price"
                                                             class="btn btn-link btn-sm p-0 text-decoration-none text-muted-foreground"
-                                                            style="font-size:.68rem;" @click="it.unit_price = it.list_price">
+                                                            style="font-size:var(--text-2xs);" @click="it.unit_price = it.list_price">
                                                         <i class="bi bi-arrow-counterclockwise"></i> reset to list
                                                     </button>
                                                 </div>
@@ -372,9 +390,9 @@
                                    x-model.number="discountValue" @input="normaliseDiscount()" @blur="normaliseDiscount()"
                                    placeholder="0" aria-label="Discount value">
                         </div>
-                        <p x-cloak x-show="discountAmount() > 0" class="text-success mb-0 mt-1" style="font-size:.7rem;"
+                        <p x-cloak x-show="discountAmount() > 0" class="text-success mb-0 mt-1" style="font-size:var(--text-2xs);"
                            x-text="savingsLabel()"></p>
-                        <p x-cloak x-show="discountCapped()" class="text-faint mb-0 mt-1" style="font-size:.68rem;"
+                        <p x-cloak x-show="discountCapped()" class="text-faint mb-0 mt-1" style="font-size:var(--text-2xs);"
                            x-text="unit === '%' ? 'Capped at 100%' : 'Capped at the subtotal (' + money(subtotal()) + ')'"></p>
                     </div>
 
@@ -401,7 +419,7 @@
                     </div>
 
                     <div class="bg-primary-subtle rounded-3 p-3 mt-3">
-                        <p class="text-uppercase text-primary mb-1" style="font-size:.68rem;letter-spacing:.05em;">Balance due</p>
+                        <p class="text-uppercase text-primary mb-1" style="font-size:var(--text-2xs);letter-spacing:.05em;">Balance due</p>
                         <p class="h4 fw-semibold font-display mb-0" x-animate-number="balance()">₹ 0.00</p>
                     </div>
 
@@ -462,11 +480,14 @@
 
     function orderBuilder() {
         return {
-            customers: @json($customers),
+            // PERF-03 — customers are searched server-side (never embedded); inventory
+            // stays embedded because it's bounded by the catalog and the local
+            // barcode-scan path resolves against it.
+            customerResults: [], customerSearchToken: 0,
             inventory: @json($inventory),
             codes: ['+91', '+1', '+44', '+971', '+61', '+65', '+880', '+977'],
             customerId: '', selectedCustomer: null, customerSearch: '',
-            newMode: false, newName: '', newPhone: '', newCode: '+91',
+            newMode: false, newName: '', newPhone: '', newCode: '+91', newConsent: false, newWhatsapp: false,
             eyeRecords: [], eyeRecordId: '',
             items: [], itemSearch: '', scanFlash: null,
             customMode: false, customName: '', customPrice: '', customQty: 1,
@@ -475,17 +496,25 @@
             fulfillmentType: 'instant', estimatedReadyAt: @json(now()->addDays(3)->toDateString()),
 
             init() {
-                const pre = @json($selectedCustomerId);
-                if (pre) { const c = this.customers.find(x => x.id === pre); if (c) this.selectCustomer(c); }
+                const pre = @json($selectedCustomer);
+                if (pre) this.selectCustomer(pre);
                 window.addEventListener('osms-barcode', (e) => this.onScan(e.detail));
             },
             money(n) { return '₹ ' + Number(n || 0).toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2}); },
             uid() { return 'u' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); },
-            filteredCustomers() {
-                const q = this.customerSearch.trim().toLowerCase();
-                if (!q) return [];
-                return this.customers.filter(c => (c.name+' '+c.phone).toLowerCase().includes(q)).slice(0,6);
+            // PERF-03 — server-side customer search (debounced by the input binding).
+            // A token guards against a slow response overwriting a newer one.
+            searchCustomers() {
+                const q = this.customerSearch.trim();
+                if (q.length < 2) { this.customerResults = []; return; }
+                const token = ++this.customerSearchToken;
+                fetch(`{{ route('tenant.customers.index') }}?q=${encodeURIComponent(q)}`,
+                      { headers: { 'Accept': 'application/json' } })
+                    .then(r => r.json())
+                    .then(d => { if (token === this.customerSearchToken) this.customerResults = (d.customers || []).slice(0, 6); })
+                    .catch(() => { if (token === this.customerSearchToken) this.customerResults = []; });
             },
+            filteredCustomers() { return this.customerResults; },
             filteredInventory() {
                 const q = this.itemSearch.trim().toLowerCase();
                 if (!q) return [];
@@ -494,12 +523,13 @@
             },
             selectCustomer(c) {
                 this.customerId = c.id; this.selectedCustomer = c; this.customerSearch = '';
+                this.customerResults = [];
                 this.newMode = false; this.newName = ''; this.newPhone = '';
                 fetch(`{{ url('tenant/customers') }}/${c.id}/eye-records`, {headers:{'Accept':'application/json'}})
                     .then(r => r.json()).then(d => { this.eyeRecords = d; this.eyeRecordId = d[0]?.id || ''; });
             },
             clearCustomer() { this.customerId=''; this.selectedCustomer=null; this.eyeRecords=[]; this.eyeRecordId=''; },
-            startNew() { this.newName = this.customerSearch.trim(); this.customerSearch = ''; this.newMode = true; },
+            startNew() { this.newName = this.customerSearch.trim(); this.customerSearch = ''; this.customerResults = []; this.newMode = true; },
             cancelNew() { this.newMode = false; this.newName = ''; this.newPhone = ''; },
             localDate(daysAhead) {
                 const d = new Date(); d.setDate(d.getDate() + daysAhead);
@@ -596,7 +626,8 @@
                 return this.fulfillmentType === 'instant' ? this.total() : 0;
             },
             balance() { return Math.max(this.total() - this.effectiveAdvance(), 0); },
-            hasCustomer() { return this.customerId !== '' || (this.newMode && this.newName.trim() !== '' && this.newPhone.trim() !== ''); },
+            // A new walk-in needs name + phone + data consent (PRIV-01, mandatory).
+            hasCustomer() { return this.customerId !== '' || (this.newMode && this.newName.trim() !== '' && this.newPhone.trim() !== '' && this.newConsent); },
             canSubmit() {
                 return this.hasCustomer() && this.items.length > 0
                     && (this.fulfillmentType !== 'special' || !!this.estimatedReadyAt);

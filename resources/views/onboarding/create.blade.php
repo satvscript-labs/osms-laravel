@@ -3,11 +3,11 @@
 
 @section('content')
     <h1 class="h4 fw-semibold font-display mb-1">Set up your store</h1>
-    <p class="text-muted-foreground mb-3" style="font-size:.875rem;">
+    <p class="text-muted-foreground mb-3" style="font-size:var(--text-md);">
         A few details to get your workspace ready.
     </p>
 
-    <div class="alert alert-info d-flex align-items-center gap-2 py-2 px-3 rounded-3" style="font-size:.82rem;">
+    <div class="alert alert-info d-flex align-items-center gap-2 py-2 px-3 rounded-3" style="font-size:var(--text-sm);">
         <i class="bi bi-stars"></i>
         <div>Your <strong>{{ config('billing.trial_days', 14) }}-day free trial</strong> starts now — no card required.</div>
     </div>
@@ -34,7 +34,10 @@
         <div>
             <label for="tax_id" class="form-label small fw-medium mb-1">GST / Tax ID</label>
             <input id="tax_id" type="text" name="tax_id" value="{{ old('tax_id') }}"
-                   class="form-control" placeholder="22AAAAA0000A1Z5">
+                   class="form-control @error('tax_id') is-invalid @enderror" placeholder="22AAAAA0000A1Z5"
+                   maxlength="15" style="text-transform:uppercase;"
+                   oninput="this.value=this.value.toUpperCase().replace(/[^0-9A-Z]/g,'').slice(0,15)">
+            @error('tax_id')<div class="invalid-feedback">{{ $message }}</div>@enderror
         </div>
 
         <div>
@@ -47,7 +50,7 @@
             <label for="logo" class="form-label small fw-medium mb-1">Store logo</label>
             <input id="logo" type="file" name="logo" accept="image/*"
                    class="form-control @error('logo') is-invalid @enderror">
-            <div class="form-text" style="font-size:.75rem;">
+            <div class="form-text" style="font-size:var(--text-xs);">
                 Used on printed receipts. PNG or JPG, ideally square. Max 2MB.
             </div>
         </div>

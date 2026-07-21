@@ -3,7 +3,7 @@
 
 @section('content')
     <h1 class="h4 fw-semibold font-display mb-1">Confirm password</h1>
-    <p class="text-muted-foreground mb-4" style="font-size:.875rem;">
+    <p class="text-muted-foreground mb-4" style="font-size:var(--text-md);">
         This is a secure area. Please confirm your password to continue.
     </p>
 

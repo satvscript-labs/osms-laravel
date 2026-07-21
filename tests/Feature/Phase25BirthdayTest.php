@@ -32,7 +32,7 @@ class Phase25BirthdayTest extends TestCase
 
         $this->actingAs($this->user)->post(route('tenant.customers.store'), [
             'name' => 'Rahul', 'country_code' => '+91', 'phone' => '9876543210',
-            'birthday' => $bday,
+            'birthday' => $bday, 'data_consent' => '1',
         ])->assertRedirect();
 
         $c = Customer::first();
@@ -44,7 +44,7 @@ class Phase25BirthdayTest extends TestCase
     {
         $this->actingAs($this->user)->post(route('tenant.customers.store'), [
             'name' => 'Anjali', 'country_code' => '+91', 'phone' => '9988776655',
-            'age' => 45,
+            'age' => 45, 'data_consent' => '1',
         ])->assertRedirect();
 
         $c = Customer::first();

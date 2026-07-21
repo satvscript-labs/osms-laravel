@@ -41,13 +41,29 @@ class Phase9LiveAuditFixesTest extends TestCase
         $user = $this->storeUser();
 
         $this->actingAs($user)->post(route('tenant.customers.store'), [
-            'name' => 'Good Phone', 'country_code' => '+1', 'phone' => '5551234567',
+            'name' => 'Good Phone', 'country_code' => '+1', 'phone' => '5551234567', 'data_consent' => '1',
         ])->assertSessionHasNoErrors()->assertRedirect();
 
         $this->assertDatabaseHas('customers', [
             'phone' => '+1 5551234567',
             'tenant_id' => $user->tenant_id,
         ]);
+    }
+
+    /** Phone must be exactly 10 digits — too many or too few is rejected. */
+    public function test_patient_phone_must_be_ten_digits(): void
+    {
+        $user = $this->storeUser();
+
+        $this->actingAs($user)->post(route('tenant.customers.store'), [
+            'name' => 'Too Long', 'country_code' => '+91', 'phone' => '98765432101', 'data_consent' => '1',
+        ])->assertSessionHasErrors('phone');
+
+        $this->actingAs($user)->post(route('tenant.customers.store'), [
+            'name' => 'Too Short', 'country_code' => '+91', 'phone' => '987654321', 'data_consent' => '1',
+        ])->assertSessionHasErrors('phone');
+
+        $this->assertDatabaseCount('customers', 0);
     }
 
     /** NB-004 — below-cost pricing is allowed (warn-only), not blocked. */

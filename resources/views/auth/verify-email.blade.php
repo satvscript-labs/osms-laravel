@@ -3,7 +3,7 @@
 
 @section('content')
     <h1 class="h4 fw-semibold font-display mb-1">Verify your email</h1>
-    <p class="text-muted-foreground mb-4" style="font-size:.875rem;">
+    <p class="text-muted-foreground mb-4" style="font-size:var(--text-md);">
         Thanks for signing up! Please verify your email by clicking the link we just sent you.
         If you didn't receive it, we'll gladly send another.
     </p>

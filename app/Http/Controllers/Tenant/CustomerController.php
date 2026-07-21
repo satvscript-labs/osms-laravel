@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers\Tenant;
 
-use App\Exports\CustomersExport;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreCustomerRequest;
 use App\Models\Customer;
@@ -31,7 +30,9 @@ class CustomerController extends Controller
                 });
             })
             ->when($filter === 'patients', fn ($query) => $query->patients())
-            ->when($filter === 'birthdays', fn ($query) => $query->upcomingBirthday(7))
+            // PRIV-02 — the birthdays view is a marketing-outreach list, so minors
+            // are excluded (bornAdult) per DPDP's ban on marketing to children.
+            ->when($filter === 'birthdays', fn ($query) => $query->upcomingBirthday(7)->bornAdult())
             ->latest()
             ->paginate(50)
             ->withQueryString();
@@ -53,7 +54,8 @@ class CustomerController extends Controller
                     'age' => $c->age,
                     'gender' => $c->gender,
                     'is_patient' => $c->eye_records_count > 0,
-                    'days_until_birthday' => $c->daysUntilBirthday(),
+                    // PRIV-02 — suppress the birthday nudge/chip for minors.
+                    'days_until_birthday' => $c->isMinor() ? null : $c->daysUntilBirthday(),
                     'added' => $c->created_at->format('d M Y'),
                     'url' => route('tenant.customers.show', $c),
                 ])->values(),
@@ -72,11 +74,29 @@ class CustomerController extends Controller
 
     public function store(StoreCustomerRequest $request): RedirectResponse
     {
-        $customer = Customer::create($request->validated());
+        $customer = Customer::create($this->withConsent($request));
 
         return redirect()
             ->route('tenant.customers.show', $customer)
             ->with('status', 'Customer added.');
+    }
+
+    /**
+     * PRIV-01 — fold the two consent checkboxes into the DB shape. `data_consent`
+     * (a non-column checkbox) becomes a `data_consent_at` timestamp; an existing
+     * consent date is preserved so re-saving never rewrites when consent was given.
+     */
+    private function withConsent(StoreCustomerRequest $request, ?Customer $existing = null): array
+    {
+        $data = $request->validated();
+        unset($data['data_consent']); // not a column
+
+        $data['whatsapp_opt_in'] = $request->boolean('whatsapp_opt_in');
+        $data['data_consent_at'] = $request->boolean('data_consent')
+            ? ($existing?->data_consent_at ?? now())
+            : null;
+
+        return $data;
     }
 
     public function edit(Customer $customer): View
@@ -86,7 +106,7 @@ class CustomerController extends Controller
 
     public function update(StoreCustomerRequest $request, Customer $customer): RedirectResponse
     {
-        $customer->update($request->validated());
+        $customer->update($this->withConsent($request, $customer));
 
         return redirect()
             ->route('tenant.customers.show', $customer)
@@ -133,6 +153,9 @@ class CustomerController extends Controller
     /** FG-Delete — permanently delete an archived customer (irreversible). */
     public function forceDelete(Customer $customer): RedirectResponse
     {
+        \App\Models\ActivityLog::record('customer.deleted', "Permanently deleted customer {$customer->name}",
+            'customer', $customer->id, ['phone' => $customer->phone]);
+
         $customer->forceDelete();
 
         return redirect()

@@ -3,7 +3,7 @@
 
 @section('content')
     <h1 class="h4 fw-semibold font-display mb-1">Welcome back</h1>
-    <p class="text-muted-foreground mb-4" style="font-size:.875rem;">Sign in to your store workspace.</p>
+    <p class="text-muted-foreground mb-4" style="font-size:var(--text-md);">Sign in to your store workspace.</p>
 
     @if (session('status'))
         <div class="alert alert-success py-2 px-3 small rounded-3">{{ session('status') }}</div>

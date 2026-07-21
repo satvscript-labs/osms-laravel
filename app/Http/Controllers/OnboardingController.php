@@ -35,11 +35,19 @@ class OnboardingController extends Controller
             return redirect()->route('tenant.dashboard');
         }
 
+        // Normalise a GSTIN (uppercase, no spaces) before validating.
+        if ($request->filled('tax_id')) {
+            $request->merge(['tax_id' => strtoupper(preg_replace('/\s+/', '', (string) $request->tax_id))]);
+        }
+
         $validated = $request->validate([
             'store_name' => ['required', 'string', 'max:255'],
-            'tax_id' => ['nullable', 'string', 'max:50'],
+            // GST/Tax ID — lenient GSTIN shape (1–15 alphanumerics).
+            'tax_id' => ['nullable', 'string', 'max:15', 'regex:/^[0-9A-Z]+$/'],
             'address' => ['nullable', 'string', 'max:500'],
             'logo' => ['nullable', 'image', 'max:2048'], // 2MB
+        ], [
+            'tax_id.regex' => 'Enter a valid GST/Tax ID (letters and numbers only).',
         ]);
 
         // Logo upload → public disk (replaces Supabase Storage `logos` bucket)

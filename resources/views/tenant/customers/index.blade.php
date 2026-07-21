@@ -77,8 +77,9 @@
     </p>
 
     {{-- ============ LIVE (Alpine) results ============ --}}
+    {{-- UX-06 — announce result changes to screen readers as the list swaps. --}}
     <template x-if="mode==='live'">
-        <div>
+        <div aria-live="polite" :aria-busy="loading ? 'true' : 'false'">
             {{-- Skeleton while loading --}}
             <template x-if="loading">
                 <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
@@ -171,7 +172,7 @@
                                         <span class="osms-badge-dot"></span> Patient
                                     </span>
                                 @endif
-                                @php $bdayDays = $c->daysUntilBirthday(); @endphp
+                                @php $bdayDays = $c->isMinor() ? null : $c->daysUntilBirthday(); @endphp
                                 @if (! is_null($bdayDays) && $bdayDays <= 7)
                                     <span class="birthday-chip">🎂 {{ $bdayDays === 0 ? 'Today' : ($bdayDays === 1 ? 'Tomorrow' : 'in ' . $bdayDays . ' days') }}</span>
                                 @endif

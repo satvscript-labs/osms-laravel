@@ -13,7 +13,7 @@
     <header class="container py-4 d-flex align-items-center justify-content-between" style="max-width:52rem;">
         <a href="{{ route('home') }}" class="d-inline-flex align-items-center gap-2 text-decoration-none">
             <span class="d-inline-flex align-items-center justify-content-center bg-primary text-white rounded"
-                  style="width:1.5rem;height:1.5rem;"><i class="bi bi-eye" style="font-size:.85rem;"></i></span>
+                  style="width:1.5rem;height:1.5rem;"><i class="bi bi-eye" style="font-size:var(--text-sm);"></i></span>
             <span class="fw-semibold font-display text-dark">OSMS</span>
         </a>
         <a href="{{ route('home') }}" class="btn btn-sm btn-light"><i class="bi bi-arrow-left me-1"></i> Back to home</a>

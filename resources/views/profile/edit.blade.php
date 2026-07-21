@@ -130,7 +130,9 @@
                                     <div class="col-sm-6">
                                         <label for="tax_id" class="form-label">GST / Tax ID</label>
                                         <input id="tax_id" type="text" name="tax_id" value="{{ old('tax_id', $tenant->tax_id) }}"
-                                               class="form-control @error('tax_id') is-invalid @enderror" placeholder="22AAAAA0000A1Z5">
+                                               class="form-control @error('tax_id') is-invalid @enderror" placeholder="22AAAAA0000A1Z5"
+                                               maxlength="15" style="text-transform:uppercase;"
+                                               oninput="this.value=this.value.toUpperCase().replace(/[^0-9A-Z]/g,'').slice(0,15)">
                                         @error('tax_id')<div class="invalid-feedback">{{ $message }}</div>@enderror
                                     </div>
                                     <div class="col-sm-6">
@@ -168,7 +170,7 @@
                                         <div class="row g-3 align-items-end">
                                             <div class="col-sm-5">
                                                 <label for="gst_rate" class="form-label small fw-medium mb-1">GST rate (%)</label>
-                                                <input id="gst_rate" type="number" name="gst_rate" min="0" max="28" step="0.01"
+                                                <input id="gst_rate" type="number" name="gst_rate" min="0" max="28" step="0.01" inputmode="decimal"
                                                        value="{{ old('gst_rate', $tenant->gst_rate) }}"
                                                        class="form-control @error('gst_rate') is-invalid @enderror"
                                                        placeholder="{{ \App\Models\Tenant::DEFAULT_GST_RATE }}">

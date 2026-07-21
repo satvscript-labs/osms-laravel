@@ -19,7 +19,7 @@
                       style="width:2.25rem;height:2.25rem;"><i class="bi bi-eye"></i></span>
                 <div>
                     <p class="mb-0 fw-medium">Eye record</p>
-                    <p class="mb-0 text-muted-foreground" style="font-size:.75rem;">
+                    <p class="mb-0 text-muted-foreground" style="font-size:var(--text-xs);">
                         {{ $record->created_at->format('d M Y') }}@if ($record->checked_by) · Examined by {{ $record->checked_by }}@endif
                     </p>
                 </div>
@@ -27,7 +27,7 @@
             <div class="d-flex align-items-center gap-2">
                 @if (! is_null($record->pd))
                     <div class="border rounded-3 bg-body px-3 py-1 text-end">
-                        <p class="mb-0 text-muted-foreground text-uppercase" style="font-size:.62rem;letter-spacing:.05em;">PD</p>
+                        <p class="mb-0 text-muted-foreground text-uppercase" style="font-size:var(--text-3xs);letter-spacing:.05em;">PD</p>
                         <p class="mb-0 fw-semibold font-display">{{ $record->pd }} mm</p>
                     </div>
                 @endif
@@ -64,15 +64,15 @@
 
         {{-- Prescription table (Form layout) --}}
         <div class="table-responsive">
-            <table class="table align-middle mb-0" style="font-size:.9rem;">
-                <thead class="text-muted-foreground text-uppercase bg-light" style="font-size:.7rem;letter-spacing:.03em;">
+            <table class="table align-middle mb-0" style="font-size:var(--text-md);">
+                <thead class="text-muted-foreground text-uppercase bg-light" style="font-size:var(--text-2xs);letter-spacing:.03em;">
                     <tr>
                         <th class="ps-4" style="width:8rem;">Measurement</th>
                         <th colspan="4" class="text-center py-3">RIGHT EYE (OD)</th>
                         <th colspan="4" class="text-center py-3 border-start">LEFT EYE (OS)</th>
                         <th class="pe-4"></th>
                     </tr>
-                    <tr style="border-top:1px solid #e2e6ec;">
+                    <tr style="border-top:1px solid var(--osms-border);">
                         <th class="ps-4 py-2"></th>
                         <th class="text-center" style="width:6.5rem;">SPH</th>
                         <th class="text-center" style="width:6.5rem;">CYL</th>
@@ -88,7 +88,7 @@
                 <tbody>
                     {{-- Distance Vision (D.V.) --}}
                     <tr>
-                        <td class="ps-4 fw-medium text-muted-foreground" style="font-size:.85rem;">D.V.</td>
+                        <td class="ps-4 fw-medium text-muted-foreground" style="font-size:var(--text-sm);">D.V.</td>
                         <td class="text-center font-monospace">{{ $val('od', 'sph') }}</td>
                         <td class="text-center font-monospace">{{ $val('od', 'cyl') }}</td>
                         <td class="text-center font-monospace">{{ $val('od', 'axis') }}</td>
@@ -97,34 +97,34 @@
                         <td class="text-center font-monospace">{{ $val('os', 'cyl') }}</td>
                         <td class="text-center font-monospace">{{ $val('os', 'axis') }}</td>
                         <td class="text-center font-monospace">{{ $val('os', 'va') }}</td>
-                        <td class="pe-4 text-muted-foreground" style="font-size:.7rem;opacity:.6;">Distance</td>
+                        <td class="pe-4 text-muted-foreground" style="font-size:var(--text-2xs);opacity:.6;">Distance</td>
                     </tr>
 
                     {{-- Near Vision (N.V.) --}}
                     <tr>
-                        <td class="ps-4 fw-medium text-muted-foreground" style="font-size:.85rem;">N.V.</td>
+                        <td class="ps-4 fw-medium text-muted-foreground" style="font-size:var(--text-sm);">N.V.</td>
                         <td class="text-center font-monospace">{{ $val('od', 'nv') }}</td>
                         <td class="text-center" colspan="3"></td>
                         <td class="text-center font-monospace border-start">{{ $val('os', 'nv') }}</td>
                         <td class="text-center" colspan="3"></td>
-                        <td class="pe-4 text-muted-foreground" style="font-size:.7rem;opacity:.6;">Near</td>
+                        <td class="pe-4 text-muted-foreground" style="font-size:var(--text-2xs);opacity:.6;">Near</td>
                     </tr>
 
                     {{-- Addition (ADD) --}}
                     <tr>
-                        <td class="ps-4 fw-medium text-muted-foreground" style="font-size:.85rem;">ADD</td>
+                        <td class="ps-4 fw-medium text-muted-foreground" style="font-size:var(--text-sm);">ADD</td>
                         <td class="text-center font-monospace">{{ $val('od', 'add') }}</td>
                         <td class="text-center" colspan="3"></td>
                         <td class="text-center font-monospace border-start">{{ $val('os', 'add') }}</td>
                         <td class="text-center" colspan="3"></td>
-                        <td class="pe-4 text-muted-foreground" style="font-size:.7rem;opacity:.6;">Addition</td>
+                        <td class="pe-4 text-muted-foreground" style="font-size:var(--text-2xs);opacity:.6;">Addition</td>
                     </tr>
                 </tbody>
             </table>
         </div>
 
         @if ($record->notes)
-            <p class="mt-3 mb-0 bg-light rounded-3 px-3 py-2 text-muted-foreground" style="font-size:.85rem;">
+            <p class="mt-3 mb-0 bg-light rounded-3 px-3 py-2 text-muted-foreground" style="font-size:var(--text-sm);">
                 <span class="fw-medium text-dark">Notes: </span>{{ $record->notes }}
             </p>
         @endif

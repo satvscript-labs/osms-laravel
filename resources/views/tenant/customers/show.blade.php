@@ -4,7 +4,7 @@
 @section('content')
 <div class="p-4 p-md-5">
     <a href="{{ route('tenant.customers.index') }}"
-       class="d-inline-flex align-items-center gap-1 text-muted-foreground text-decoration-none mb-3" style="font-size:.8rem;">
+       class="d-inline-flex align-items-center gap-1 text-muted-foreground text-decoration-none mb-3" style="font-size:var(--text-sm);">
         <i class="bi bi-chevron-left"></i> Back to customers
     </a>
 
@@ -12,38 +12,59 @@
          backdrop-filter creates its own stacking context, which otherwise traps
          the ⋯ dropdown menu underneath the "History" section that follows in the
          DOM — this lifts the whole header (dropdown included) above it. --}}
-    <div class="glass card-lift rounded-4 p-4 mb-4 d-flex flex-column flex-md-row gap-3 align-items-md-end justify-content-between position-relative z-2">
-        <div class="d-flex align-items-start gap-3">
-            <span class="d-inline-flex align-items-center justify-content-center rounded-4 bg-primary text-white"
+    <div class="glass card-lift rounded-4 p-4 mb-4 d-flex flex-column flex-lg-row gap-3 align-items-lg-center justify-content-between position-relative z-2">
+        <div class="d-flex align-items-start gap-3 min-w-0">
+            <span class="d-inline-flex align-items-center justify-content-center rounded-4 bg-primary text-white flex-shrink-0"
                   style="width:3.25rem;height:3.25rem;"><i class="bi bi-person fs-4"></i></span>
-            <div>
-                <h1 class="h3 fw-semibold font-display mb-1">{{ $customer->name }}</h1>
-                <div class="d-flex flex-wrap gap-3 text-muted-foreground" style="font-size:.85rem;">
-                    <span><i class="bi bi-telephone me-1"></i>{{ $customer->phone }}</span>
-                    @if ($customer->age)<span><i class="bi bi-calendar3 me-1"></i>{{ $customer->age }} yrs</span>@endif
+            <div class="min-w-0">
+                <h1 class="h3 fw-semibold font-display mb-1 text-truncate">{{ $customer->name }}</h1>
+                <div class="d-flex flex-wrap align-items-center gap-2 gap-md-3 text-muted-foreground text-sm">
+                    <span class="text-nowrap"><i class="bi bi-telephone me-1"></i>{{ $customer->phone }}</span>
+                    @if ($customer->age)<span class="text-nowrap"><i class="bi bi-calendar3 me-1"></i>{{ $customer->age }} yrs</span>@endif
                     @if ($customer->gender)<span class="text-capitalize">{{ $customer->gender }}</span>@endif
-                    <span style="font-size:.78rem;">Added {{ $customer->created_at->format('d M Y') }}</span>
+                    <span class="text-xs text-nowrap">Added {{ $customer->created_at->format('d M Y') }}</span>
+
+                    {{-- PRIV-02 — a minor is legally relevant (guardian consent, no marketing). --}}
+                    @if ($customer->isMinor())
+                        <span class="meta-chip meta-chip-warn" title="Under 18 — guardian consent applies; excluded from birthday marketing">
+                            <i class="bi bi-person-exclamation"></i> Minor
+                        </span>
+                    @endif
+
+                    {{-- PRIV-01 — surface only the EXCEPTION. Consent on file is the normal
+                         state and needs no badge; a missing one is actionable, so it links
+                         straight to the form that fixes it. --}}
+                    @unless ($customer->data_consent_at)
+                        <a href="{{ route('tenant.customers.edit', $customer) }}"
+                           class="meta-chip meta-chip-warn" title="Data consent is not recorded — click to add it">
+                            <i class="bi bi-shield-exclamation"></i> No consent
+                        </a>
+                    @endunless
                 </div>
             </div>
         </div>
-        <div class="d-flex flex-wrap gap-2">
-            {{-- Quick contact (FT-WhatsApp req 2) — open a chat / dial from your own device. --}}
+
+        {{-- Actions. Quick-contact affordances are icon-only circles (secondary), so the
+             two labelled buttons stay on one line instead of wrapping raggedly. --}}
+        <div class="d-flex flex-wrap flex-lg-nowrap align-items-center gap-2 flex-shrink-0">
             @if ($customer->whatsappUrl())
                 <a href="{{ $customer->whatsappUrl() }}" target="_blank" rel="noopener"
-                   class="wa-pill" aria-label="Message {{ $customer->name }} on WhatsApp">
-                    <i class="bi bi-whatsapp"></i> <span>WhatsApp</span>
+                   class="wa-pill contact-pill-round" title="Message on WhatsApp"
+                   aria-label="Message {{ $customer->name }} on WhatsApp">
+                    <i class="bi bi-whatsapp" aria-hidden="true"></i> <span>WhatsApp</span>
                 </a>
             @endif
             @if ($customer->telHref())
                 <a href="{{ $customer->telHref() }}"
-                   class="call-pill" aria-label="Call {{ $customer->name }}">
-                    <i class="bi bi-telephone-fill"></i> <span>Call</span>
+                   class="call-pill contact-pill-round" title="Call {{ $customer->phone }}"
+                   aria-label="Call {{ $customer->name }}">
+                    <i class="bi bi-telephone-fill" aria-hidden="true"></i> <span>Call</span>
                 </a>
             @endif
-            <a href="{{ route('tenant.eye-records.create', $customer) }}" class="btn btn-outline-primary">
-                <i class="bi bi-plus-lg me-1"></i> New eye record
+            <a href="{{ route('tenant.eye-records.create', $customer) }}" class="btn btn-outline-primary text-nowrap">
+                <i class="bi bi-plus-lg me-1"></i> Eye record
             </a>
-            <a href="{{ safe_route('tenant.orders.create', ['customer' => $customer->id]) }}" class="btn btn-primary">
+            <a href="{{ safe_route('tenant.orders.create', ['customer' => $customer->id]) }}" class="btn btn-primary text-nowrap">
                 <i class="bi bi-cart-plus me-1"></i> New order
             </a>
             <div class="dropdown">
@@ -98,7 +119,7 @@
                                       style="width:2.25rem;height:2.25rem;"><i class="bi bi-cart3"></i></span>
                                 <div>
                                     <p class="mb-0 fw-medium">Order ₹ {{ number_format($o->total_amount, 2) }}</p>
-                                    <p class="mb-0 text-muted-foreground" style="font-size:.78rem;">
+                                    <p class="mb-0 text-muted-foreground" style="font-size:var(--text-xs);">
                                         Advance ₹ {{ number_format($o->advance_paid, 2) }} ·
                                         Balance ₹ {{ number_format($o->balance_due, 2) }} ·
                                         {{ $o->created_at->format('d M Y') }}

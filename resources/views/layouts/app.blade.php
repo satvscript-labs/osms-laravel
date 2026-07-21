@@ -18,8 +18,9 @@
         <div class="app-main">
             {{-- Mobile top bar --}}
             <div class="d-md-none d-flex align-items-center justify-content-between border-bottom bg-white px-3 py-2 no-print">
-                <button class="btn btn-sm btn-light" type="button" data-bs-toggle="offcanvas" data-bs-target="#mobileSidebar">
-                    <i class="bi bi-list fs-5"></i>
+                <button class="btn btn-sm btn-light" type="button" data-bs-toggle="offcanvas"
+                        data-bs-target="#mobileSidebar" aria-label="Open navigation menu">
+                    <i class="bi bi-list fs-5" aria-hidden="true"></i>
                 </button>
                 <span class="fw-semibold font-display">OSMS</span>
                 <span style="width:2rem;"></span>
@@ -27,7 +28,8 @@
 
             @if (session('status'))
                 <div class="px-4 px-md-5 pt-4 no-print">
-                    <div class="alert alert-success alert-dismissible fade show d-flex align-items-center gap-2 mb-0 rounded-3" role="alert">
+                    {{-- UX-06 — announce flash messages to assistive tech. --}}
+                    <div class="alert alert-success alert-dismissible fade show d-flex align-items-center gap-2 mb-0 rounded-3" role="status" aria-live="polite">
                         <i class="bi bi-check-circle-fill"></i>
                         <div>{{ session('status') }}</div>
                         <button type="button" class="btn-close ms-auto" data-bs-dismiss="alert" aria-label="Close"></button>

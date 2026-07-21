@@ -19,12 +19,16 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 use Barryvdh\DomPDF\Facade\Pdf;
 
 class OrderController extends Controller
 {
+    /** PERF-01 — how many days a delivered order stays on the kanban board. */
+    private const KANBAN_DELIVERED_DAYS = 7;
+
     /**
      * Orders workspace. Defaults to a scalable, searchable/filterable/sortable
      * table; `?view=kanban` falls back to the drag-and-drop workflow board.
@@ -49,8 +53,20 @@ class OrderController extends Controller
 
         // ---- Kanban: grouped by status (workflow board) ----
         if ($view === 'kanban') {
+            // PERF-01 — the board is a *working* view, not a historical ledger.
+            // Load all open work (pending + ready_for_pickup, naturally bounded)
+            // plus only recently-delivered orders, so a store with thousands of
+            // delivered orders doesn't hydrate its entire history on every board
+            // view. Cancelled orders never appear on the board. Full history lives
+            // in the paginated table view.
+            $recentDeliveredSince = now()->subDays(self::KANBAN_DELIVERED_DAYS);
             $orders = Order::with('customer:id,name,phone')
                 ->withCount('items')
+                ->where(function ($q) use ($recentDeliveredSince) {
+                    $q->whereIn('status', ['pending', 'ready_for_pickup'])
+                      ->orWhere(fn ($d) => $d->where('status', 'delivered')
+                          ->where('updated_at', '>=', $recentDeliveredSince));
+                })
                 ->latest()
                 ->get()
                 ->groupBy('status');
@@ -201,7 +217,9 @@ class OrderController extends Controller
             default => [null, null],
         };
 
-        $message->update(['status' => 'cancelled']);
+        // Clear dedupe_key so a later re-advance can schedule this event again
+        // (DATA-01: cancelled rows must not block a legitimate re-send).
+        $message->update(['status' => 'cancelled', 'dedupe_key' => null]);
 
         if ($revertTo !== null && $order->status === $advancedTo) {
             $order->update(['status' => $revertTo]); // direct write — no re-trigger
@@ -212,14 +230,18 @@ class OrderController extends Controller
 
     public function create(Request $request): View
     {
-        $customers = Customer::orderBy('name')->get(['id', 'name', 'phone']);
+        // PERF-03 — the customer list is unbounded, so it is NOT embedded in the page.
+        // The picker searches the customers JSON endpoint as you type; only a
+        // pre-selected customer (e.g. "New order" from a profile) is passed through.
         $inventory = Inventory::where('stock_qty', '>', 0)
             ->orderBy('brand')
             ->get(['id', 'sku', 'barcode', 'brand', 'model_name', 'selling_price', 'stock_qty']);
 
-        $selectedCustomerId = $request->query('customer');
+        $selectedCustomer = $request->filled('customer')
+            ? Customer::whereKey($request->query('customer'))->first(['id', 'name', 'phone'])
+            : null;
 
-        return view('tenant.orders.create', compact('customers', 'inventory', 'selectedCustomerId'));
+        return view('tenant.orders.create', compact('inventory', 'selectedCustomer'));
     }
 
     public function store(Request $request): RedirectResponse
@@ -236,7 +258,12 @@ class OrderController extends Controller
             // Either pick an existing customer, or supply a new name + phone inline.
             'customer_id'    => ['nullable', 'required_without:customer_name', 'exists:customers,id'],
             'customer_name'  => ['nullable', 'required_without:customer_id', 'string', 'max:255'],
-            'customer_phone' => ['nullable', 'required_with:customer_name', 'string', 'max:30', 'regex:/^\+\d{1,4}\s\d{7,15}$/'],
+            'customer_phone' => ['nullable', 'required_with:customer_name', 'string', 'max:30', 'regex:/^\+\d{1,4}\s\d{10}$/'],
+            // PRIV-01 — consent for an inline walk-in add (applied only to a
+            // newly-created customer; an existing match is never overwritten).
+            // Made mandatory below when a NEW customer is being created inline.
+            'customer_consent' => ['nullable', 'boolean'],
+            'customer_whatsapp_opt_in' => ['nullable', 'boolean'],
             'eye_record_id' => ['nullable', 'exists:eye_records,id'],
             'fulfillment_type' => ['nullable', 'in:instant,special'],
             // Required only for a special order (a prepared job needs a promised date).
@@ -257,9 +284,17 @@ class OrderController extends Controller
             // formal invoice for (e.g. a branded frame), not necessarily the whole order.
             'items.*.tax_invoice' => ['nullable', 'boolean'],
         ], [
-            'customer_phone.regex' => 'Enter a valid phone number (7–15 digits).',
+            'customer_phone.regex' => 'Enter a valid 10-digit phone number.',
             'estimated_ready_at.required_if' => 'A special order needs an estimated ready date.',
         ]);
+
+        // PRIV-01 — consent is mandatory when creating a NEW customer inline (an
+        // existing customer selected by id keeps whatever consent is already on file).
+        if (empty($validated['customer_id']) && ! $request->boolean('customer_consent')) {
+            throw ValidationException::withMessages([
+                'customer_consent' => 'Please record the customer\'s consent before creating the order.',
+            ]);
+        }
 
         $order = DB::transaction(function () use ($validated) {
             // Resolve the customer: an existing one (tenant-checked → 404 if not) or
@@ -270,7 +305,13 @@ class OrderController extends Controller
                 ? Customer::findOrFail($validated['customer_id'])
                 : Customer::firstOrCreate(
                     ['tenant_id' => auth()->user()->tenant_id, 'phone' => $validated['customer_phone']],
-                    ['name' => $validated['customer_name']],
+                    [
+                        'name' => $validated['customer_name'],
+                        // PRIV-01 — consent captured at the counter only stamps a
+                        // brand-new customer; an existing phone match is untouched.
+                        'data_consent_at' => ! empty($validated['customer_consent']) ? now() : null,
+                        'whatsapp_opt_in' => ! empty($validated['customer_whatsapp_opt_in']),
+                    ],
                 );
 
             // A prescription, if attached, must belong to this customer (the exists
@@ -440,9 +481,10 @@ class OrderController extends Controller
         $tenant = $order->tenant;
         $waConfig = $this->waConfig();
         $waPending = $this->waPendingFor([$order->id]);
-        // FT-TaxInvoice — only surface the button when the invoice exists AND at
-        // least one item is currently flagged (an edit could have unflagged all of them).
-        $taxInvoice = $order->items->contains('on_tax_invoice', true) ? $order->taxInvoice : null;
+        // FT-TaxInvoice — surface the button whenever an invoice has been issued.
+        // Once numbered it is a permanent document (BIZ-03), so it stays reachable
+        // even if the order's items are later edited.
+        $taxInvoice = $order->taxInvoice;
 
         return view('tenant.orders.show', compact('order', 'tenant', 'waConfig', 'waPending', 'taxInvoice'));
     }
@@ -791,6 +833,22 @@ class OrderController extends Controller
         return ['none', 0.0, 0.0];
     }
 
+    /**
+     * The order status machine (BIZ-01). Each state lists the states it may move
+     * to via this endpoint. `delivered` and `cancelled` are TERMINAL here — nothing
+     * may leave them — so a cancelled order can never be resurrected to delivered
+     * (which would leave its restored stock double-counted) and a closed sale can
+     * never be pulled back out of revenue. The WhatsApp undo flow steps delivered→
+     * ready / ready→pending with a DIRECT model write (see revert()), not this
+     * endpoint, so this guard doesn't affect it.
+     */
+    private const STATUS_TRANSITIONS = [
+        'pending'          => ['ready_for_pickup', 'delivered'],
+        'ready_for_pickup' => ['pending', 'delivered'],
+        'delivered'        => [], // terminal
+        'cancelled'        => [], // terminal (stock already restored)
+    ];
+
     /** Advance an order to the next workflow status. */
     public function updateStatus(Request $request, Order $order): RedirectResponse|JsonResponse
     {
@@ -798,7 +856,30 @@ class OrderController extends Controller
             'status' => ['required', 'in:pending,ready_for_pickup,delivered'],
         ]);
 
-        $order->update(['status' => $validated['status']]);
+        $target  = $validated['status'];
+        $current = (string) $order->status;
+
+        // Idempotent no-op when unchanged (also avoids a redundant WA schedule).
+        if ($target === $current) {
+            return $request->expectsJson()
+                ? response()->json(['ok' => true, 'status' => $order->status])
+                : back()->with('status', 'Order updated.');
+        }
+
+        // Enforce the state machine (BIZ-01).
+        if (! in_array($target, self::STATUS_TRANSITIONS[$current] ?? [], true)) {
+            $message = match ($current) {
+                'cancelled' => 'A cancelled order cannot be reopened.',
+                'delivered' => 'A delivered order is closed and cannot change status.',
+                default     => 'That status change is not allowed.',
+            };
+
+            return $request->expectsJson()
+                ? response()->json(['ok' => false, 'message' => $message], 422)
+                : back()->with('error', $message);
+        }
+
+        $order->update(['status' => $target]);
 
         // Automated ready/delivered message (no-op for Off/Manual; dedupe means a
         // status that bounces back and forward never re-sends).
@@ -845,6 +926,17 @@ class OrderController extends Controller
                 // total below what has already been paid (no refund flow — same guard
                 // as update()).
                 if (! empty($validated['discount_type'])) {
+                    // BIZ-02 — a discount may only move while the order is still open.
+                    // Once delivered the sale is closed; allowing a re-price here would
+                    // let staff collect in full, then quietly write the books down after
+                    // handover. The dues-settlement flow (6.3) records a PAYMENT against a
+                    // delivered order, never a discount, so it never posts one here.
+                    if ($order->status === 'delivered') {
+                        throw ValidationException::withMessages([
+                            'discount_value' => 'This order is already delivered — its discount can no longer be changed.',
+                        ]);
+                    }
+
                     [$dType, $dValue, $dAmount] = $this->resolveDiscount(
                         $validated['discount_type'],
                         (float) ($validated['discount_value'] ?? 0),
@@ -859,12 +951,39 @@ class OrderController extends Controller
                         ]);
                     }
 
+                    $before = [
+                        'discount_type'   => $order->discount_type,
+                        'discount_value'  => (float) $order->discount_value,
+                        'discount_amount' => (float) $order->discount_amount,
+                        'total_amount'    => (float) $order->total_amount,
+                    ];
+
                     $order->update([
                         'discount_type' => $dType,
                         'discount_value' => $dValue,
                         'discount_amount' => $dAmount,
                         'total_amount' => $newTotal,
                     ]);
+
+                    // BIZ-02 — audit every settle-time discount change (the only path a
+                    // discount can move after creation), so a rewrite is never silent.
+                    $after = [
+                        'discount_type'   => $dType,
+                        'discount_value'  => $dValue,
+                        'discount_amount' => $dAmount,
+                        'total_amount'    => $newTotal,
+                    ];
+                    Log::info('order.discount_changed', [
+                        'order_id'   => $order->id,
+                        'tenant_id'  => $order->tenant_id,
+                        'by_user_id' => auth()->id(),
+                        'before'     => $before,
+                        'after'      => $after,
+                    ]);
+                    // PRIV-04 — also into the tenant-visible activity log.
+                    \App\Models\ActivityLog::record('order.discount_changed',
+                        'Changed the discount on order #' . strtoupper(substr($order->id, 0, 8)),
+                        'order', $order->id, ['before' => $before, 'after' => $after]);
                 }
 
                 // 2) Payment (optional): capped at the balance remaining *after* any
@@ -966,6 +1085,10 @@ class OrderController extends Controller
             ]);
         });
 
+        \App\Models\ActivityLog::record('order.cancelled',
+            'Cancelled order #' . strtoupper(substr($order->id, 0, 8)) . ' and restored stock',
+            'order', $order->id, ['reason' => $validated['cancel_reason'] ?? null]);
+
         return back()->with('status', 'Order cancelled and stock restored.');
     }
 
@@ -1029,16 +1152,25 @@ class OrderController extends Controller
      */
     public function taxInvoicePdf(Order $order)
     {
-        $order->load(['customer', 'items.inventory:id,sku,brand,model_name,item_type', 'taxInvoice']);
-        $tenant = $order->tenant;
         $invoice = $order->taxInvoice;
-        $items = $order->items->where('on_tax_invoice', true);
 
-        if (! $invoice || $items->isEmpty()) {
+        // No invoice was ever issued for this order → nothing to render.
+        if (! $invoice) {
             abort(404);
         }
 
-        $pdf = Pdf::loadView('tenant.orders.tax-invoice-pdf', compact('order', 'tenant', 'invoice', 'items'))
+        // BIZ-03 — render from the frozen snapshot taken at issue time. A legacy
+        // invoice (issued before the snapshot column) has none, so rebuild it live.
+        $snapshot = $invoice->snapshot ?: TaxInvoice::buildSnapshot(
+            $order->loadMissing('customer', 'items.inventory', 'tenant')
+        );
+
+        // A legacy invoice whose items were all later unflagged has no lines.
+        if (empty($snapshot['lines'])) {
+            abort(404);
+        }
+
+        $pdf = Pdf::loadView('tenant.orders.tax-invoice-pdf', compact('order', 'invoice', 'snapshot'))
             ->setPaper('a4');
 
         return $pdf->stream($invoice->number . '.pdf');

@@ -4,7 +4,7 @@
 @section('content')
 <div class="p-4 p-md-5">
     <a href="{{ route('tenant.inventory.index') }}"
-       class="d-inline-flex align-items-center gap-1 text-muted-foreground text-decoration-none mb-3" style="font-size:.8rem;">
+       class="d-inline-flex align-items-center gap-1 text-muted-foreground text-decoration-none mb-3" style="font-size:var(--text-sm);">
         <i class="bi bi-chevron-left"></i> Back to inventory
     </a>
 
@@ -13,17 +13,17 @@
         <div>
             <p class="section-label mb-1">Inventory</p>
             <h1 class="h3 fw-semibold font-display mb-1">Archive</h1>
-            <p class="text-muted-foreground mb-0" style="font-size:.9rem;">
+            <p class="text-muted-foreground mb-0" style="font-size:var(--text-md);">
                 Archived items are recoverable for 30 days, then permanently removed.
             </p>
         </div>
     </div>
 
     @if ($items->isNotEmpty())
-        <div class="card border-0 shadow-sm rounded-4">
+        <div class="card border-0 shadow-sm rounded-4 stagger">
             <div class="table-responsive">
                 <table class="table align-middle mb-0">
-                    <thead class="text-muted-foreground text-uppercase" style="font-size:.72rem;letter-spacing:.04em;">
+                    <thead class="text-muted-foreground text-uppercase" style="font-size:var(--text-xs);letter-spacing:.04em;">
                         <tr>
                             <th class="ps-4">Item</th>
                             <th>SKU / Barcode</th>
@@ -38,11 +38,11 @@
                                     <span class="fw-medium">{{ $i->brand ?? '—' }}</span>
                                     <span class="text-muted-foreground">{{ $i->model_name }}</span>
                                 </td>
-                                <td class="font-monospace text-muted-foreground" style="font-size:.78rem;">
+                                <td class="font-monospace text-muted-foreground" style="font-size:var(--text-xs);">
                                     <div>{{ $i->sku }}</div>
-                                    <div style="font-size:.68rem;opacity:.7;">{{ $i->barcode }}</div>
+                                    <div style="font-size:var(--text-2xs);opacity:.7;">{{ $i->barcode }}</div>
                                 </td>
-                                <td class="text-muted-foreground" style="font-size:.82rem;">
+                                <td class="text-muted-foreground" style="font-size:var(--text-sm);">
                                     {{ $i->deleted_at->format('d M Y') }}
                                     <span class="text-faint">· purges {{ $i->deleted_at->copy()->addDays(30)->format('d M Y') }}</span>
                                 </td>

@@ -17,13 +17,13 @@
     {{-- On-screen header (hidden in print) --}}
     <div class="p-4 p-md-5 pb-0 no-print">
         <a href="{{ route('tenant.orders.index') }}"
-           class="d-inline-flex align-items-center gap-1 text-muted-foreground text-decoration-none mb-3" style="font-size:.8rem;">
+           class="d-inline-flex align-items-center gap-1 text-muted-foreground text-decoration-none mb-3" style="font-size:var(--text-sm);">
             <i class="bi bi-chevron-left"></i> Back to orders
         </a>
         <div class="d-flex flex-wrap align-items-end justify-content-between gap-3">
             <div>
                 <h1 class="h3 fw-semibold font-display mb-1">Order receipt</h1>
-                <p class="text-muted-foreground mb-0" style="font-size:.85rem;">
+                <p class="text-muted-foreground mb-0" style="font-size:var(--text-sm);">
                     #{{ $num }} · {{ $order->created_at->format('d M Y') }}
                     · <i class="bi {{ $order->isInstant() ? 'bi-bag-check' : 'bi-clock-history' }} me-1"></i>{{ $order->fulfillment_label }}
                     @if ($order->needsPrep() && $order->estimated_ready_at)
@@ -111,19 +111,19 @@
                         <div>
                             <h2 class="h5 fw-semibold font-display mb-1">{{ $tenant?->store_name ?? 'Optical Store' }}</h2>
                             @if ($tenant?->address)
-                                <p class="text-muted-foreground mb-0" style="font-size:.78rem;">
+                                <p class="text-muted-foreground mb-0" style="font-size:var(--text-xs);">
                                     <i class="bi bi-geo-alt me-1"></i>{{ $tenant->address }}
                                 </p>
                             @endif
                             @if ($tenant?->tax_id)
-                                <p class="text-muted-foreground mb-0" style="font-size:.78rem;">GSTIN: {{ $tenant->tax_id }}</p>
+                                <p class="text-muted-foreground mb-0" style="font-size:var(--text-xs);">GSTIN: {{ $tenant->tax_id }}</p>
                             @endif
                         </div>
                     </div>
                     <div class="text-end">
-                        <p class="text-uppercase text-muted-foreground mb-0" style="font-size:.62rem;letter-spacing:.05em;">Receipt</p>
+                        <p class="text-uppercase text-muted-foreground mb-0" style="font-size:var(--text-3xs);letter-spacing:.05em;">Receipt</p>
                         <p class="font-monospace fw-medium mb-1">#{{ $num }}</p>
-                        <p class="text-muted-foreground mb-0" style="font-size:.78rem;">
+                        <p class="text-muted-foreground mb-0" style="font-size:var(--text-xs);">
                             <i class="bi bi-calendar3 me-1"></i>{{ $order->created_at->format('d M Y') }}
                         </p>
                     </div>
@@ -133,9 +133,9 @@
                 <div class="row g-3 mb-4">
                     <div class="col-md-6">
                         <div class="border rounded-3 bg-light bg-opacity-50 p-3 h-100">
-                            <p class="text-uppercase text-muted-foreground mb-1" style="font-size:.62rem;letter-spacing:.05em;">Customer</p>
+                            <p class="text-uppercase text-muted-foreground mb-1" style="font-size:var(--text-3xs);letter-spacing:.05em;">Customer</p>
                             <p class="fw-semibold font-display mb-1">{{ $p?->name }}</p>
-                            <div class="text-muted-foreground" style="font-size:.78rem;">
+                            <div class="text-muted-foreground" style="font-size:var(--text-xs);">
                                 @if ($p?->phone)<p class="mb-0"><i class="bi bi-telephone me-1"></i>{{ $p->phone }}</p>@endif
                                 @if ($p?->age)<p class="mb-0">{{ $p->age }} years · {{ $p->gender ?? '—' }}</p>@endif
                             </div>
@@ -146,11 +146,11 @@
                         <div class="col-md-6 no-print">
                             <div class="border rounded-3 bg-light bg-opacity-50 p-3 h-100">
                                 <div class="d-flex align-items-center justify-content-between mb-2">
-                                    <p class="text-uppercase text-muted-foreground mb-0" style="font-size:.62rem;letter-spacing:.05em;">Prescription</p>
-                                    <span class="badge text-bg-light" style="font-size:.58rem;"><i class="bi bi-eye-slash me-1"></i>Staff only</span>
+                                    <p class="text-uppercase text-muted-foreground mb-0" style="font-size:var(--text-3xs);letter-spacing:.05em;">Prescription</p>
+                                    <span class="badge text-bg-light" style="font-size:var(--text-3xs);"><i class="bi bi-eye-slash me-1"></i>Staff only</span>
                                 </div>
-                                <table class="w-100" style="font-size:.78rem;">
-                                    <thead class="text-muted-foreground text-uppercase" style="font-size:.62rem;">
+                                <table class="w-100" style="font-size:var(--text-xs);">
+                                    <thead class="text-muted-foreground text-uppercase" style="font-size:var(--text-3xs);">
                                         <tr><th></th><th>SPH</th><th>CYL</th><th>Axis</th><th>ADD</th><th>VA</th></tr>
                                     </thead>
                                     <tbody class="font-monospace">
@@ -163,7 +163,7 @@
                                     </tbody>
                                 </table>
                                 @if (! is_null($rx->pd))
-                                    <p class="mb-0 mt-2" style="font-size:.78rem;">
+                                    <p class="mb-0 mt-2" style="font-size:var(--text-xs);">
                                         <span class="text-muted-foreground">PD:</span> <span class="font-monospace">{{ $rx->pd }} mm</span>
                                     </p>
                                 @endif
@@ -173,9 +173,9 @@
                 </div>
 
                 {{-- Items --}}
-                <p class="text-uppercase text-muted-foreground mb-2" style="font-size:.62rem;letter-spacing:.05em;">Items</p>
-                <table class="table mb-4" style="font-size:.88rem;">
-                    <thead class="text-muted-foreground" style="font-size:.75rem;">
+                <p class="text-uppercase text-muted-foreground mb-2" style="font-size:var(--text-3xs);letter-spacing:.05em;">Items</p>
+                <table class="table mb-4" style="font-size:var(--text-md);">
+                    <thead class="text-muted-foreground" style="font-size:var(--text-xs);">
                         <tr><th>Item</th><th>SKU</th><th class="text-end">Qty</th><th class="text-end">Unit</th><th class="text-end">Total</th></tr>
                     </thead>
                     <tbody>
@@ -188,7 +188,7 @@
                                         {{ $it->inventory?->brand ?? '—' }} <span class="text-muted-foreground">{{ $it->inventory?->model_name }}</span>
                                     @endif
                                 </td>
-                                <td class="font-monospace text-muted-foreground" style="font-size:.75rem;">{{ $it->inventory?->sku ?? '—' }}</td>
+                                <td class="font-monospace text-muted-foreground" style="font-size:var(--text-xs);">{{ $it->inventory?->sku ?? '—' }}</td>
                                 <td class="text-end">{{ $it->quantity }}</td>
                                 <td class="text-end font-monospace">₹ {{ number_format($it->unit_price, 2) }}</td>
                                 <td class="text-end font-monospace">₹ {{ number_format($it->unit_price * $it->quantity, 2) }}</td>
@@ -199,21 +199,21 @@
 
                 {{-- Totals --}}
                 <div class="ms-auto" style="max-width:18rem;">
-                    <div class="d-flex justify-content-between mb-1" style="font-size:.9rem;">
+                    <div class="d-flex justify-content-between mb-1" style="font-size:var(--text-md);">
                         <span class="text-muted-foreground">Subtotal</span>
                         <span class="font-monospace">₹ {{ number_format($order->subtotal, 2) }}</span>
                     </div>
                     @if ($order->hasDiscount())
-                        <div class="d-flex justify-content-between mb-1" style="font-size:.9rem;">
+                        <div class="d-flex justify-content-between mb-1" style="font-size:var(--text-md);">
                             <span class="text-muted-foreground">Discount <span class="text-faint">({{ $order->discount_label }})</span></span>
                             <span class="font-monospace text-success">− ₹ {{ number_format($order->discount_amount, 2) }}</span>
                         </div>
                     @endif
-                    <div class="d-flex justify-content-between mb-1 fw-medium" style="font-size:.9rem;">
+                    <div class="d-flex justify-content-between mb-1 fw-medium" style="font-size:var(--text-md);">
                         <span>Total</span>
                         <span class="font-monospace">₹ {{ number_format($order->total_amount, 2) }}</span>
                     </div>
-                    <div class="d-flex justify-content-between mb-2" style="font-size:.9rem;">
+                    <div class="d-flex justify-content-between mb-2" style="font-size:var(--text-md);">
                         <span class="text-muted-foreground">Advance paid</span>
                         <span class="font-monospace">₹ {{ number_format($order->advance_paid, 2) }}</span>
                     </div>
@@ -223,7 +223,7 @@
                     </div>
                 </div>
 
-                <p class="text-center text-muted-foreground border-top mt-4 pt-3 mb-0" style="font-size:.78rem;">
+                <p class="text-center text-muted-foreground border-top mt-4 pt-3 mb-0" style="font-size:var(--text-xs);">
                     Thank you for shopping with {{ $tenant?->store_name ?? 'us' }}. Please retain this receipt for any future visits.
                 </p>
             </div>
@@ -246,11 +246,11 @@
                 </div>
 
                 @if ($order->payments->isEmpty())
-                    <p class="text-muted-foreground mb-0" style="font-size:.85rem;">No payments recorded yet.</p>
+                    <p class="text-muted-foreground mb-0" style="font-size:var(--text-sm);">No payments recorded yet.</p>
                 @else
                     <div class="table-responsive">
-                        <table class="table align-middle mb-0" style="font-size:.86rem;">
-                            <thead class="text-muted-foreground text-uppercase" style="font-size:.68rem;letter-spacing:.04em;">
+                        <table class="table align-middle mb-0" style="font-size:var(--text-sm);">
+                            <thead class="text-muted-foreground text-uppercase" style="font-size:var(--text-2xs);letter-spacing:.04em;">
                                 <tr>
                                     <th>Date</th>
                                     <th>Method</th>
@@ -298,7 +298,7 @@
                         </div>
                         <div class="modal-body p-4 d-flex flex-column gap-3">
                             <div class="rounded-3 p-3" style="background: var(--surface-sunken);">
-                                <div class="d-flex justify-content-between" style="font-size:.85rem;">
+                                <div class="d-flex justify-content-between" style="font-size:var(--text-sm);">
                                     <span class="text-muted-foreground">Balance due</span>
                                     <span class="font-monospace fw-semibold text-danger">₹ {{ number_format($order->balance_due, 2) }}</span>
                                 </div>
@@ -308,7 +308,7 @@
                                 <input id="pay_amount" type="number" name="amount" step="0.01" min="0.01"
                                        max="{{ $order->balance_due }}" value="{{ $order->balance_due }}"
                                        class="form-control" required>
-                                <div class="form-text" style="font-size:.72rem;">Anything above the balance is automatically capped.</div>
+                                <div class="form-text" style="font-size:var(--text-xs);">Anything above the balance is automatically capped.</div>
                             </div>
                             <div>
                                 <label for="pay_method" class="form-label small fw-medium mb-2">Method</label>

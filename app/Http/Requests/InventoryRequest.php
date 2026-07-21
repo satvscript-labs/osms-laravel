@@ -18,10 +18,12 @@ class InventoryRequest extends FormRequest
             'item_type' => ['required', Rule::in(['frame', 'lens', 'contact_lens', 'accessory'])],
             'brand' => ['nullable', 'string', 'max:255'],
             'model_name' => ['nullable', 'string', 'max:255'],
-            'cost_price' => ['required', 'numeric', 'min:0'],
-            'selling_price' => ['required', 'numeric', 'min:0'],
-            'stock_qty' => ['nullable', 'integer', 'min:0'],
-            'min_alert_qty' => ['nullable', 'integer', 'min:0'],
+            // Upper bounds keep values within the decimal(10,2) / unsigned-int columns
+            // (an out-of-range entry is a 422, never a DB-overflow 500).
+            'cost_price' => ['required', 'numeric', 'min:0', 'max:99999999'],
+            'selling_price' => ['required', 'numeric', 'min:0', 'max:99999999'],
+            'stock_qty' => ['nullable', 'integer', 'min:0', 'max:1000000'],
+            'min_alert_qty' => ['nullable', 'integer', 'min:0', 'max:1000000'],
         ];
     }
 

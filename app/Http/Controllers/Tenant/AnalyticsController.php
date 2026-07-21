@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers\Tenant;
 
-use App\Exports\LedgerExport;
 use App\Http\Controllers\Controller;
 use App\Models\Order;
 use App\Models\Payment;
@@ -46,14 +45,20 @@ class AnalyticsController extends Controller
         // drifts every time the order is saved (a later payment, edit, or status
         // change would otherwise move the sale into the wrong day). This keeps
         // revenue on the same date as the orders list "Placed" column and the ledger.
-        $delivered = Order::with('items.inventory:id,cost_price,brand')
-            ->where('status', 'delivered')
-            ->whereBetween('created_at', [$from, $to])
-            ->get();
+        // PERF-02 — never hydrate a whole date range at once. The headline money is a
+        // single SQL aggregate; the per-line math below streams in chunks so memory
+        // stays flat no matter how wide the range is.
+        $deliveredQuery = Order::where('status', 'delivered')
+            ->whereBetween('created_at', [$from, $to]);
 
         // Revenue is net of discount (total_amount already = subtotal − discount).
-        $revenue = (float) $delivered->sum('total_amount');
-        $discounts = (float) $delivered->sum('discount_amount');
+        $totals = (clone $deliveredQuery)
+            ->selectRaw('COUNT(*) as orders_count, COALESCE(SUM(total_amount), 0) as revenue, COALESCE(SUM(discount_amount), 0) as discounts')
+            ->first();
+
+        $revenue = (float) $totals->revenue;
+        $discounts = (float) $totals->discounts;
+        $ordersCount = (int) $totals->orders_count;
 
         // Single pass over delivered lines. The order-level discount is allocated
         // pro-rata to each line (factor = net total ÷ gross subtotal) so brand
@@ -65,37 +70,41 @@ class AnalyticsController extends Controller
         $costedRevenue = 0.0; // net revenue attributable to lines that have a cost
         $uncostedLines = 0;
         $brandMap = [];
-        foreach ($delivered as $o) {
-            $sub = (float) $o->subtotal;
-            $factor = $sub > 0 ? (float) $o->total_amount / $sub : 1.0;
-            foreach ($o->items as $it) {
-                $lineNet = (float) $it->unit_price * $it->quantity * $factor;
-                $cost = (float) ($it->inventory->cost_price ?? 0);
-                if ($cost > 0) {
-                    $cogs += $cost * $it->quantity;
-                    $costedRevenue += $lineNet;
-                } else {
-                    $uncostedLines++;
-                }
+        (clone $deliveredQuery)
+            ->with('items.inventory:id,cost_price,brand')
+            ->chunkById(200, function ($orders) use (&$cogs, &$costedRevenue, &$uncostedLines, &$brandMap) {
+                foreach ($orders as $o) {
+                    $sub = (float) $o->subtotal;
+                    $factor = $sub > 0 ? (float) $o->total_amount / $sub : 1.0;
+                    foreach ($o->items as $it) {
+                        $lineNet = (float) $it->unit_price * $it->quantity * $factor;
+                        $cost = (float) ($it->inventory->cost_price ?? 0);
+                        if ($cost > 0) {
+                            $cogs += $cost * $it->quantity;
+                            $costedRevenue += $lineNet;
+                        } else {
+                            $uncostedLines++;
+                        }
 
-                // A local/custom line (6.4) has no inventory — bucket it distinctly so
-                // it reads clearly instead of colliding with a real item whose brand is
-                // just unset ("—"). Its cost is 0 above, so it's already excluded from
-                // COGS/margin while its revenue still counts (5.3's rule, for free).
-                $brand = $it->inventory
-                    ? (trim((string) $it->inventory->brand) ?: '—')
-                    : 'Local / custom item';
-                $brandMap[$brand] ??= ['quantity' => 0, 'revenue' => 0.0];
-                $brandMap[$brand]['quantity'] += $it->quantity;
-                $brandMap[$brand]['revenue'] += $lineNet;
-            }
-        }
+                        // A local/custom line (6.4) has no inventory — bucket it distinctly so
+                        // it reads clearly instead of colliding with a real item whose brand is
+                        // just unset ("—"). Its cost is 0 above, so it's already excluded from
+                        // COGS/margin while its revenue still counts (5.3's rule, for free).
+                        $brand = $it->inventory
+                            ? (trim((string) $it->inventory->brand) ?: '—')
+                            : 'Local / custom item';
+                        $brandMap[$brand] ??= ['quantity' => 0, 'revenue' => 0.0];
+                        $brandMap[$brand]['quantity'] += $it->quantity;
+                        $brandMap[$brand]['revenue'] += $lineNet;
+                    }
+                }
+            });
 
         // Profit + margin are computed over costed lines only (uncosted lines can't
         // contribute a known profit). Margin is null when there's no cost data → "—".
         $profit = $costedRevenue - $cogs;
         $margin = $costedRevenue > 0 ? ($profit / $costedRevenue) * 100 : null;
-        $ordersCount = $delivered->count();
+        // $ordersCount already came from the SQL aggregate above (PERF-02).
 
         $topBrands = collect($brandMap)
             ->map(fn ($v, $brand) => ['brand' => $brand] + $v)

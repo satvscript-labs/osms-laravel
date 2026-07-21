@@ -74,26 +74,26 @@
     <div class="row g-3">
         <div class="col-6 col-lg-3">
             <label for="cost_price" class="form-label small fw-medium mb-1">Cost price (₹) *</label>
-            <input id="cost_price" name="cost_price" type="number" step="0.01" min="0" required
+            <input id="cost_price" name="cost_price" type="number" step="0.01" min="0" max="99999999" inputmode="decimal" required
                    value="{{ $val('cost_price') }}" class="form-control @error('cost_price') is-invalid @enderror">
         </div>
         <div class="col-6 col-lg-3">
             <label for="selling_price" class="form-label small fw-medium mb-1">Selling price (₹) *</label>
-            <input id="selling_price" name="selling_price" type="number" step="0.01" min="0" required
+            <input id="selling_price" name="selling_price" type="number" step="0.01" min="0" max="99999999" inputmode="decimal" required
                    value="{{ $val('selling_price') }}" class="form-control @error('selling_price') is-invalid @enderror">
-            <div id="marginWarning" class="d-none align-items-center gap-1 mt-1 text-warning" style="font-size:.72rem;">
+            <div id="marginWarning" class="d-none align-items-center gap-1 mt-1 text-warning" style="font-size:var(--text-xs);">
                 <i class="bi bi-exclamation-triangle-fill"></i>
                 <span>Selling price is below cost — this item will sell at a loss.</span>
             </div>
         </div>
         <div class="col-6 col-lg-3">
             <label for="stock_qty" class="form-label small fw-medium mb-1">Stock quantity</label>
-            <input id="stock_qty" name="stock_qty" type="number" min="0"
+            <input id="stock_qty" name="stock_qty" type="number" min="0" max="1000000" inputmode="numeric"
                    value="{{ $val('stock_qty', 0) }}" class="form-control">
         </div>
         <div class="col-6 col-lg-3">
             <label for="min_alert_qty" class="form-label small fw-medium mb-1">Low-stock threshold</label>
-            <input id="min_alert_qty" name="min_alert_qty" type="number" min="0"
+            <input id="min_alert_qty" name="min_alert_qty" type="number" min="0" max="1000000" inputmode="numeric"
                    value="{{ $val('min_alert_qty', 5) }}" class="form-control">
         </div>
     </div>

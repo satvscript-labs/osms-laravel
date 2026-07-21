@@ -3,28 +3,14 @@
 <head>
     <meta charset="utf-8">
     @php
-        $num = strtoupper(substr($order->id, 0, 8));
-        $p = $order->customer;
-        $hasGst = $tenant?->hasGst() ?? false;
-        $rate = $tenant?->effectiveGstRate() ?? 0.0;
-
-        // Totals over ONLY the invoiced items — this is a partial-order document,
-        // not a restatement of the full order (see receipt-pdf.blade.php for that).
-        $grandTotal = 0.0;
-        $taxableTotal = 0.0;
-        $cgstTotal = 0.0;
-        $sgstTotal = 0.0;
-        $rows = $items->map(function ($it) use ($hasGst, $rate, &$grandTotal, &$taxableTotal, &$cgstTotal, &$sgstTotal) {
-            $amount = (float) $it->unit_price * $it->quantity;
-            $grandTotal += $amount;
-            $split = $hasGst ? \App\Support\Gst::splitInclusive($amount, $rate) : null;
-            if ($split) {
-                $taxableTotal += $split['taxable'];
-                $cgstTotal += $split['cgst'];
-                $sgstTotal += $split['sgst'];
-            }
-            return ['item' => $it, 'amount' => $amount, 'split' => $split];
-        });
+        // BIZ-03 — everything renders from the frozen snapshot taken at issue time,
+        // so a later order edit or GST-rate change can never alter this document.
+        $s = $snapshot;
+        $hasGst = (bool) ($s['has_gst'] ?? false);
+        $store = $s['store'] ?? [];
+        $cust = $s['customer'] ?? [];
+        $lines = $s['lines'] ?? [];
+        $totals = $s['totals'] ?? ['taxable' => 0, 'cgst' => 0, 'sgst' => 0, 'grand' => 0];
     @endphp
     <style>
         * { font-family: DejaVu Sans, sans-serif; }
@@ -50,17 +36,17 @@
         <tr>
             <td style="width:60%;">
                 <span class="badge">TAX INVOICE</span>
-                <h2 style="margin-top:8px;">{{ $tenant?->store_name ?? 'Optical Store' }}</h2>
-                @if ($tenant?->address)<div class="muted small">{{ $tenant->address }}</div>@endif
+                <h2 style="margin-top:8px;">{{ $store['name'] ?? 'Optical Store' }}</h2>
+                @if (! empty($store['address']))<div class="muted small">{{ $store['address'] }}</div>@endif
                 @if ($hasGst)
-                    <div class="small" style="margin-top:2px;"><b>GSTIN:</b> {{ $tenant->tax_id }}</div>
+                    <div class="small" style="margin-top:2px;"><b>GSTIN:</b> {{ $store['gstin'] }}</div>
                 @endif
             </td>
             <td class="right" style="width:40%;">
                 <div class="muted small" style="text-transform:uppercase;">Invoice No.</div>
                 <div class="mono" style="font-size:15px;font-weight:bold;">{{ $invoice->number }}</div>
                 <div class="muted small" style="margin-top:4px;">Invoice date: {{ $invoice->created_at->format('d M Y') }}</div>
-                <div class="muted small">Order ref: #{{ $num }}</div>
+                <div class="muted small">Order ref: #{{ $s['order_ref'] ?? strtoupper(substr($order->id, 0, 8)) }}</div>
             </td>
         </tr>
     </table>
@@ -71,8 +57,8 @@
             <td style="vertical-align:top;">
                 <div class="box">
                     <div class="muted small" style="text-transform:uppercase;">Bill to</div>
-                    <div style="font-weight:bold; font-size:14px;">{{ $p?->name }}</div>
-                    @if ($p?->phone)<div class="muted small">{{ $p->phone }}</div>@endif
+                    <div style="font-weight:bold; font-size:14px;">{{ $cust['name'] ?? '' }}</div>
+                    @if (! empty($cust['phone']))<div class="muted small">{{ $cust['phone'] }}</div>@endif
                 </div>
             </td>
         </tr>
@@ -93,22 +79,15 @@
             @endif
         </thead>
         <tbody>
-            @foreach ($rows as $row)
-                @php $it = $row['item']; @endphp
+            @foreach ($lines as $row)
                 <tr>
-                    <td>
-                        @if ($it->is_custom)
-                            {{ $it->display_name }}
-                        @else
-                            {{ $it->inventory?->brand ?? '—' }} {{ $it->inventory?->model_name }}
-                        @endif
-                    </td>
-                    <td class="right">{{ $it->quantity }}</td>
-                    <td class="right mono">{{ number_format($it->unit_price, 2) }}</td>
+                    <td>{{ $row['name'] ?: '—' }}</td>
+                    <td class="right">{{ $row['qty'] }}</td>
+                    <td class="right mono">{{ number_format($row['unit_price'], 2) }}</td>
                     @if ($hasGst)
-                        <td class="right mono">{{ number_format($row['split']['taxable'], 2) }}</td>
-                        <td class="right mono">{{ number_format($row['split']['cgst'], 2) }}</td>
-                        <td class="right mono">{{ number_format($row['split']['sgst'], 2) }}</td>
+                        <td class="right mono">{{ number_format($row['taxable'] ?? 0, 2) }}</td>
+                        <td class="right mono">{{ number_format($row['cgst'] ?? 0, 2) }}</td>
+                        <td class="right mono">{{ number_format($row['sgst'] ?? 0, 2) }}</td>
                     @endif
                     <td class="right mono">{{ number_format($row['amount'], 2) }}</td>
                 </tr>
@@ -123,12 +102,12 @@
             <td style="width:45%;">
                 <table class="totals">
                     @if ($hasGst)
-                        <tr><td class="muted">Taxable value</td><td class="right mono">₹ {{ number_format($taxableTotal, 2) }}</td></tr>
-                        <tr><td class="muted">CGST</td><td class="right mono">₹ {{ number_format($cgstTotal, 2) }}</td></tr>
-                        <tr><td class="muted">SGST</td><td class="right mono">₹ {{ number_format($sgstTotal, 2) }}</td></tr>
+                        <tr><td class="muted">Taxable value</td><td class="right mono">₹ {{ number_format($totals['taxable'], 2) }}</td></tr>
+                        <tr><td class="muted">CGST</td><td class="right mono">₹ {{ number_format($totals['cgst'], 2) }}</td></tr>
+                        <tr><td class="muted">SGST</td><td class="right mono">₹ {{ number_format($totals['sgst'], 2) }}</td></tr>
                         <tr><td colspan="2"><hr style="border:none;border-top:1px solid #eadfa0;"></td></tr>
                     @endif
-                    <tr><td><b>Total</b></td><td class="right mono"><b>₹ {{ number_format($grandTotal, 2) }}</b></td></tr>
+                    <tr><td><b>Total</b></td><td class="right mono"><b>₹ {{ number_format($totals['grand'], 2) }}</b></td></tr>
                 </table>
             </td>
         </tr>
@@ -145,7 +124,7 @@
 
     <p class="muted small" style="text-align:center; margin-top:20px; border-top:1px solid #eadfa0; padding-top:10px;">
         This is a digitally generated invoice and does not require a signature.<br>
-        Thank you for shopping with {{ $tenant?->store_name ?? 'us' }}.
+        Thank you for shopping with {{ $store['name'] ?? 'us' }}.
     </p>
 </body>
 </html>

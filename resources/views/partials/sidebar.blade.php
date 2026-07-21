@@ -11,9 +11,10 @@
         ['route' => 'tenant.analytics.index', 'label' => 'Analytics', 'icon' => 'bi-bar-chart', 'match' => 'tenant.analytics.*'],
     ];
 
-    // Team management is admin-only.
+    // Team management + activity log are admin-only.
     if ($user?->isStoreAdmin()) {
         $tenantLinks[] = ['route' => 'tenant.staff.index', 'label' => 'Team', 'icon' => 'bi-person-badge', 'match' => 'tenant.staff.*'];
+        $tenantLinks[] = ['route' => 'tenant.activity.index', 'label' => 'Activity', 'icon' => 'bi-clock-history', 'match' => 'tenant.activity.*'];
     }
 
     // Settings now lives in the unified hub reachable via the gear in the footer
@@ -39,10 +40,10 @@
             </span>
         @endif
         <div class="flex-grow-1 min-w-0">
-            <p class="mb-0 fw-semibold font-display text-truncate" style="font-size:.9rem;">
+            <p class="mb-0 fw-semibold font-display text-truncate" style="font-size:var(--text-md);">
                 {{ $tenant?->store_name ?? ($isSuper ? 'OSMS Platform' : 'Your Store') }}
             </p>
-            <p class="mb-0 text-muted-foreground text-capitalize" style="font-size:.72rem;">
+            <p class="mb-0 text-muted-foreground text-capitalize" style="font-size:var(--text-xs);">
                 {{ str_replace('_', ' ', $user?->role) }}
             </p>
         </div>
@@ -53,7 +54,7 @@
         <div class="px-3 pb-2">
             <button type="button"
                     class="btn btn-sm w-100 d-flex align-items-center gap-2 bg-white border text-muted-foreground rounded-3 px-2 py-2"
-                    data-bs-toggle="modal" data-bs-target="#globalSearchModal" style="font-size:.82rem;">
+                    data-bs-toggle="modal" data-bs-target="#globalSearchModal" style="font-size:var(--text-sm);">
                 <i class="bi bi-search"></i>
                 <span>Search…</span>
                 <kbd class="kbd-chip ms-auto">Ctrl K</kbd>
@@ -87,7 +88,7 @@
     <div class="border-top px-2 py-2">
         <div class="d-flex align-items-center gap-2 px-2 py-1">
             <div class="flex-grow-1 min-w-0">
-                <p class="mb-0 fw-medium text-truncate" style="font-size:.85rem;">{{ $user?->name ?? 'User' }}</p>
+                <p class="mb-0 fw-medium text-truncate" style="font-size:var(--text-sm);">{{ $user?->name ?? 'User' }}</p>
             </div>
             <a href="{{ route('profile.edit') }}"
                class="btn btn-sm {{ request()->routeIs('profile.edit') ? 'btn-primary' : 'btn-light' }}" title="Settings">

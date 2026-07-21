@@ -4,7 +4,7 @@
 @section('content')
 <div class="p-4 p-md-5">
     <a href="{{ route('tenant.customers.index') }}"
-       class="d-inline-flex align-items-center gap-1 text-muted-foreground text-decoration-none mb-3" style="font-size:.8rem;">
+       class="d-inline-flex align-items-center gap-1 text-muted-foreground text-decoration-none mb-3" style="font-size:var(--text-sm);">
         <i class="bi bi-chevron-left"></i> Back to customers
     </a>
 
@@ -13,17 +13,17 @@
         <div>
             <p class="section-label mb-1">Customers</p>
             <h1 class="h3 fw-semibold font-display mb-1">Archive</h1>
-            <p class="text-muted-foreground mb-0" style="font-size:.9rem;">
+            <p class="text-muted-foreground mb-0" style="font-size:var(--text-md);">
                 Archived customers are recoverable for 30 days, then permanently removed.
             </p>
         </div>
     </div>
 
     @if ($customers->isNotEmpty())
-        <div class="card border-0 shadow-sm rounded-4">
+        <div class="card border-0 shadow-sm rounded-4 stagger">
             <div class="table-responsive">
                 <table class="table align-middle mb-0">
-                    <thead class="text-muted-foreground" style="font-size:.78rem;">
+                    <thead class="text-muted-foreground" style="font-size:var(--text-xs);">
                         <tr>
                             <th class="ps-4">Name</th>
                             <th>Phone</th>
@@ -36,7 +36,7 @@
                             <tr>
                                 <td class="ps-4 fw-medium">{{ $c->name }}</td>
                                 <td>{{ $c->phone }}</td>
-                                <td class="text-muted-foreground" style="font-size:.82rem;">
+                                <td class="text-muted-foreground" style="font-size:var(--text-sm);">
                                     {{ $c->deleted_at->format('d M Y') }}
                                     <span class="text-faint">· purges {{ $c->deleted_at->copy()->addDays(30)->format('d M Y') }}</span>
                                 </td>

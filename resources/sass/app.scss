@@ -727,6 +727,13 @@ body {
 
 // Danger variant of the meta-chip (overdue ready-by dates).
 .meta-chip-danger { background: var(--tone-red-bg); color: var(--tone-red); }
+// Actionable warning chip (e.g. "consent not recorded") — links somewhere useful.
+.meta-chip-warn {
+  background: var(--tone-amber-bg); color: var(--tone-amber);
+  text-decoration: none;
+  transition: all var(--duration-fast) var(--ease-out);
+  &:hover { background: var(--tone-amber); color: #fff; }
+}
 
 // Festive birthday chip (customers "Birthdays" tab) — warm amber, celebratory.
 .birthday-chip {
@@ -735,6 +742,24 @@ body {
   background: var(--tone-amber-bg); color: var(--tone-amber);
   font-size: var(--text-xs); font-weight: 600; white-space: nowrap;
 }
+
+// ------------------------------------------------------------
+// Consent rows (PRIV-01) — a large, fast-to-tap toggle target: the whole
+// row (checkbox + label) is clickable, tints on hover, presses on active.
+// ------------------------------------------------------------
+.consent-row {
+  display: flex; align-items: center; gap: 0.6rem;
+  width: 100%; margin: 0; padding: 0.55rem 0.7rem;
+  border-radius: var(--radius);
+  cursor: pointer; user-select: none;
+  transition: background var(--duration-fast) var(--ease-out);
+
+  .form-check-input {
+    width: 1.2rem; height: 1.2rem; margin: 0; flex-shrink: 0;
+  }
+}
+.consent-row:hover  { background: var(--osms-primary-soft); }
+.consent-row:active { transform: scale(0.99); }
 
 // ------------------------------------------------------------
 // Row action icon buttons (orders: WhatsApp / call / PDF)
@@ -809,6 +834,16 @@ $wa-green-strong: #0b8043;
 .wa-pill-icon {
   width: 2rem; height: 2rem; padding: 0; gap: 0; flex-shrink: 0;
   span { display: none; }
+}
+
+// Comfortable icon-only variant for page headers (customer profile). A proper
+// square tap target with real breathing room — never a squeezed pill. Applies to
+// both .wa-pill and .call-pill; the label is kept for screen readers.
+.contact-pill-round {
+  width: 2.75rem; height: 2.75rem; padding: 0; gap: 0; flex-shrink: 0;
+  border-radius: var(--radius-pill);
+  i { font-size: 1.1rem; }
+  span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 }
 
 // Fallback (automated chosen but not yet connected) — amber "needs setup" tone.

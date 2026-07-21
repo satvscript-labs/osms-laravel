@@ -1,10 +1,11 @@
 @php
-    // Status presentation: dot colour + badge classes + human label.
+    // Status presentation: badge tone class + human label. The dot inherits its
+    // colour from the tone class via `currentColor` (UX-02 — no hardcoded hex).
     $statusMeta = [
-        'pending'          => ['label' => 'In lab',    'badge' => 'osms-badge-amber', 'dot' => '#b45309'],
-        'ready_for_pickup' => ['label' => 'Ready',     'badge' => 'osms-badge-blue',  'dot' => '#004f75'],
-        'delivered'        => ['label' => 'Delivered', 'badge' => 'osms-badge-green', 'dot' => '#15803d'],
-        'cancelled'        => ['label' => 'Cancelled', 'badge' => 'osms-badge-red',   'dot' => '#b91c1c'],
+        'pending'          => ['label' => 'In lab',    'badge' => 'osms-badge-amber'],
+        'ready_for_pickup' => ['label' => 'Ready',     'badge' => 'osms-badge-blue'],
+        'delivered'        => ['label' => 'Delivered', 'badge' => 'osms-badge-green'],
+        'cancelled'        => ['label' => 'Cancelled', 'badge' => 'osms-badge-red'],
     ];
 
     // Sort header link that flips direction on the active column. Marked with
@@ -17,7 +18,7 @@
         unset($params['partial']);
         $url = route('tenant.orders.index') . '?' . http_build_query($params);
         return '<a href="' . $url . '" data-sortlink class="text-reset text-decoration-none d-inline-flex align-items-center gap-1">'
-             . e($label) . ' <i class="bi ' . $icon . '" style="font-size:.7rem;"></i></a>';
+             . e($label) . ' <i class="bi ' . $icon . '" style="font-size:var(--text-2xs);"></i></a>';
     };
 @endphp
 
@@ -39,7 +40,7 @@
                 <tbody>
                     @foreach ($orders as $order)
                         @php
-                            $meta = $statusMeta[$order->status] ?? ['label' => $order->status_label, 'badge' => 'osms-badge-blue', 'dot' => '#6b7785'];
+                            $meta = $statusMeta[$order->status] ?? ['label' => $order->status_label, 'badge' => 'osms-badge-neutral'];
                             $num = strtoupper(substr($order->id, 0, 8));
                             $next = $order->status === 'pending' ? 'ready_for_pickup'
                                   : ($order->status === 'ready_for_pickup' ? 'delivered' : null);
@@ -75,7 +76,7 @@
                             </td>
                             <td>
                                 <span class="osms-badge {{ $meta['badge'] }}">
-                                    <span class="osms-badge-dot" style="background:{{ $meta['dot'] }};"></span>
+                                    <span class="osms-badge-dot"></span>
                                     {{ $meta['label'] }}
                                 </span>
                             </td>

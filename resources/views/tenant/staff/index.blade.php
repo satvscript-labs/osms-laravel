@@ -7,7 +7,7 @@
         <div>
             <p class="section-label mb-1">Account</p>
             <h1 class="h3 fw-semibold font-display mb-1">Team</h1>
-            <p class="text-muted-foreground mb-0" style="font-size:.9rem;">Invite and manage the people in your store.</p>
+            <p class="text-muted-foreground mb-0" style="font-size:var(--text-md);">Invite and manage the people in your store.</p>
         </div>
         <div class="text-md-end">
             <p class="section-label mb-1">Seats used</p>
@@ -40,7 +40,7 @@
                                     <p class="mb-0 fw-medium text-truncate">{{ $member->name }}
                                         @if ($member->id === auth()->id())<span class="text-muted-foreground">(you)</span>@endif
                                     </p>
-                                    <p class="mb-0 text-muted-foreground text-truncate" style="font-size:.8rem;">{{ $member->email }}</p>
+                                    <p class="mb-0 text-muted-foreground text-truncate" style="font-size:var(--text-sm);">{{ $member->email }}</p>
                                 </div>
                                 <span class="badge {{ $member->role === 'store_admin' ? 'text-bg-primary' : 'text-bg-secondary' }}">
                                     {{ $member->role === 'store_admin' ? 'Admin' : 'Staff' }}
@@ -87,7 +87,7 @@
                                           style="width:2.25rem;height:2.25rem;"><i class="bi bi-envelope"></i></span>
                                     <div class="flex-grow-1 min-w-0">
                                         <p class="mb-0 fw-medium text-truncate">{{ $invite->email }}</p>
-                                        <p class="mb-0 text-muted-foreground" style="font-size:.8rem;">
+                                        <p class="mb-0 text-muted-foreground" style="font-size:var(--text-sm);">
                                             {{ $invite->role === 'store_admin' ? 'Admin' : 'Staff' }} · expires {{ $invite->expires_at?->format('d M Y') }}
                                         </p>
                                     </div>
@@ -109,7 +109,7 @@
 
         {{-- Invite --}}
         <div class="col-lg-5">
-            <div class="card border-0 shadow-sm rounded-4">
+            <div class="card border-0 shadow-sm rounded-4 stagger">
                 <div class="card-body p-4">
                     <p class="section-label mb-3">Invite someone</p>
                     @if ($tenant->canAddSeat())

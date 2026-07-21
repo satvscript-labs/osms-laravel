@@ -3,7 +3,7 @@
 
 @section('content')
     <h1 class="h4 fw-semibold font-display mb-1">Forgot password?</h1>
-    <p class="text-muted-foreground mb-4" style="font-size:.875rem;">
+    <p class="text-muted-foreground mb-4" style="font-size:var(--text-md);">
         Enter your email and we'll send you a reset link.
     </p>
 
