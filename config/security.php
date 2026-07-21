@@ -20,4 +20,19 @@ return [
     'csp_enabled' => (bool) env('CSP_ENABLED', true),
     'csp_enforce' => (bool) env('CSP_ENFORCE', false),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Superadmin two-factor (SEC-05)
+    |--------------------------------------------------------------------------
+    | 2FA is available to every user from their profile. This flag additionally
+    | REQUIRES it for superadmin accounts: until they enrol, they're redirected to
+    | setup and cannot use the platform.
+    |
+    | Default false so enabling it is a deliberate act — flipping it on while the
+    | only superadmin has no authenticator to hand would lock you out of your own
+    | platform. Enrol first, then set SUPERADMIN_REQUIRE_2FA=true.
+    */
+
+    'superadmin_require_2fa' => (bool) env('SUPERADMIN_REQUIRE_2FA', false),
+
 ];

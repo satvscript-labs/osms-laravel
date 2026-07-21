@@ -14,6 +14,8 @@ return Application::configure(basePath: dirname(__DIR__))
         // ST-Harden (S8) — baseline security headers on every web response.
         $middleware->web(append: [
             \App\Http\Middleware\SecurityHeaders::class,
+            // SEC-05 — hold a half-authenticated session on the 2FA challenge.
+            \App\Http\Middleware\EnforceTwoFactor::class,
         ]);
 
         $middleware->alias([

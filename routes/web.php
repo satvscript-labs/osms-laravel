@@ -9,6 +9,7 @@ use App\Http\Controllers\Superadmin\DashboardController as SuperadminDashboard;
 use App\Http\Controllers\Superadmin\SubscriptionController as SuperadminSubscription;
 use App\Http\Controllers\Superadmin\TenantController as SuperadminTenant;
 use App\Http\Controllers\Tenant\DashboardController as TenantDashboard;
+use App\Http\Controllers\TwoFactorController;
 use App\Support\Navigation;
 use Illuminate\Support\Facades\Route;
 
@@ -42,6 +43,24 @@ Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+
+    // SEC-05 — two-factor authentication.
+    // The challenge routes must stay reachable while `2fa_pending` is set (see
+    // EnforceTwoFactor::EXEMPT), which is why they live here and not behind it.
+    Route::get('/two-factor/challenge', [TwoFactorController::class, 'challenge'])->name('two-factor.challenge');
+    Route::post('/two-factor/challenge', [TwoFactorController::class, 'verify'])
+        ->middleware('throttle:6,1')   // brute-forcing a 6-digit code must be slow
+        ->name('two-factor.verify');
+    Route::post('/two-factor/cancel', [TwoFactorController::class, 'cancel'])->name('two-factor.cancel');
+
+    Route::get('/two-factor/setup', [TwoFactorController::class, 'setup'])->name('two-factor.setup');
+    Route::post('/two-factor/confirm', [TwoFactorController::class, 'confirm'])
+        ->middleware('throttle:6,1')
+        ->name('two-factor.confirm');
+    // Turning 2FA OFF is a security downgrade — require a recent password.
+    Route::delete('/two-factor', [TwoFactorController::class, 'disable'])
+        ->middleware('password.confirm')
+        ->name('two-factor.disable');
 });
 
 /*

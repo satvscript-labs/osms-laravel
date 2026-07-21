@@ -29,6 +29,15 @@ class AuthenticatedSessionController extends Controller
 
         $request->session()->regenerate();
 
+        // SEC-05 — the password is accepted, but an account with 2FA enabled is not
+        // through yet. Flag the session as pending; EnforceTwoFactor holds every
+        // other route until the code is verified.
+        if ($request->user()->hasTwoFactorEnabled()) {
+            $request->session()->put('2fa_pending', true);
+
+            return redirect()->route('two-factor.challenge');
+        }
+
         return redirect()->intended(Navigation::homeFor($request->user()));
     }
 

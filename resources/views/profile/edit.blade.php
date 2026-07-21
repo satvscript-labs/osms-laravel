@@ -26,6 +26,9 @@
                 <button type="button" class="settings-nav-item" :class="{ active: section==='password' }" @click="go('password')">
                     <i class="bi bi-shield-lock"></i> <span>Password</span>
                 </button>
+                <button type="button" class="settings-nav-item" :class="{ active: section==='twofactor' }" @click="go('twofactor')">
+                    <i class="bi bi-shield-check"></i> <span>Two-factor</span>
+                </button>
                 @if ($isStoreAdmin)
                     <button type="button" class="settings-nav-item" :class="{ active: section==='store' }" @click="go('store')">
                         <i class="bi bi-shop"></i> <span>Store</span>
@@ -101,6 +104,62 @@
                                 <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg me-2"></i>Update password</button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            </div>
+
+            {{-- SEC-05 — Two-factor authentication --}}
+            <div x-show="section==='twofactor'" x-transition.opacity.duration.250ms x-cloak>
+                <div class="card border-0 shadow-sm rounded-4">
+                    <div class="card-body p-4">
+                        <h2 class="section-label mb-1">Two-factor authentication</h2>
+                        <p class="text-muted-foreground text-sm mb-4">
+                            A second step at sign-in, so a stolen password alone isn't enough.
+                        </p>
+
+                        @if (session('recovery_codes'))
+                            <div class="alert alert-warning">
+                                <p class="fw-semibold mb-1"><i class="bi bi-key me-1"></i>Save your recovery codes</p>
+                                <p class="text-sm mb-2">
+                                    These are shown <strong>once</strong>. Each works a single time if you lose your device.
+                                </p>
+                                <div class="d-flex flex-wrap gap-2">
+                                    @foreach (session('recovery_codes') as $rc)
+                                        <code class="px-2 py-1 rounded" style="background: var(--surface-card);">{{ $rc }}</code>
+                                    @endforeach
+                                </div>
+                            </div>
+                        @endif
+
+                        @if ($user->hasTwoFactorEnabled())
+                            <div class="d-flex align-items-center gap-2 mb-3">
+                                <span class="osms-badge osms-badge-green"><span class="osms-badge-dot"></span> On</span>
+                                <span class="text-muted-foreground text-sm">
+                                    Enabled {{ $user->two_factor_confirmed_at->format('d M Y') }}
+                                </span>
+                            </div>
+                            @if ($user->mustSetUpTwoFactor())
+                                <p class="text-muted-foreground text-sm">Required for superadmin accounts — cannot be turned off.</p>
+                            @else
+                                <form method="POST" action="{{ route('two-factor.disable') }}">
+                                    @csrf
+                                    @method('delete')
+                                    <button type="button" class="btn btn-light"
+                                            data-confirm="Turn off two-factor authentication? Your account will be protected by password alone."
+                                            data-confirm-title="Turn off two-factor"
+                                            data-confirm-label="Turn off">
+                                        <i class="bi bi-shield-slash me-1"></i>Turn off
+                                    </button>
+                                </form>
+                            @endif
+                        @else
+                            <div class="d-flex align-items-center gap-2 mb-3">
+                                <span class="osms-badge osms-badge-amber"><span class="osms-badge-dot"></span> Off</span>
+                            </div>
+                            <a href="{{ route('two-factor.setup') }}" class="btn btn-primary">
+                                <i class="bi bi-shield-lock me-1"></i>Set up two-factor
+                            </a>
+                        @endif
                     </div>
                 </div>
             </div>
