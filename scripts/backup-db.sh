@@ -14,7 +14,9 @@
 #   * exits non-zero on any failure so cron/MAILTO surfaces it.
 #
 # Usage:  bash scripts/backup-db.sh
-# Cron:   30 2 * * * /bin/bash ~/public_html/osms/scripts/backup-db.sh >> ~/backups/backup.log 2>&1
+# Cron:   30 2 * * * /bin/bash /ABSOLUTE/path/osms/scripts/backup-db.sh
+#         (no shell redirection: Hostinger cron has no shell. The script self-logs
+#          to $BACKUP_DIR/backup.log.)
 
 set -euo pipefail
 
@@ -23,8 +25,22 @@ APP_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ENV_FILE="${ENV_FILE:-$APP_ROOT/.env}"
 BACKUP_DIR="${BACKUP_DIR:-$HOME/backups}"
 
-log() { printf '[%s] %s\n' "$(date '+%F %T')" "$*"; }
-die() { printf '[%s] ERROR: %s\n' "$(date '+%F %T')" "$*" >&2; exit 1; }
+# Hostinger's cron runs commands WITHOUT a shell, so a `>> file 2>&1` in the crontab
+# is passed to bash as literal arguments and silently does nothing. The script
+# therefore writes its own log rather than relying on shell redirection.
+LOG_FILE=""   # set once BACKUP_DIR exists (below)
+
+_emit() {
+    printf '%s\n' "$1"
+    [ -n "$LOG_FILE" ] && printf '%s\n' "$1" >> "$LOG_FILE" 2>/dev/null
+    return 0
+}
+log() { _emit "[$(date '+%F %T')] $*"; }
+die() {
+    _emit "[$(date '+%F %T')] ERROR: $*"
+    printf '[%s] ERROR: %s\n' "$(date '+%F %T')" "$*" >&2
+    exit 1
+}
 
 [ -f "$ENV_FILE" ] || die "No .env at $ENV_FILE"
 
@@ -47,6 +63,8 @@ DB_HOST="$(env_get DB_HOST || true)"; DB_HOST="${DB_HOST:-127.0.0.1}"
 DB_PORT="$(env_get DB_PORT || true)"; DB_PORT="${DB_PORT:-3306}"
 
 mkdir -p "$BACKUP_DIR"
+# Now that the directory exists, start persisting log lines to it.
+LOG_FILE="${BACKUP_LOG:-$BACKUP_DIR/backup.log}"
 
 # Credentials via a locked-down temp file: keeps the password out of `ps`.
 # RAW is registered with the trap too, so a failed/partial dump never lingers on
