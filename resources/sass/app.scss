@@ -737,6 +737,24 @@ body {
 }
 
 // ------------------------------------------------------------
+// Consent rows (PRIV-01) — a large, fast-to-tap toggle target: the whole
+// row (checkbox + label) is clickable, tints on hover, presses on active.
+// ------------------------------------------------------------
+.consent-row {
+  display: flex; align-items: center; gap: 0.6rem;
+  width: 100%; margin: 0; padding: 0.55rem 0.7rem;
+  border-radius: var(--radius);
+  cursor: pointer; user-select: none;
+  transition: background var(--duration-fast) var(--ease-out);
+
+  .form-check-input {
+    width: 1.2rem; height: 1.2rem; margin: 0; flex-shrink: 0;
+  }
+}
+.consent-row:hover  { background: var(--osms-primary-soft); }
+.consent-row:active { transform: scale(0.99); }
+
+// ------------------------------------------------------------
 // Row action icon buttons (orders: WhatsApp / call / PDF)
 // ------------------------------------------------------------
 .action-icon-btn {

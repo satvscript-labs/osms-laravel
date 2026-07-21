@@ -148,25 +148,27 @@
                                         <select class="form-select flex-grow-0 w-auto" x-model="newCode" aria-label="Country code">
                                             <template x-for="code in codes" :key="code"><option :value="code" x-text="code"></option></template>
                                         </select>
-                                        <input type="tel" class="form-control" x-model="newPhone" placeholder="98765 43210">
+                                        <input type="tel" class="form-control" x-model="newPhone" placeholder="98765 43210"
+                                               inputmode="numeric" maxlength="10"
+                                               @input="newPhone = newPhone.replace(/\D/g,'').slice(0,10)">
                                     </div>
                                 </div>
                             </div>
-                            {{-- PRIV-01 — consent at the counter for a new walk-in. --}}
-                            <div class="form-check mt-2">
-                                <input class="form-check-input" type="checkbox" id="newConsent" x-model="newConsent">
-                                <label class="form-check-label" for="newConsent" style="font-size:.75rem;">
-                                    Customer consents to storing their details for their care.
+                            {{-- PRIV-01 — consent at the counter for a new walk-in (data consent required). --}}
+                            <div class="mt-2">
+                                <label class="consent-row" for="newConsent">
+                                    {{-- PRIV-01 — ticking consent auto-ticks WhatsApp opt-in (staff can untick it). --}}
+                                    <input class="form-check-input" type="checkbox" id="newConsent" x-model="newConsent"
+                                           @change="if (newConsent) newWhatsapp = true">
+                                    <span style="font-size:.78rem;">Consents to storing their details <span class="text-danger">*</span></span>
                                 </label>
-                            </div>
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" id="newWhatsapp" x-model="newWhatsapp">
-                                <label class="form-check-label" for="newWhatsapp" style="font-size:.75rem;">
-                                    Agrees to receive WhatsApp updates.
+                                <label class="consent-row" for="newWhatsapp">
+                                    <input class="form-check-input" type="checkbox" id="newWhatsapp" x-model="newWhatsapp">
+                                    <span style="font-size:.78rem;">Agrees to WhatsApp updates</span>
                                 </label>
                             </div>
                             <p class="text-muted-foreground mb-0 mt-2" style="font-size:.72rem;">
-                                Saved automatically when you create the order. An existing phone links to that customer.
+                                Saved when you create the order. An existing phone links to that customer.
                             </p>
                         </div>
 
@@ -611,7 +613,8 @@
                 return this.fulfillmentType === 'instant' ? this.total() : 0;
             },
             balance() { return Math.max(this.total() - this.effectiveAdvance(), 0); },
-            hasCustomer() { return this.customerId !== '' || (this.newMode && this.newName.trim() !== '' && this.newPhone.trim() !== ''); },
+            // A new walk-in needs name + phone + data consent (PRIV-01, mandatory).
+            hasCustomer() { return this.customerId !== '' || (this.newMode && this.newName.trim() !== '' && this.newPhone.trim() !== '' && this.newConsent); },
             canSubmit() {
                 return this.hasCustomer() && this.items.length > 0
                     && (this.fulfillmentType !== 'special' || !!this.estimatedReadyAt);

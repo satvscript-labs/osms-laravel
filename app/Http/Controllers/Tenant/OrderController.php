@@ -254,9 +254,10 @@ class OrderController extends Controller
             // Either pick an existing customer, or supply a new name + phone inline.
             'customer_id'    => ['nullable', 'required_without:customer_name', 'exists:customers,id'],
             'customer_name'  => ['nullable', 'required_without:customer_id', 'string', 'max:255'],
-            'customer_phone' => ['nullable', 'required_with:customer_name', 'string', 'max:30', 'regex:/^\+\d{1,4}\s\d{7,15}$/'],
+            'customer_phone' => ['nullable', 'required_with:customer_name', 'string', 'max:30', 'regex:/^\+\d{1,4}\s\d{10}$/'],
             // PRIV-01 — consent for an inline walk-in add (applied only to a
             // newly-created customer; an existing match is never overwritten).
+            // Made mandatory below when a NEW customer is being created inline.
             'customer_consent' => ['nullable', 'boolean'],
             'customer_whatsapp_opt_in' => ['nullable', 'boolean'],
             'eye_record_id' => ['nullable', 'exists:eye_records,id'],
@@ -279,9 +280,17 @@ class OrderController extends Controller
             // formal invoice for (e.g. a branded frame), not necessarily the whole order.
             'items.*.tax_invoice' => ['nullable', 'boolean'],
         ], [
-            'customer_phone.regex' => 'Enter a valid phone number (7–15 digits).',
+            'customer_phone.regex' => 'Enter a valid 10-digit phone number.',
             'estimated_ready_at.required_if' => 'A special order needs an estimated ready date.',
         ]);
+
+        // PRIV-01 — consent is mandatory when creating a NEW customer inline (an
+        // existing customer selected by id keeps whatever consent is already on file).
+        if (empty($validated['customer_id']) && ! $request->boolean('customer_consent')) {
+            throw ValidationException::withMessages([
+                'customer_consent' => 'Please record the customer\'s consent before creating the order.',
+            ]);
+        }
 
         $order = DB::transaction(function () use ($validated) {
             // Resolve the customer: an existing one (tenant-checked → 404 if not) or

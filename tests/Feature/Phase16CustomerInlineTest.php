@@ -61,6 +61,7 @@ class Phase16CustomerInlineTest extends TestCase
             'customer_name' => 'Walk In Wanda',
             'customer_country_code' => '+91',
             'customer_phone' => '90000 12345',
+            'customer_consent' => 1,
             'items' => [['inventory_id' => $item->id, 'quantity' => 1]],
         ])->assertRedirect();
 
@@ -84,6 +85,7 @@ class Phase16CustomerInlineTest extends TestCase
             'customer_name' => 'Different Name',
             'customer_country_code' => '+91',
             'customer_phone' => '90000 12345',
+            'customer_consent' => 1,
             'items' => [['inventory_id' => $item->id, 'quantity' => 1]],
         ])->assertRedirect();
 

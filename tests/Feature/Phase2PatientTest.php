@@ -35,6 +35,7 @@ class Phase2PatientTest extends TestCase
             'phone' => '9876543210',
             'age' => 32,
             'gender' => 'male',
+            'data_consent' => '1',
         ])->assertRedirect();
 
         $this->assertDatabaseHas('customers', [
@@ -61,7 +62,7 @@ class Phase2PatientTest extends TestCase
         Customer::create(['name' => 'A', 'phone' => '+91 9876543210']);
 
         $u2 = $this->storeUser();
-        $this->actingAs($u2)->post(route('tenant.customers.store'), ['name' => 'B', 'country_code' => '+91', 'phone' => '9876543210'])
+        $this->actingAs($u2)->post(route('tenant.customers.store'), ['name' => 'B', 'country_code' => '+91', 'phone' => '9876543210', 'data_consent' => '1'])
             ->assertRedirect();
 
         $this->assertDatabaseCount('customers', 2);

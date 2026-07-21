@@ -45,15 +45,14 @@ class Phase40ConsentTest extends TestCase
         $this->assertTrue($customer->hasDataConsent());
     }
 
-    public function test_creating_a_customer_without_consent_leaves_it_unrecorded(): void
+    public function test_creating_a_customer_without_consent_is_rejected(): void
     {
+        // Consent is mandatory — saving without it fails validation.
         $this->actingAs($this->user)->post(route('tenant.customers.store'), [
             'name' => 'Priya', 'country_code' => '+91', 'phone' => '9876500002',
-        ])->assertRedirect();
+        ])->assertSessionHasErrors('data_consent');
 
-        $customer = Customer::first();
-        $this->assertNull($customer->data_consent_at);
-        $this->assertFalse($customer->whatsapp_opt_in);
+        $this->assertSame(0, Customer::count());
     }
 
     public function test_editing_to_add_consent_stamps_the_date(): void
@@ -91,21 +90,23 @@ class Phase40ConsentTest extends TestCase
         );
     }
 
-    public function test_unchecking_consent_clears_it(): void
+    public function test_saving_without_consent_is_rejected_on_update(): void
     {
+        // Consent is mandatory, so an edit cannot save with it unchecked — the
+        // existing consent stays intact rather than being silently cleared.
+        $consentAt = now()->subDay();
         $customer = Customer::create([
             'tenant_id' => $this->tenant->id, 'name' => 'Dev', 'phone' => '+91 9876500005',
-            'data_consent_at' => now(), 'whatsapp_opt_in' => true,
+            'data_consent_at' => $consentAt, 'whatsapp_opt_in' => true,
         ]);
 
         $this->actingAs($this->user)->put(route('tenant.customers.update', $customer), [
             'name' => 'Dev', 'country_code' => '+91', 'phone' => '9876500005',
-            // no data_consent / whatsapp_opt_in posted = unchecked
-        ])->assertRedirect();
+            // no data_consent posted = unchecked
+        ])->assertSessionHasErrors('data_consent');
 
         $customer->refresh();
-        $this->assertNull($customer->data_consent_at);
-        $this->assertFalse($customer->whatsapp_opt_in);
+        $this->assertNotNull($customer->data_consent_at, 'Existing consent must not be cleared by a rejected save.');
     }
 
     public function test_inline_walkin_add_captures_consent_for_a_new_customer(): void

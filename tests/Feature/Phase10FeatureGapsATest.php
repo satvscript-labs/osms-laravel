@@ -48,6 +48,7 @@ class Phase10FeatureGapsATest extends TestCase
             'phone' => '9999999999',
             'age' => 31,
             'gender' => 'male',
+            'data_consent' => '1',
         ])->assertRedirect(route('tenant.customers.show', $customer));
 
         $this->assertDatabaseHas('customers', [
