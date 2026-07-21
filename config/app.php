@@ -65,7 +65,11 @@ return [
     |
     */
 
-    'timezone' => 'UTC',
+    // Read from the environment (Laravel's own default). This was hardcoded to
+    // 'UTC', which silently ignored APP_TIMEZONE in .env — production advertised
+    // Asia/Kolkata for months while actually running UTC, so analytics day
+    // boundaries ("today's sales") rolled over at 05:30 IST instead of midnight.
+    'timezone' => env('APP_TIMEZONE', 'UTC'),
 
     /*
     |--------------------------------------------------------------------------

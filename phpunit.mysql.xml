@@ -29,6 +29,10 @@
     </source>
     <php>
         <env name="APP_ENV" value="testing" force="true"/>
+        <!-- Pinned so tests never depend on a developer.s local APP_TIMEZONE. Kept
+             DIFFERENT from config(billing.timezone)=Asia/Kolkata on purpose, so
+             UTC-vs-IST day-boundary bugs surface in the suite (TEST-04). -->
+        <env name="APP_TIMEZONE" value="UTC" force="true"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file" force="true"/>
         <env name="BCRYPT_ROUNDS" value="4" force="true"/>
         <env name="BROADCAST_CONNECTION" value="null" force="true"/>
