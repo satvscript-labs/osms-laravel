@@ -32,7 +32,7 @@ die()  { printf '[%s] ERROR: %s\n' "$(date '+%F %T')" "$*" >&2; exit 1; }
 
 env_get() {
     local key="$1" line val
-    line="$(grep -E "^[[:space:]]*${key}=" "$ENV_FILE" | head -n 1 || true)"
+    line="$(grep -E "^[[:space:]]*${key}=" "$ENV_FILE" | head -n 1 | tr -d "\r" || true)"
     [ -n "$line" ] || return 1
     val="${line#*=}"
     val="${val%\"}"; val="${val#\"}"
