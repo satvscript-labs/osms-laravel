@@ -16,18 +16,26 @@ Schedule::command('subscriptions:reconcile')->dailyAt('02:15');
 
 // FT-WhatsApp — sweep due scheduled messages onto the queue every minute (the
 // 60s undo window resolves on the next tick; no persistent worker needed).
-Schedule::command('whatsapp:dispatch-due')->everyMinute()->withoutOverlapping();
+//
+// NOTE on withoutOverlapping(5): the default lock lasts 1440 minutes (24h). Hostinger
+// wraps cron commands in `timeout`, so a long-running task can be KILLED before it
+// releases its lock — which then silently blocks the task for a whole day and makes
+// `schedule:run` report "No scheduled commands are ready to run". A 5-minute expiry
+// means a killed task self-heals on the next tick instead.
+Schedule::command('whatsapp:dispatch-due')->everyMinute()->withoutOverlapping(5);
 
 // Queued mail (staff invitations, trial-status reminders) has no persistent worker on
 // shared hosting — drain the jobs table every minute via the scheduler cron instead.
-Schedule::command('queue:work --stop-when-empty --max-time=50')->everyMinute()->withoutOverlapping();
+// --max-time is kept well under a typical cron timeout so the worker exits cleanly
+// and releases its lock rather than being killed mid-run (see note above).
+Schedule::command('queue:work --stop-when-empty --max-time=30')->everyMinute()->withoutOverlapping(5);
 
 // OPS-02 — surface failed background jobs (the cron-only queue has no dashboard).
 // Alerts the superadmin(s) so a silently-broken queue doesn't go unnoticed.
-Schedule::command('osms:monitor-failed-jobs')->hourly()->withoutOverlapping();
+Schedule::command('osms:monitor-failed-jobs')->hourly()->withoutOverlapping(5);
 
 // OPS-01 — verify the nightly dump actually happened. The backup is a cron-driven
 // shell script the app can't observe directly, so this checks that a recent backup
 // FILE exists. Unlike cron's MAILTO, that also catches the cron being deleted or
 // never firing. Runs well after the 02:00/02:30 backup window.
-Schedule::command('osms:monitor-backups')->dailyAt('09:00')->withoutOverlapping();
+Schedule::command('osms:monitor-backups')->dailyAt('09:00')->withoutOverlapping(5);
