@@ -19,6 +19,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -791,6 +792,22 @@ class OrderController extends Controller
         return ['none', 0.0, 0.0];
     }
 
+    /**
+     * The order status machine (BIZ-01). Each state lists the states it may move
+     * to via this endpoint. `delivered` and `cancelled` are TERMINAL here — nothing
+     * may leave them — so a cancelled order can never be resurrected to delivered
+     * (which would leave its restored stock double-counted) and a closed sale can
+     * never be pulled back out of revenue. The WhatsApp undo flow steps delivered→
+     * ready / ready→pending with a DIRECT model write (see revert()), not this
+     * endpoint, so this guard doesn't affect it.
+     */
+    private const STATUS_TRANSITIONS = [
+        'pending'          => ['ready_for_pickup', 'delivered'],
+        'ready_for_pickup' => ['pending', 'delivered'],
+        'delivered'        => [], // terminal
+        'cancelled'        => [], // terminal (stock already restored)
+    ];
+
     /** Advance an order to the next workflow status. */
     public function updateStatus(Request $request, Order $order): RedirectResponse|JsonResponse
     {
@@ -798,7 +815,30 @@ class OrderController extends Controller
             'status' => ['required', 'in:pending,ready_for_pickup,delivered'],
         ]);
 
-        $order->update(['status' => $validated['status']]);
+        $target  = $validated['status'];
+        $current = (string) $order->status;
+
+        // Idempotent no-op when unchanged (also avoids a redundant WA schedule).
+        if ($target === $current) {
+            return $request->expectsJson()
+                ? response()->json(['ok' => true, 'status' => $order->status])
+                : back()->with('status', 'Order updated.');
+        }
+
+        // Enforce the state machine (BIZ-01).
+        if (! in_array($target, self::STATUS_TRANSITIONS[$current] ?? [], true)) {
+            $message = match ($current) {
+                'cancelled' => 'A cancelled order cannot be reopened.',
+                'delivered' => 'A delivered order is closed and cannot change status.',
+                default     => 'That status change is not allowed.',
+            };
+
+            return $request->expectsJson()
+                ? response()->json(['ok' => false, 'message' => $message], 422)
+                : back()->with('error', $message);
+        }
+
+        $order->update(['status' => $target]);
 
         // Automated ready/delivered message (no-op for Off/Manual; dedupe means a
         // status that bounces back and forward never re-sends).
@@ -845,6 +885,17 @@ class OrderController extends Controller
                 // total below what has already been paid (no refund flow — same guard
                 // as update()).
                 if (! empty($validated['discount_type'])) {
+                    // BIZ-02 — a discount may only move while the order is still open.
+                    // Once delivered the sale is closed; allowing a re-price here would
+                    // let staff collect in full, then quietly write the books down after
+                    // handover. The dues-settlement flow (6.3) records a PAYMENT against a
+                    // delivered order, never a discount, so it never posts one here.
+                    if ($order->status === 'delivered') {
+                        throw ValidationException::withMessages([
+                            'discount_value' => 'This order is already delivered — its discount can no longer be changed.',
+                        ]);
+                    }
+
                     [$dType, $dValue, $dAmount] = $this->resolveDiscount(
                         $validated['discount_type'],
                         (float) ($validated['discount_value'] ?? 0),
@@ -859,11 +910,33 @@ class OrderController extends Controller
                         ]);
                     }
 
+                    $before = [
+                        'discount_type'   => $order->discount_type,
+                        'discount_value'  => (float) $order->discount_value,
+                        'discount_amount' => (float) $order->discount_amount,
+                        'total_amount'    => (float) $order->total_amount,
+                    ];
+
                     $order->update([
                         'discount_type' => $dType,
                         'discount_value' => $dValue,
                         'discount_amount' => $dAmount,
                         'total_amount' => $newTotal,
+                    ]);
+
+                    // BIZ-02 — audit every settle-time discount change (the only path a
+                    // discount can move after creation), so a rewrite is never silent.
+                    Log::info('order.discount_changed', [
+                        'order_id'   => $order->id,
+                        'tenant_id'  => $order->tenant_id,
+                        'by_user_id' => auth()->id(),
+                        'before'     => $before,
+                        'after'      => [
+                            'discount_type'   => $dType,
+                            'discount_value'  => $dValue,
+                            'discount_amount' => $dAmount,
+                            'total_amount'    => $newTotal,
+                        ],
                     ]);
                 }
 
