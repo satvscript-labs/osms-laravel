@@ -4,7 +4,7 @@
 @section('content')
 <div class="p-4 p-md-5" style="max-width:48rem;">
     <a href="{{ route('tenant.customers.show', $customer) }}"
-       class="d-inline-flex align-items-center gap-1 text-muted-foreground text-decoration-none mb-3" style="font-size:.8rem;">
+       class="d-inline-flex align-items-center gap-1 text-muted-foreground text-decoration-none mb-3" style="font-size:var(--text-sm);">
         <i class="bi bi-chevron-left"></i> Back to customer
     </a>
 

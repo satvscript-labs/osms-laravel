@@ -4,7 +4,7 @@
 @section('content')
 <div class="p-4 p-md-5">
     <a href="{{ route('tenant.customers.index') }}"
-       class="d-inline-flex align-items-center gap-1 text-muted-foreground text-decoration-none mb-3" style="font-size:.8rem;">
+       class="d-inline-flex align-items-center gap-1 text-muted-foreground text-decoration-none mb-3" style="font-size:var(--text-sm);">
         <i class="bi bi-chevron-left"></i> Back to customers
     </a>
 
@@ -18,11 +18,11 @@
                   style="width:3.25rem;height:3.25rem;"><i class="bi bi-person fs-4"></i></span>
             <div>
                 <h1 class="h3 fw-semibold font-display mb-1">{{ $customer->name }}</h1>
-                <div class="d-flex flex-wrap gap-3 text-muted-foreground" style="font-size:.85rem;">
+                <div class="d-flex flex-wrap gap-3 text-muted-foreground" style="font-size:var(--text-sm);">
                     <span><i class="bi bi-telephone me-1"></i>{{ $customer->phone }}</span>
                     @if ($customer->age)<span><i class="bi bi-calendar3 me-1"></i>{{ $customer->age }} yrs</span>@endif
                     @if ($customer->gender)<span class="text-capitalize">{{ $customer->gender }}</span>@endif
-                    <span style="font-size:.78rem;">Added {{ $customer->created_at->format('d M Y') }}</span>
+                    <span style="font-size:var(--text-xs);">Added {{ $customer->created_at->format('d M Y') }}</span>
                     {{-- PRIV-01 — consent status at a glance. --}}
                     @if ($customer->data_consent_at)
                         <span class="osms-badge osms-badge-green"><span class="osms-badge-dot"></span> Consent on file</span>
@@ -113,7 +113,7 @@
                                       style="width:2.25rem;height:2.25rem;"><i class="bi bi-cart3"></i></span>
                                 <div>
                                     <p class="mb-0 fw-medium">Order ₹ {{ number_format($o->total_amount, 2) }}</p>
-                                    <p class="mb-0 text-muted-foreground" style="font-size:.78rem;">
+                                    <p class="mb-0 text-muted-foreground" style="font-size:var(--text-xs);">
                                         Advance ₹ {{ number_format($o->advance_paid, 2) }} ·
                                         Balance ₹ {{ number_format($o->balance_due, 2) }} ·
                                         {{ $o->created_at->format('d M Y') }}

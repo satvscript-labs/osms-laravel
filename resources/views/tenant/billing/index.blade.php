@@ -6,7 +6,7 @@
     <div class="mb-4">
         <p class="section-label mb-1">Account</p>
         <h1 class="h3 fw-semibold font-display mb-1">Subscription</h1>
-        <p class="text-muted-foreground mb-0" style="font-size:.9rem;">View your plan, billing cycle, and payment history.</p>
+        <p class="text-muted-foreground mb-0" style="font-size:var(--text-md);">View your plan, billing cycle, and payment history.</p>
     </div>
 
     @if (session('status'))
@@ -39,18 +39,18 @@
                     </span>
                 </div>
                 @if ($subscription?->cancel_at_period_end && $subscription?->current_period_end)
-                    <p class="text-warning-emphasis mb-0 mt-1" style="font-size:.82rem;">
+                    <p class="text-warning-emphasis mb-0 mt-1" style="font-size:var(--text-sm);">
                         <i class="bi bi-clock-history me-1"></i>
                         Cancels on {{ $subscription->current_period_end->format('d M Y') }}
                     </p>
                 @elseif ($subscription?->current_period_end)
-                    <p class="text-muted-foreground mb-0 mt-1" style="font-size:.82rem;">
+                    <p class="text-muted-foreground mb-0 mt-1" style="font-size:var(--text-sm);">
                         {{ $subscription->status === 'trialing' ? 'Trial ends' : 'Next billing' }}
                         {{ $subscription->current_period_end->format('d M Y') }}
                     </p>
                 @endif
                 @if ($subscription?->pending_interval)
-                    <p class="text-primary mb-0 mt-1" style="font-size:.82rem;">
+                    <p class="text-primary mb-0 mt-1" style="font-size:var(--text-sm);">
                         <i class="bi bi-arrow-repeat me-1"></i>
                         Switching to {{ ucfirst($subscription->pending_interval) }} at your next renewal.
                     </p>
@@ -121,7 +121,7 @@
                         </span>
                     </p>
 
-                    <ul class="list-unstyled d-flex flex-column gap-2 mb-4 flex-grow-1" style="font-size:.88rem;">
+                    <ul class="list-unstyled d-flex flex-column gap-2 mb-4 flex-grow-1" style="font-size:var(--text-md);">
                         @foreach ($basic['features'] as $f)
                             <li><i class="bi bi-check-circle-fill text-primary me-2"></i>{{ $f }}</li>
                         @endforeach
@@ -145,7 +145,7 @@
         <p class="section-label mb-2">Payment history</p>
         @if ($invoices->isEmpty())
             <div class="card border-0 shadow-sm rounded-4">
-                <div class="card-body p-4 text-center text-muted-foreground" style="font-size:.88rem;">
+                <div class="card-body p-4 text-center text-muted-foreground" style="font-size:var(--text-md);">
                     <i class="bi bi-receipt d-block fs-4 mb-2 text-faint"></i>
                     No payments yet. Invoices appear here after your first subscription charge.
                 </div>
@@ -153,7 +153,7 @@
         @else
             <div class="card border-0 shadow-sm rounded-4">
                 <div class="table-responsive">
-                    <table class="table align-middle mb-0" style="font-size:.88rem;">
+                    <table class="table align-middle mb-0" style="font-size:var(--text-md);">
                         <thead class="text-muted-foreground">
                             <tr>
                                 <th class="ps-4">Date</th>

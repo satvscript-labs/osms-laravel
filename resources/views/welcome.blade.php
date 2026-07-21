@@ -36,7 +36,7 @@
     {{-- Hero --}}
     <section class="container text-center py-5" style="max-width:72rem;">
         <span class="animate-fade-up d-inline-flex align-items-center gap-2 rounded-pill border bg-white bg-opacity-75 px-3 py-1 mb-4 text-muted-foreground"
-              style="font-size:.78rem;">
+              style="font-size:var(--text-xs);">
             <i class="bi bi-stars text-primary"></i> The premium SaaS built for modern optical retail
         </span>
         <h1 class="animate-fade-up display-4 fw-semibold font-display mb-3">
@@ -62,13 +62,13 @@
                         <span class="rounded-circle bg-danger opacity-50" style="width:.6rem;height:.6rem;"></span>
                         <span class="rounded-circle bg-warning opacity-50" style="width:.6rem;height:.6rem;"></span>
                         <span class="rounded-circle bg-success opacity-50" style="width:.6rem;height:.6rem;"></span>
-                        <span class="ms-2 text-muted-foreground" style="font-size:.72rem;">osms.satvscript.com/tenant</span>
+                        <span class="ms-2 text-muted-foreground" style="font-size:var(--text-xs);">osms.satvscript.com/tenant</span>
                     </div>
                     <div class="row g-3 p-4">
                         @foreach ([['Today\'s sales','₹ 42,890'],['Pending orders','12'],['Low stock','3']] as $m)
                             <div class="col-md-4">
                                 <div class="border rounded-3 bg-body p-3">
-                                    <p class="text-muted-foreground mb-1" style="font-size:.72rem;">{{ $m[0] }}</p>
+                                    <p class="text-muted-foreground mb-1" style="font-size:var(--text-xs);">{{ $m[0] }}</p>
                                     <p class="h4 fw-semibold font-display mb-0">{{ $m[1] }}</p>
                                 </div>
                             </div>
@@ -130,10 +130,10 @@
     {{-- Footer --}}
     <footer class="border-top bg-white bg-opacity-50">
         <div class="container py-4 d-flex flex-column flex-md-row align-items-center justify-content-between gap-2 text-muted-foreground"
-             style="max-width:72rem; font-size:.78rem;">
+             style="max-width:72rem; font-size:var(--text-xs);">
             <div class="d-flex align-items-center gap-2">
                 <span class="d-inline-flex align-items-center justify-content-center bg-primary text-white rounded"
-                      style="width:1.25rem;height:1.25rem;"><i class="bi bi-eye" style="font-size:.7rem;"></i></span>
+                      style="width:1.25rem;height:1.25rem;"><i class="bi bi-eye" style="font-size:var(--text-2xs);"></i></span>
                 <span class="fw-medium font-display">OSMS</span>
                 <span>· The premium optical SaaS.</span>
             </div>

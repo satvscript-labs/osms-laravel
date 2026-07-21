@@ -77,8 +77,9 @@
     </p>
 
     {{-- ============ LIVE (Alpine) results ============ --}}
+    {{-- UX-06 — announce result changes to screen readers as the list swaps. --}}
     <template x-if="mode==='live'">
-        <div>
+        <div aria-live="polite" :aria-busy="loading ? 'true' : 'false'">
             {{-- Skeleton while loading --}}
             <template x-if="loading">
                 <div class="card border-0 shadow-sm rounded-4 overflow-hidden">

@@ -4,7 +4,7 @@
 @section('content')
 <div class="p-4 p-md-5" x-data="orderBuilder()" x-init="init()">
     <a href="{{ route('tenant.orders.index') }}"
-       class="d-inline-flex align-items-center gap-1 text-muted-foreground text-decoration-none mb-3" style="font-size:.8rem;">
+       class="d-inline-flex align-items-center gap-1 text-muted-foreground text-decoration-none mb-3" style="font-size:var(--text-sm);">
         <i class="bi bi-chevron-left"></i> Back to orders
     </a>
     <p class="section-label mb-1">New order</p>
@@ -57,7 +57,7 @@
                         <div class="d-flex align-items-center justify-content-between gap-3 flex-wrap">
                             <div>
                                 <h2 class="section-label mb-1">Fulfillment</h2>
-                                <p class="text-muted-foreground mb-0" style="font-size:.75rem;"
+                                <p class="text-muted-foreground mb-0" style="font-size:var(--text-xs);"
                                    x-text="fulfillmentType === 'instant' ? 'Pay & walk out — completed on the spot' : 'Needs prep — set an estimated ready date'"></p>
                             </div>
                             <div class="segmented" role="tablist" aria-label="Fulfillment type">
@@ -161,14 +161,14 @@
                                     {{-- PRIV-01 — ticking consent auto-ticks WhatsApp opt-in (staff can untick it). --}}
                                     <input class="form-check-input" type="checkbox" id="newConsent" x-model="newConsent"
                                            @change="if (newConsent) newWhatsapp = true">
-                                    <span style="font-size:.78rem;">Consents to storing their details <span class="text-danger">*</span></span>
+                                    <span style="font-size:var(--text-xs);">Consents to storing their details <span class="text-danger">*</span></span>
                                 </label>
                                 <label class="consent-row" for="newWhatsapp">
                                     <input class="form-check-input" type="checkbox" id="newWhatsapp" x-model="newWhatsapp">
-                                    <span style="font-size:.78rem;">Agrees to WhatsApp updates</span>
+                                    <span style="font-size:var(--text-xs);">Agrees to WhatsApp updates</span>
                                 </label>
                             </div>
-                            <p class="text-muted-foreground mb-0 mt-2" style="font-size:.72rem;">
+                            <p class="text-muted-foreground mb-0 mt-2" style="font-size:var(--text-xs);">
                                 Saved when you create the order. An existing phone links to that customer.
                             </p>
                         </div>
@@ -226,7 +226,7 @@
                                         <span>
                                             <span class="fw-medium" x-text="inv.brand || '—'"></span>
                                             <span class="text-muted-foreground" x-text="inv.model_name"></span>
-                                            <span class="d-block text-muted-foreground" style="font-size:.72rem;"
+                                            <span class="d-block text-muted-foreground" style="font-size:var(--text-xs);"
                                                   x-text="inv.sku + ' · stock ' + inv.stock_qty"></span>
                                         </span>
                                         <span class="font-monospace small" x-text="money(inv.selling_price)"></span>
@@ -269,7 +269,7 @@
                                                 </button>
                                             </div>
                                         </div>
-                                        <p class="text-muted-foreground mb-0 mt-2" style="font-size:.72rem;">
+                                        <p class="text-muted-foreground mb-0 mt-2" style="font-size:var(--text-xs);">
                                             Not tracked in inventory — no stock is drawn down. Counts toward the order total.
                                         </p>
                                     </div>
@@ -283,7 +283,7 @@
 
                         <div class="table-responsive" x-cloak x-show="items.length">
                             <table class="table align-top mb-0">
-                                <thead class="text-muted-foreground text-uppercase" style="font-size:.68rem;letter-spacing:.04em;">
+                                <thead class="text-muted-foreground text-uppercase" style="font-size:var(--text-2xs);letter-spacing:.04em;">
                                     <tr>
                                         <th>Item</th>
                                         <th class="text-center" style="width:7.5rem;">Qty</th>
@@ -298,12 +298,12 @@
                                             <td>
                                                 <span class="fw-medium d-block" x-text="it.label"></span>
                                                 <template x-if="it.custom">
-                                                    <span class="osms-badge osms-badge-blue" style="font-size:.6rem;">
+                                                    <span class="osms-badge osms-badge-blue" style="font-size:var(--text-3xs);">
                                                         <span class="osms-badge-dot"></span> Local item
                                                     </span>
                                                 </template>
                                                 <template x-if="!it.custom">
-                                                    <span class="text-faint" style="font-size:.7rem;" x-text="'List ' + money(it.list_price)"></span>
+                                                    <span class="text-faint" style="font-size:var(--text-2xs);" x-text="'List ' + money(it.list_price)"></span>
                                                 </template>
                                                 {{-- FT-TaxInvoice — opt this line into the formal tax invoice
                                                      (separate from the regular receipt, which always includes everything). --}}
@@ -336,7 +336,7 @@
                                                 <div class="text-end mt-1" style="height:.9rem;">
                                                     <button type="button" x-show="it.unit_price != it.list_price"
                                                             class="btn btn-link btn-sm p-0 text-decoration-none text-muted-foreground"
-                                                            style="font-size:.68rem;" @click="it.unit_price = it.list_price">
+                                                            style="font-size:var(--text-2xs);" @click="it.unit_price = it.list_price">
                                                         <i class="bi bi-arrow-counterclockwise"></i> reset to list
                                                     </button>
                                                 </div>
@@ -390,9 +390,9 @@
                                    x-model.number="discountValue" @input="normaliseDiscount()" @blur="normaliseDiscount()"
                                    placeholder="0" aria-label="Discount value">
                         </div>
-                        <p x-cloak x-show="discountAmount() > 0" class="text-success mb-0 mt-1" style="font-size:.7rem;"
+                        <p x-cloak x-show="discountAmount() > 0" class="text-success mb-0 mt-1" style="font-size:var(--text-2xs);"
                            x-text="savingsLabel()"></p>
-                        <p x-cloak x-show="discountCapped()" class="text-faint mb-0 mt-1" style="font-size:.68rem;"
+                        <p x-cloak x-show="discountCapped()" class="text-faint mb-0 mt-1" style="font-size:var(--text-2xs);"
                            x-text="unit === '%' ? 'Capped at 100%' : 'Capped at the subtotal (' + money(subtotal()) + ')'"></p>
                     </div>
 
@@ -419,7 +419,7 @@
                     </div>
 
                     <div class="bg-primary-subtle rounded-3 p-3 mt-3">
-                        <p class="text-uppercase text-primary mb-1" style="font-size:.68rem;letter-spacing:.05em;">Balance due</p>
+                        <p class="text-uppercase text-primary mb-1" style="font-size:var(--text-2xs);letter-spacing:.05em;">Balance due</p>
                         <p class="h4 fw-semibold font-display mb-0" x-animate-number="balance()">₹ 0.00</p>
                     </div>
 

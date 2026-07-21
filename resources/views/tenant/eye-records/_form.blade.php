@@ -30,12 +30,12 @@
     {{-- Patient & examination header --}}
     <div class="card border-0 shadow-sm rounded-4">
         <div class="card-body p-4">
-            <p class="text-uppercase text-muted-foreground mb-3" style="font-size:.72rem;letter-spacing:.05em;">Examination details</p>
+            <p class="text-uppercase text-muted-foreground mb-3" style="font-size:var(--text-xs);letter-spacing:.05em;">Examination details</p>
             <div class="row g-3">
                 <div class="col-sm-4">
                     <label for="name" class="form-label small fw-medium mb-2">Customer name</label>
                     <input id="name" type="text" class="form-control" value="{{ $customer->name }}" disabled>
-                    <div class="text-muted-foreground" style="font-size:.75rem;margin-top:.25rem;">{{ $customer->phone }}</div>
+                    <div class="text-muted-foreground" style="font-size:var(--text-xs);margin-top:.25rem;">{{ $customer->phone }}</div>
                 </div>
                 <div class="col-sm-4">
                     <label for="contact" class="form-label small fw-medium mb-2">Contact number</label>
@@ -54,15 +54,15 @@
     <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
         <div class="card-body p-0">
             <div class="table-responsive">
-                <table class="table align-middle mb-0" style="font-size:.9rem;">
-                    <thead class="text-muted-foreground text-uppercase bg-light" style="font-size:.7rem;letter-spacing:.03em;">
+                <table class="table align-middle mb-0" style="font-size:var(--text-md);">
+                    <thead class="text-muted-foreground text-uppercase bg-light" style="font-size:var(--text-2xs);letter-spacing:.03em;">
                         <tr>
                             <th class="ps-4" style="width:8rem;">Measurement</th>
                             <th colspan="4" class="text-center py-3">RIGHT EYE (OD)</th>
                             <th colspan="4" class="text-center py-3 border-start">LEFT EYE (OS)</th>
                             <th class="pe-4"></th>
                         </tr>
-                        <tr style="border-top:1px solid #e2e6ec;">
+                        <tr style="border-top:1px solid var(--osms-border);">
                             <th class="ps-4 py-2"></th>
                             <th class="text-center" style="width:6rem;">SPH</th>
                             <th class="text-center" style="width:6rem;">CYL</th>
@@ -78,7 +78,7 @@
                     <tbody>
                         {{-- Distance Vision (D.V.) --}}
                         <tr class="eye-record-row">
-                            <td class="ps-4 fw-medium text-muted-foreground" style="font-size:.85rem;">D.V.</td>
+                            <td class="ps-4 fw-medium text-muted-foreground" style="font-size:var(--text-sm);">D.V.</td>
                             <td class="text-center"><input type="text" inputmode="text" data-step="0.25" name="od_sph" value="{{ $val('od_sph') }}" class="form-control form-control-sm text-center is-numeric @error('od_sph') is-invalid @enderror" placeholder="—" tabindex="2"></td>
                             <td class="text-center"><input type="text" inputmode="text" data-step="0.25" name="od_cyl" value="{{ $val('od_cyl') }}" class="form-control form-control-sm text-center is-numeric @error('od_cyl') is-invalid @enderror" placeholder="—" tabindex="3"></td>
                             <td class="text-center"><input type="text" inputmode="text" data-step="1" name="od_axis" value="{{ $val('od_axis') }}" class="form-control form-control-sm text-center is-numeric @error('od_axis') is-invalid @enderror" placeholder="—" tabindex="4"></td>
@@ -87,27 +87,27 @@
                             <td class="text-center"><input type="text" inputmode="text" data-step="0.25" name="os_cyl" value="{{ $val('os_cyl') }}" class="form-control form-control-sm text-center is-numeric @error('os_cyl') is-invalid @enderror" placeholder="—" tabindex="9"></td>
                             <td class="text-center"><input type="text" inputmode="text" data-step="1" name="os_axis" value="{{ $val('os_axis') }}" class="form-control form-control-sm text-center is-numeric @error('os_axis') is-invalid @enderror" placeholder="—" tabindex="10"></td>
                             <td class="text-center"><input type="text" name="os_va" value="{{ $val('os_va') }}" class="form-control form-control-sm text-center @error('os_va') is-invalid @enderror" placeholder="6/6" tabindex="11"></td>
-                            <td class="pe-4 text-muted-foreground" style="font-size:.7rem;opacity:.6;">Distance</td>
+                            <td class="pe-4 text-muted-foreground" style="font-size:var(--text-2xs);opacity:.6;">Distance</td>
                         </tr>
 
                         {{-- Near Vision (N.V.) --}}
                         <tr class="eye-record-row">
-                            <td class="ps-4 fw-medium text-muted-foreground" style="font-size:.85rem;">N.V.</td>
+                            <td class="ps-4 fw-medium text-muted-foreground" style="font-size:var(--text-sm);">N.V.</td>
                             <td class="text-center"><input type="text" inputmode="text" data-step="0.25" name="od_nv" value="{{ $val('od_nv') }}" class="form-control form-control-sm text-center is-numeric @error('od_nv') is-invalid @enderror" placeholder="—" tabindex="6"></td>
                             <td class="text-center" colspan="3"></td>
                             <td class="text-center border-start"><input type="text" inputmode="text" data-step="0.25" name="os_nv" value="{{ $val('os_nv') }}" class="form-control form-control-sm text-center is-numeric @error('os_nv') is-invalid @enderror" placeholder="—" tabindex="12"></td>
                             <td class="text-center" colspan="3"></td>
-                            <td class="pe-4 text-muted-foreground" style="font-size:.7rem;opacity:.6;">Near</td>
+                            <td class="pe-4 text-muted-foreground" style="font-size:var(--text-2xs);opacity:.6;">Near</td>
                         </tr>
 
                         {{-- Addition (ADD) --}}
                         <tr class="eye-record-row">
-                            <td class="ps-4 fw-medium text-muted-foreground" style="font-size:.85rem;">ADD</td>
+                            <td class="ps-4 fw-medium text-muted-foreground" style="font-size:var(--text-sm);">ADD</td>
                             <td class="text-center"><input type="text" inputmode="text" data-step="0.25" name="od_add" value="{{ $val('od_add') }}" class="form-control form-control-sm text-center is-numeric @error('od_add') is-invalid @enderror" placeholder="—" tabindex="7"></td>
                             <td class="text-center" colspan="3"></td>
                             <td class="text-center border-start"><input type="text" inputmode="text" data-step="0.25" name="os_add" value="{{ $val('os_add') }}" class="form-control form-control-sm text-center is-numeric @error('os_add') is-invalid @enderror" placeholder="—" tabindex="13"></td>
                             <td class="text-center" colspan="3"></td>
-                            <td class="pe-4 text-muted-foreground" style="font-size:.7rem;opacity:.6;">Addition</td>
+                            <td class="pe-4 text-muted-foreground" style="font-size:var(--text-2xs);opacity:.6;">Addition</td>
                         </tr>
                     </tbody>
                 </table>
@@ -121,7 +121,7 @@
             <label for="pd" class="form-label small fw-medium mb-2">PD (mm)</label>
             <input id="pd" name="pd" type="number" min="0" max="100" step="0.5"
                    value="{{ $val('pd') }}" class="form-control @error('pd') is-invalid @enderror" placeholder="62" tabindex="14">
-            <div class="text-muted-foreground" style="font-size:.7rem;margin-top:.3rem;">Pupillary distance</div>
+            <div class="text-muted-foreground" style="font-size:var(--text-2xs);margin-top:.3rem;">Pupillary distance</div>
         </div>
         <div class="col-sm-9">
             <label for="notes" class="form-label small fw-medium mb-2">Clinical notes</label>
@@ -147,7 +147,7 @@
         background-color: var(--osms-primary-soft);
     }
     .eye-record-row input.form-control {
-        border-color: #e2e6ec;
+        border-color: var(--osms-border);
         transition: all 150ms ease-out;
     }
     .eye-record-row input.form-control:focus {
@@ -155,7 +155,7 @@
         box-shadow: 0 0 0 3px rgba(0, 79, 117, 0.1);
     }
     .table thead th {
-        border-bottom: 2px solid #e2e6ec;
+        border-bottom: 2px solid var(--osms-border);
         padding: 0.75rem 0.5rem;
     }
 

@@ -81,7 +81,7 @@
             <label for="selling_price" class="form-label small fw-medium mb-1">Selling price (₹) *</label>
             <input id="selling_price" name="selling_price" type="number" step="0.01" min="0" max="99999999" inputmode="decimal" required
                    value="{{ $val('selling_price') }}" class="form-control @error('selling_price') is-invalid @enderror">
-            <div id="marginWarning" class="d-none align-items-center gap-1 mt-1 text-warning" style="font-size:.72rem;">
+            <div id="marginWarning" class="d-none align-items-center gap-1 mt-1 text-warning" style="font-size:var(--text-xs);">
                 <i class="bi bi-exclamation-triangle-fill"></i>
                 <span>Selling price is below cost — this item will sell at a loss.</span>
             </div>

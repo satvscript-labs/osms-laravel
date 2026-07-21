@@ -59,7 +59,7 @@
                     @php $bday = old('birthday', optional($customer->birthday ?? null)->format('Y-m-d')); @endphp
                     <input id="birthday" name="birthday" type="date" max="{{ now()->toDateString() }}" value="{{ $bday }}"
                            class="form-control @error('birthday') is-invalid @enderror">
-                    <div class="text-muted-foreground" style="font-size:.7rem;margin-top:.25rem;">We'll calculate the age</div>
+                    <div class="text-muted-foreground" style="font-size:var(--text-2xs);margin-top:.25rem;">We'll calculate the age</div>
                     @error('birthday')<div class="invalid-feedback">{{ $message }}</div>@enderror
                 </div>
                 <div class="col-sm-4">
@@ -101,7 +101,7 @@
                 </label>
                 @error('data_consent')<div class="small text-danger px-2">{{ $message }}</div>@enderror
                 @if ($isEdit && $customer->isMinor())
-                    <p class="mb-0 mt-1 px-2 fw-semibold" style="font-size:.7rem; color: var(--tone-amber);">
+                    <p class="mb-0 mt-1 px-2 fw-semibold" style="font-size:var(--text-2xs); color: var(--tone-amber);">
                         <i class="bi bi-exclamation-triangle me-1"></i>Under 18 — record the guardian's consent.
                     </p>
                 @endif

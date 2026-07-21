@@ -4,7 +4,7 @@
 @section('content')
 <div class="p-4 p-md-5" style="max-width:54rem;">
     <a href="{{ route('tenant.inventory.index') }}"
-       class="d-inline-flex align-items-center gap-1 text-muted-foreground text-decoration-none mb-3" style="font-size:.8rem;">
+       class="d-inline-flex align-items-center gap-1 text-muted-foreground text-decoration-none mb-3" style="font-size:var(--text-sm);">
         <i class="bi bi-chevron-left"></i> Back to inventory
     </a>
     <p class="section-label mb-1">New item</p>

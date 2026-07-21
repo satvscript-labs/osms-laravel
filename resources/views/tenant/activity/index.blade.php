@@ -9,7 +9,7 @@
         <p class="text-muted-foreground mb-0 text-md">Who changed or deleted records, newest first. Append-only.</p>
     </div>
 
-    <div class="card border-0 shadow-sm rounded-4">
+    <div class="card border-0 shadow-sm rounded-4 stagger">
         <div class="table-responsive">
             <table class="table align-middle mb-0">
                 <thead class="text-muted-foreground text-xs">

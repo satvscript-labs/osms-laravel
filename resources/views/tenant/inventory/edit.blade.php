@@ -4,14 +4,14 @@
 @section('content')
 <div class="p-4 p-md-5" style="max-width:54rem;">
     <a href="{{ route('tenant.inventory.index') }}"
-       class="d-inline-flex align-items-center gap-1 text-muted-foreground text-decoration-none mb-3" style="font-size:.8rem;">
+       class="d-inline-flex align-items-center gap-1 text-muted-foreground text-decoration-none mb-3" style="font-size:var(--text-sm);">
         <i class="bi bi-chevron-left"></i> Back to inventory
     </a>
     <div class="d-flex align-items-start justify-content-between gap-3">
         <div>
             <p class="section-label mb-1">Edit item</p>
             <h1 class="h3 fw-semibold font-display mb-1">{{ $item->brand }} {{ $item->model_name }}</h1>
-            <p class="text-muted-foreground mb-4 font-monospace" style="font-size:.82rem;">{{ $item->sku }}</p>
+            <p class="text-muted-foreground mb-4 font-monospace" style="font-size:var(--text-sm);">{{ $item->sku }}</p>
         </div>
         <div class="dropdown">
             <button class="btn btn-light" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="More actions">
@@ -54,12 +54,12 @@
                     </button>
                 </div>
             </div>
-            <p class="text-muted-foreground mb-3" style="font-size:.82rem;">
+            <p class="text-muted-foreground mb-3" style="font-size:var(--text-sm);">
                 A Code128 label for shelf / item tagging. Saves and prints as
                 <span class="font-monospace">{{ $item->sku }}</span>.
             </p>
             <div id="barcodeLabel" class="d-inline-flex flex-column align-items-center border rounded-3 p-3 bg-white">
-                <div class="fw-medium mb-1" style="font-size:.8rem;">{{ trim(($item->brand ?? '') . ' ' . $item->model_name) }}</div>
+                <div class="fw-medium mb-1" style="font-size:var(--text-sm);">{{ trim(($item->brand ?? '') . ' ' . $item->model_name) }}</div>
                 <svg id="barcodeSvg" aria-label="Barcode for {{ $item->sku }}"></svg>
             </div>
         </div>
@@ -70,11 +70,11 @@
         <div class="card-body p-4">
             <div class="d-flex align-items-center justify-content-between mb-1">
                 <p class="section-label mb-0">Adjust stock</p>
-                <span class="text-muted-foreground" style="font-size:.8rem;">
+                <span class="text-muted-foreground" style="font-size:var(--text-sm);">
                     Current: <span class="fw-semibold font-monospace">{{ $item->stock_qty }}</span>
                 </span>
             </div>
-            <p class="text-muted-foreground mb-3" style="font-size:.82rem;">
+            <p class="text-muted-foreground mb-3" style="font-size:var(--text-sm);">
                 Record damage, loss, or a physical recount. Every change is logged below with a reason.
             </p>
 
@@ -106,11 +106,11 @@
         <div class="card-body p-4">
             <p class="section-label mb-3">Stock movement history</p>
             @if ($movements->isEmpty())
-                <p class="text-muted-foreground mb-0" style="font-size:.85rem;">No stock movements recorded yet.</p>
+                <p class="text-muted-foreground mb-0" style="font-size:var(--text-sm);">No stock movements recorded yet.</p>
             @else
                 <div class="table-responsive">
-                    <table class="table align-middle mb-0" style="font-size:.86rem;">
-                        <thead class="text-muted-foreground text-uppercase" style="font-size:.68rem;letter-spacing:.04em;">
+                    <table class="table align-middle mb-0" style="font-size:var(--text-sm);">
+                        <thead class="text-muted-foreground text-uppercase" style="font-size:var(--text-2xs);letter-spacing:.04em;">
                             <tr>
                                 <th>Date</th>
                                 <th>Type</th>

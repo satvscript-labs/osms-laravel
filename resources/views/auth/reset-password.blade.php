@@ -3,7 +3,7 @@
 
 @section('content')
     <h1 class="h4 fw-semibold font-display mb-1">Set a new password</h1>
-    <p class="text-muted-foreground mb-4" style="font-size:.875rem;">Choose a strong password for your account.</p>
+    <p class="text-muted-foreground mb-4" style="font-size:var(--text-md);">Choose a strong password for your account.</p>
 
     @if ($errors->any())
         <div class="alert alert-danger py-2 px-3 small rounded-3">{{ $errors->first() }}</div>

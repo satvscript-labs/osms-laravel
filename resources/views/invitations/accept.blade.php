@@ -4,7 +4,7 @@
 @section('content')
     <div class="text-center mb-4">
         <h1 class="h4 fw-semibold font-display mb-1">Join {{ $tenant?->store_name ?? 'the team' }}</h1>
-        <p class="text-muted-foreground mb-0" style="font-size:.88rem;">
+        <p class="text-muted-foreground mb-0" style="font-size:var(--text-md);">
             You've been invited as {{ $invitation->role === 'store_admin' ? 'an admin' : 'a staff member' }}.
             Set your password to get started.
         </p>

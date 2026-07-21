@@ -9,7 +9,7 @@
 
 @section('content')
 <div class="p-4 p-md-5">
-    <a href="{{ route('superadmin.tenants.index') }}" class="text-decoration-none text-muted-foreground d-inline-flex align-items-center gap-1 mb-3" style="font-size:.82rem;">
+    <a href="{{ route('superadmin.tenants.index') }}" class="text-decoration-none text-muted-foreground d-inline-flex align-items-center gap-1 mb-3" style="font-size:var(--text-sm);">
         <i class="bi bi-arrow-left"></i> All stores
     </a>
 
@@ -35,21 +35,21 @@
             <div class="card border-0 shadow-sm rounded-4 mb-4">
                 <div class="card-body p-4">
                     <p class="section-label mb-3">Store details</p>
-                    <div class="row g-3" style="font-size:.88rem;">
+                    <div class="row g-3" style="font-size:var(--text-md);">
                         <div class="col-md-6">
-                            <p class="text-muted-foreground mb-0" style="font-size:.75rem;">Owner</p>
+                            <p class="text-muted-foreground mb-0" style="font-size:var(--text-xs);">Owner</p>
                             <p class="fw-medium mb-0">{{ $owner?->email ?? '—' }}</p>
                         </div>
                         <div class="col-md-6">
-                            <p class="text-muted-foreground mb-0" style="font-size:.75rem;">GST / Tax ID</p>
+                            <p class="text-muted-foreground mb-0" style="font-size:var(--text-xs);">GST / Tax ID</p>
                             <p class="fw-medium mb-0">{{ $tenant->tax_id ?: '—' }}</p>
                         </div>
                         <div class="col-md-6">
-                            <p class="text-muted-foreground mb-0" style="font-size:.75rem;">Address</p>
+                            <p class="text-muted-foreground mb-0" style="font-size:var(--text-xs);">Address</p>
                             <p class="fw-medium mb-0">{{ $tenant->address ?: '—' }}</p>
                         </div>
                         <div class="col-md-6">
-                            <p class="text-muted-foreground mb-0" style="font-size:.75rem;">Joined</p>
+                            <p class="text-muted-foreground mb-0" style="font-size:var(--text-xs);">Joined</p>
                             <p class="fw-medium mb-0">{{ $tenant->created_at?->format('d M Y') }}</p>
                         </div>
                     </div>
@@ -61,21 +61,21 @@
                 <div class="card-body p-4">
                     <p class="section-label mb-3">Subscription</p>
 
-                    <div class="row g-3 mb-4" style="font-size:.88rem;">
+                    <div class="row g-3 mb-4" style="font-size:var(--text-md);">
                         <div class="col-6 col-md-3">
-                            <p class="text-muted-foreground mb-0" style="font-size:.75rem;">Tier</p>
+                            <p class="text-muted-foreground mb-0" style="font-size:var(--text-xs);">Tier</p>
                             <p class="fw-medium mb-0 text-capitalize">{{ $s?->tier ?? '—' }}</p>
                         </div>
                         <div class="col-6 col-md-3">
-                            <p class="text-muted-foreground mb-0" style="font-size:.75rem;">Interval</p>
+                            <p class="text-muted-foreground mb-0" style="font-size:var(--text-xs);">Interval</p>
                             <p class="fw-medium mb-0 text-capitalize">{{ $s?->interval ?? '—' }}</p>
                         </div>
                         <div class="col-6 col-md-3">
-                            <p class="text-muted-foreground mb-0" style="font-size:.75rem;">Period ends</p>
+                            <p class="text-muted-foreground mb-0" style="font-size:var(--text-xs);">Period ends</p>
                             <p class="fw-medium mb-0">{{ $s?->current_period_end?->format('d M Y') ?? '—' }}</p>
                         </div>
                         <div class="col-6 col-md-3">
-                            <p class="text-muted-foreground mb-0" style="font-size:.75rem;">Razorpay</p>
+                            <p class="text-muted-foreground mb-0" style="font-size:var(--text-xs);">Razorpay</p>
                             <p class="fw-medium mb-0">{{ $s?->razorpay_subscription_id ? 'linked' : '—' }}</p>
                         </div>
                     </div>
@@ -84,7 +84,7 @@
                     <div class="row g-3">
                         <div class="col-md-6">
                             <div class="border rounded-4 p-3 h-100">
-                                <p class="fw-semibold mb-2" style="font-size:.85rem;"><i class="bi bi-hourglass-split me-1 text-warning"></i> Extend trial</p>
+                                <p class="fw-semibold mb-2" style="font-size:var(--text-sm);"><i class="bi bi-hourglass-split me-1 text-warning"></i> Extend trial</p>
                                 <form method="POST" action="{{ route('superadmin.subscription.extend-trial', $tenant) }}" class="d-flex gap-2">
                                     @csrf
                                     <input type="number" name="days" min="1" max="365" value="14" class="form-control" required style="max-width:100px;">
@@ -94,7 +94,7 @@
                         </div>
                         <div class="col-md-6">
                             <div class="border rounded-4 p-3 h-100">
-                                <p class="fw-semibold mb-2" style="font-size:.85rem;"><i class="bi bi-gift me-1 text-primary"></i> Grant free access</p>
+                                <p class="fw-semibold mb-2" style="font-size:var(--text-sm);"><i class="bi bi-gift me-1 text-primary"></i> Grant free access</p>
                                 <form method="POST" action="{{ route('superadmin.subscription.activate', $tenant) }}" class="d-flex gap-2">
                                     @csrf
                                     <input type="number" name="months" min="1" max="60" value="1" class="form-control" required style="max-width:80px;">
@@ -110,7 +110,7 @@
 
                     {{-- Advanced edit --}}
                     <details class="mt-4">
-                        <summary class="fw-semibold" style="font-size:.85rem;cursor:pointer;">Advanced: edit raw subscription</summary>
+                        <summary class="fw-semibold" style="font-size:var(--text-sm);cursor:pointer;">Advanced: edit raw subscription</summary>
                         <form method="POST" action="{{ route('superadmin.subscription.update', $tenant) }}" class="row g-3 mt-1">
                             @csrf @method('PATCH')
                             <div class="col-md-4">
@@ -173,7 +173,7 @@
                 <div class="card-body p-4">
                     <p class="section-label mb-3">Payment history</p>
                     @forelse ($tenant->subscriptionInvoices as $inv)
-                        <div class="d-flex align-items-center justify-content-between py-2 border-bottom" style="font-size:.85rem;">
+                        <div class="d-flex align-items-center justify-content-between py-2 border-bottom" style="font-size:var(--text-sm);">
                             <div>
                                 <span class="fw-medium">₹ {{ number_format($inv->amount, 2) }}</span>
                                 <span class="badge text-bg-success ms-1">{{ $inv->status }}</span>
@@ -181,7 +181,7 @@
                             <span class="text-muted-foreground">{{ ($inv->paid_at ?? $inv->created_at)?->format('d M Y') }}</span>
                         </div>
                     @empty
-                        <p class="text-muted-foreground text-center py-3 mb-0" style="font-size:.85rem;">No payments yet.</p>
+                        <p class="text-muted-foreground text-center py-3 mb-0" style="font-size:var(--text-sm);">No payments yet.</p>
                     @endforelse
                 </div>
             </div>
@@ -193,7 +193,7 @@
             <div class="card border-0 shadow-sm rounded-4 mb-4">
                 <div class="card-body p-4">
                     <p class="section-label mb-2">Internal notes</p>
-                    <p class="text-muted-foreground mb-3" style="font-size:.8rem;">Private — never shown to the store.</p>
+                    <p class="text-muted-foreground mb-3" style="font-size:var(--text-sm);">Private — never shown to the store.</p>
                     <form method="POST" action="{{ route('superadmin.tenants.notes', $tenant) }}">
                         @csrf @method('PATCH')
                         <textarea name="internal_notes" rows="5" class="form-control mb-2" placeholder="e.g. Called on 3 Jul, wants annual plan…">{{ $tenant->internal_notes }}</textarea>
@@ -207,10 +207,10 @@
                 <div class="card-body p-4">
                     <p class="section-label mb-3">Team ({{ $tenant->users->count() }})</p>
                     @foreach ($tenant->users as $u)
-                        <div class="d-flex align-items-center gap-2 py-1" style="font-size:.85rem;">
+                        <div class="d-flex align-items-center gap-2 py-1" style="font-size:var(--text-sm);">
                             <div class="flex-grow-1 min-w-0">
                                 <p class="mb-0 fw-medium text-truncate">{{ $u->name }}</p>
-                                <p class="mb-0 text-muted-foreground text-truncate" style="font-size:.75rem;">{{ $u->email }}</p>
+                                <p class="mb-0 text-muted-foreground text-truncate" style="font-size:var(--text-xs);">{{ $u->email }}</p>
                             </div>
                             <span class="badge {{ $u->role === 'store_admin' ? 'text-bg-primary' : 'text-bg-secondary' }}">{{ $u->role === 'store_admin' ? 'admin' : 'staff' }}</span>
                         </div>
@@ -223,14 +223,14 @@
                 <div class="card-body p-4">
                     <p class="section-label mb-3">Activity on this store</p>
                     @forelse ($tenant->auditLogs as $log)
-                        <div class="py-2 border-bottom" style="font-size:.82rem;">
+                        <div class="py-2 border-bottom" style="font-size:var(--text-sm);">
                             <p class="mb-0 fw-medium">{{ $log->description }}</p>
-                            <p class="mb-0 text-muted-foreground" style="font-size:.72rem;">
+                            <p class="mb-0 text-muted-foreground" style="font-size:var(--text-xs);">
                                 {{ $log->admin_email ?? 'system' }} · {{ $log->created_at?->diffForHumans() }}
                             </p>
                         </div>
                     @empty
-                        <p class="text-muted-foreground text-center py-3 mb-0" style="font-size:.85rem;">No admin actions yet.</p>
+                        <p class="text-muted-foreground text-center py-3 mb-0" style="font-size:var(--text-sm);">No admin actions yet.</p>
                     @endforelse
                 </div>
             </div>

@@ -7,7 +7,7 @@
         <div>
             <p class="section-label mb-1">Platform</p>
             <h1 class="h3 fw-semibold font-display mb-1">Stores</h1>
-            <p class="text-muted-foreground mb-0" style="font-size:.9rem;">Every store on OSMS. Click one to manage its subscription.</p>
+            <p class="text-muted-foreground mb-0" style="font-size:var(--text-md);">Every store on OSMS. Click one to manage its subscription.</p>
         </div>
     </div>
 
@@ -27,10 +27,10 @@
         </select>
     </div>
 
-    <div class="card border-0 shadow-sm rounded-4">
+    <div class="card border-0 shadow-sm rounded-4 stagger">
         <div class="table-responsive">
             <table class="table align-middle mb-0 osms-orders-table">
-                <thead class="text-muted-foreground" style="font-size:.76rem;">
+                <thead class="text-muted-foreground" style="font-size:var(--text-xs);">
                     <tr>
                         <th class="ps-4">Store</th>
                         <th>Status</th>
@@ -49,7 +49,7 @@
                                     <span x-text="t.name"></span>
                                     <span class="badge text-bg-light border" x-show="t.manual" title="Manually managed">manual</span>
                                 </div>
-                                <div class="text-muted-foreground" style="font-size:.75rem;" x-text="t.owner_email || '—'"></div>
+                                <div class="text-muted-foreground" style="font-size:var(--text-xs);" x-text="t.owner_email || '—'"></div>
                             </td>
                             <td>
                                 <span class="badge"
@@ -59,7 +59,7 @@
                                         'text-bg-secondary': t.status === 'canceled' || t.status === 'none',
                                       }"
                                       x-text="t.status"></span>
-                                <span class="text-muted-foreground ms-1" style="font-size:.72rem;"
+                                <span class="text-muted-foreground ms-1" style="font-size:var(--text-xs);"
                                       x-show="t.status === 'trialing' && t.trial_days_left !== null"
                                       x-text="'· ' + t.trial_days_left + 'd left'"></span>
                             </td>
@@ -80,7 +80,7 @@
         </div>
     </div>
 
-    <p class="text-muted-foreground mt-2" style="font-size:.78rem;">
+    <p class="text-muted-foreground mt-2" style="font-size:var(--text-xs);">
         <span x-text="filtered.length"></span> of <span x-text="stores.length"></span> stores
     </p>
 </div>

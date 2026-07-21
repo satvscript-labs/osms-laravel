@@ -10,7 +10,7 @@
             <h1 class="h4 fw-semibold font-display mb-2">Complete your subscription</h1>
             <p class="text-muted-foreground mb-4">You're subscribing to the <strong class="text-capitalize">{{ $tier }}</strong> plan.</p>
             <button id="payBtn" class="btn btn-primary btn-lg px-4"><i class="bi bi-lock me-1"></i> Pay with Razorpay</button>
-            <p class="text-muted-foreground mt-3 mb-0" style="font-size:.8rem;">Secured by Razorpay</p>
+            <p class="text-muted-foreground mt-3 mb-0" style="font-size:var(--text-sm);">Secured by Razorpay</p>
         </div>
     </div>
 </div>

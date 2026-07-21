@@ -3,7 +3,7 @@
 
 @section('content')
     <h1 class="h4 fw-semibold font-display mb-1">Create your account</h1>
-    <p class="text-muted-foreground mb-4" style="font-size:.875rem;">Start managing your optical store.</p>
+    <p class="text-muted-foreground mb-4" style="font-size:var(--text-md);">Start managing your optical store.</p>
 
     @if ($errors->any())
         <div class="alert alert-danger py-2 px-3 small rounded-3">

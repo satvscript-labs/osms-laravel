@@ -6,7 +6,7 @@
     <div class="mb-4">
         <p class="section-label mb-1">Platform</p>
         <h1 class="h3 fw-semibold font-display mb-1">Overview</h1>
-        <p class="text-muted-foreground mb-0" style="font-size:.9rem;">How the OSMS business is doing across all stores.</p>
+        <p class="text-muted-foreground mb-0" style="font-size:var(--text-md);">How the OSMS business is doing across all stores.</p>
     </div>
 
     {{-- KPIs --}}
@@ -58,14 +58,14 @@
                                   style="width:2.25rem;height:2.25rem;"><i class="bi bi-hourglass-bottom"></i></span>
                             <div class="flex-grow-1 min-w-0">
                                 <p class="mb-0 fw-medium text-truncate">{{ $s->tenant?->store_name ?? '—' }}</p>
-                                <p class="mb-0 text-muted-foreground" style="font-size:.8rem;">
+                                <p class="mb-0 text-muted-foreground" style="font-size:var(--text-sm);">
                                     {{ $s->trialDaysLeft() === 0 ? 'Ends today' : $s->trialDaysLeft() . ' day' . ($s->trialDaysLeft() === 1 ? '' : 's') . ' left' }}
                                 </p>
                             </div>
                             <i class="bi bi-chevron-right text-faint"></i>
                         </a>
                     @empty
-                        <p class="text-muted-foreground text-center py-4 mb-0" style="font-size:.85rem;">No trials ending in the next 3 days.</p>
+                        <p class="text-muted-foreground text-center py-4 mb-0" style="font-size:var(--text-sm);">No trials ending in the next 3 days.</p>
                     @endforelse
                 </div>
             </div>
@@ -83,13 +83,13 @@
                                   style="width:2.25rem;height:2.25rem;">{{ strtoupper(substr($t->store_name, 0, 1)) }}</span>
                             <div class="flex-grow-1 min-w-0">
                                 <p class="mb-0 fw-medium text-truncate">{{ $t->store_name }}</p>
-                                <p class="mb-0 text-muted-foreground" style="font-size:.8rem;">{{ $t->created_at?->format('d M Y') }}</p>
+                                <p class="mb-0 text-muted-foreground" style="font-size:var(--text-sm);">{{ $t->created_at?->format('d M Y') }}</p>
                             </div>
                             @php $st = $t->subscription?->status; @endphp
                             <span class="badge {{ in_array($st, ['active','trialing']) ? 'text-bg-success' : 'text-bg-secondary' }}">{{ $st ?? 'none' }}</span>
                         </a>
                     @empty
-                        <p class="text-muted-foreground text-center py-4 mb-0" style="font-size:.85rem;">No stores yet.</p>
+                        <p class="text-muted-foreground text-center py-4 mb-0" style="font-size:var(--text-sm);">No stores yet.</p>
                     @endforelse
                 </div>
             </div>

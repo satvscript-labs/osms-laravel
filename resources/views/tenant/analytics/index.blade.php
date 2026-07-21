@@ -103,7 +103,7 @@
             </div>
 
             @if (($stats['uncostedLines'] ?? 0) > 0)
-                <p class="text-muted-foreground mb-4" style="font-size:.75rem;">
+                <p class="text-muted-foreground mb-4" style="font-size:var(--text-xs);">
                     <i class="bi bi-info-circle me-1"></i>{{ $stats['uncostedLines'] }} sold
                     {{ Str::plural('line', $stats['uncostedLines']) }} {{ $stats['uncostedLines'] === 1 ? 'has' : 'have' }}
                     no recorded cost price — excluded from COGS, profit &amp; margin (revenue still counts).
@@ -116,12 +116,12 @@
                     <div class="d-flex flex-wrap align-items-start justify-content-between gap-3 mb-3">
                         <div>
                             <h3 class="section-label mb-1">Collected by payment method</h3>
-                            <p class="text-muted-foreground mb-0" style="font-size:.78rem;">
+                            <p class="text-muted-foreground mb-0" style="font-size:var(--text-xs);">
                                 Money actually received in this range — reconcile it with your cash drawer and each channel.
                             </p>
                         </div>
                         <div class="text-end">
-                            <p class="text-uppercase text-muted-foreground mb-0" style="font-size:.6rem;letter-spacing:.05em;">Total collected</p>
+                            <p class="text-uppercase text-muted-foreground mb-0" style="font-size:var(--text-3xs);letter-spacing:.05em;">Total collected</p>
                             <p class="h4 fw-semibold font-display font-monospace mb-0">{{ $money($collectedTotal) }}</p>
                         </div>
                     </div>
@@ -151,7 +151,7 @@
                                         <div class="progress-bar bg-primary" role="progressbar" style="width: {{ $pct }}%"
                                              aria-valuenow="{{ (int) $pct }}" aria-valuemin="0" aria-valuemax="100"></div>
                                     </div>
-                                    <p class="text-muted-foreground mb-0 mt-1" style="font-size:.68rem;">{{ number_format($pct, 0) }}% of collected</p>
+                                    <p class="text-muted-foreground mb-0 mt-1" style="font-size:var(--text-2xs);">{{ number_format($pct, 0) }}% of collected</p>
                                 </div>
                             </div>
                         @endforeach
