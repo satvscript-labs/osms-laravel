@@ -31,7 +31,9 @@ class CustomerController extends Controller
                 });
             })
             ->when($filter === 'patients', fn ($query) => $query->patients())
-            ->when($filter === 'birthdays', fn ($query) => $query->upcomingBirthday(7))
+            // PRIV-02 — the birthdays view is a marketing-outreach list, so minors
+            // are excluded (bornAdult) per DPDP's ban on marketing to children.
+            ->when($filter === 'birthdays', fn ($query) => $query->upcomingBirthday(7)->bornAdult())
             ->latest()
             ->paginate(50)
             ->withQueryString();
@@ -53,7 +55,8 @@ class CustomerController extends Controller
                     'age' => $c->age,
                     'gender' => $c->gender,
                     'is_patient' => $c->eye_records_count > 0,
-                    'days_until_birthday' => $c->daysUntilBirthday(),
+                    // PRIV-02 — suppress the birthday nudge/chip for minors.
+                    'days_until_birthday' => $c->isMinor() ? null : $c->daysUntilBirthday(),
                     'added' => $c->created_at->format('d M Y'),
                     'url' => route('tenant.customers.show', $c),
                 ])->values(),

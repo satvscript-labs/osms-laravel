@@ -44,6 +44,17 @@ class Customer extends Model
     }
 
     /**
+     * PRIV-02 — a known-minor customer (derived age under 18). DPDP forbids
+     * behavioural marketing to children and requires guardian consent, so this
+     * gates the birthday/marketing affordances. Unknown age → not treated as a
+     * minor (we can't assert it), so nothing is over-suppressed.
+     */
+    public function isMinor(): bool
+    {
+        return $this->age !== null && $this->age < 18;
+    }
+
+    /**
      * Age is derived from the birthday when one is on file (always current);
      * otherwise it falls back to the manually-entered `age` column (5.5).
      */
@@ -100,6 +111,18 @@ class Customer extends Model
     public function scopePatients(Builder $query): Builder
     {
         return $query->whereHas('eyeRecords');
+    }
+
+    /**
+     * PRIV-02 — scope to customers who are adults by their birthday, i.e. born on
+     * or before today-18-years. Used to keep minors out of the birthday-marketing
+     * list. (Rows without a birthday are excluded; the birthday surfaces already
+     * require one.)
+     */
+    public function scopeBornAdult(Builder $query): Builder
+    {
+        return $query->whereNotNull('birthday')
+            ->whereDate('birthday', '<=', now()->subYears(18)->toDateString());
     }
 
     /**

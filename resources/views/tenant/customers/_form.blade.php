@@ -92,6 +92,15 @@
                     <label class="form-check-label small" for="data_consent">
                         The customer consents to this store keeping their contact details and prescription for their care.
                     </label>
+                    {{-- PRIV-02 — for a minor this must be the parent/guardian's consent. --}}
+                    <p class="text-muted-foreground mb-0 mt-1 {{ ($isEdit && $customer->isMinor()) ? 'fw-semibold' : '' }}"
+                       style="font-size:.7rem; {{ ($isEdit && $customer->isMinor()) ? 'color: var(--tone-amber);' : '' }}">
+                        @if ($isEdit && $customer->isMinor())
+                            <i class="bi bi-exclamation-triangle me-1"></i>This customer is under 18 — record the parent/guardian's consent.
+                        @else
+                            If the customer is under 18, this must be their parent or guardian's consent.
+                        @endif
+                    </p>
                 </div>
                 <div class="form-check">
                     <input class="form-check-input" type="checkbox" name="whatsapp_opt_in" value="1"

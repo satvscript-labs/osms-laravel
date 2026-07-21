@@ -32,6 +32,12 @@
                     @if ($customer->whatsapp_opt_in)
                         <span class="osms-badge osms-badge-blue"><span class="osms-badge-dot"></span> WhatsApp opt-in</span>
                     @endif
+                    {{-- PRIV-02 — flag a minor so staff know guardian consent applies. --}}
+                    @if ($customer->isMinor())
+                        <span class="osms-badge osms-badge-amber" title="Under 18 — guardian consent applies, excluded from birthday marketing">
+                            <span class="osms-badge-dot"></span> Minor
+                        </span>
+                    @endif
                 </div>
             </div>
         </div>

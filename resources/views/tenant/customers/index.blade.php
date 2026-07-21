@@ -171,7 +171,7 @@
                                         <span class="osms-badge-dot"></span> Patient
                                     </span>
                                 @endif
-                                @php $bdayDays = $c->daysUntilBirthday(); @endphp
+                                @php $bdayDays = $c->isMinor() ? null : $c->daysUntilBirthday(); @endphp
                                 @if (! is_null($bdayDays) && $bdayDays <= 7)
                                     <span class="birthday-chip">🎂 {{ $bdayDays === 0 ? 'Today' : ($bdayDays === 1 ? 'Tomorrow' : 'in ' . $bdayDays . ' days') }}</span>
                                 @endif
