@@ -217,7 +217,9 @@ class OrderController extends Controller
             default => [null, null],
         };
 
-        $message->update(['status' => 'cancelled']);
+        // Clear dedupe_key so a later re-advance can schedule this event again
+        // (DATA-01: cancelled rows must not block a legitimate re-send).
+        $message->update(['status' => 'cancelled', 'dedupe_key' => null]);
 
         if ($revertTo !== null && $order->status === $advancedTo) {
             $order->update(['status' => $revertTo]); // direct write — no re-trigger

@@ -6,6 +6,7 @@ use App\Models\Order;
 use App\Models\WhatsAppConfig;
 use App\Models\WhatsAppMessage;
 use App\Support\Phone;
+use Illuminate\Database\UniqueConstraintViolationException;
 
 /**
  * FT-WhatsApp — the single funnel every order event flows through.
@@ -43,6 +44,8 @@ class WhatsAppScheduler
 
         // Idempotency: never a second live row for the same order+event. A `sent`
         // row is a permanent tombstone; a `cancelled` one (reverted) does not block.
+        // The app-level check is the fast path; the DB unique index on `dedupe_key`
+        // (DATA-01) is the race-proof backstop below.
         $exists = WhatsAppMessage::withoutGlobalScopes()
             ->where('order_id', $order->id)
             ->where('event', $event)
@@ -52,21 +55,30 @@ class WhatsAppScheduler
             return null;
         }
 
-        return WhatsAppMessage::create([
-            'tenant_id' => $order->tenant_id,
-            'customer_id' => $order->customer_id,
-            'order_id' => $order->id,
-            'event' => $event,
-            'channel' => 'cloud_api',
-            'to_phone' => $to,
-            'template_name' => $config->templateName($event),
-            'payload' => [
-                'body_params' => $this->bodyParams($config, $order, $event),
-                'text' => $config->renderOrderMessage($order, $event),
-            ],
-            'status' => 'scheduled',
-            'scheduled_for' => now()->addSeconds((int) config('whatsapp.send_grace_seconds', 60)),
-        ]);
+        try {
+            return WhatsAppMessage::create([
+                'tenant_id' => $order->tenant_id,
+                'customer_id' => $order->customer_id,
+                'order_id' => $order->id,
+                'event' => $event,
+                // Set only for live rows; cleared when the row is cancelled/failed so
+                // a legitimate re-send is allowed. The unique index makes the
+                // check-then-insert race impossible.
+                'dedupe_key' => $order->id . ':' . $event,
+                'channel' => 'cloud_api',
+                'to_phone' => $to,
+                'template_name' => $config->templateName($event),
+                'payload' => [
+                    'body_params' => $this->bodyParams($config, $order, $event),
+                    'text' => $config->renderOrderMessage($order, $event),
+                ],
+                'status' => 'scheduled',
+                'scheduled_for' => now()->addSeconds((int) config('whatsapp.send_grace_seconds', 60)),
+            ]);
+        } catch (UniqueConstraintViolationException) {
+            // A concurrent request won the race and already scheduled this one.
+            return null;
+        }
     }
 
     /**

@@ -23,7 +23,7 @@ class WhatsAppMessage extends Model
 
     protected $fillable = [
         'tenant_id', 'customer_id', 'order_id',
-        'event', 'channel', 'to_phone', 'template_name', 'payload',
+        'event', 'dedupe_key', 'channel', 'to_phone', 'template_name', 'payload',
         'status', 'scheduled_for', 'sent_at', 'provider_message_id',
         'delivery_status', 'error', 'attempts',
     ];

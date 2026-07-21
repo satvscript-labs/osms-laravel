@@ -64,7 +64,9 @@ class SendWhatsAppMessage implements ShouldQueue
             ]);
         } catch (WhatsAppException $e) {
             $message->increment('attempts');
-            $message->update(['status' => 'failed', 'error' => $e->getMessage()]);
+            // Clear dedupe_key on failure so a later retry can be scheduled
+            // (matches the app-level guard, which only blocks on scheduled/sent).
+            $message->update(['status' => 'failed', 'error' => $e->getMessage(), 'dedupe_key' => null]);
 
             // A credential failure isn't transient — flag the store so future
             // events fall back to the manual pill instead of failing silently.
