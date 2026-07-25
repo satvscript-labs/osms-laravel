@@ -3,6 +3,7 @@
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Sentry\Laravel\Integration;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -32,5 +33,8 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        //
+        // OPS — report unhandled exceptions to Sentry when a DSN is configured.
+        // With SENTRY_LARAVEL_DSN empty (the default) this is a silent no-op, so
+        // the app is unaffected until error tracking is turned on in production.
+        Integration::handles($exceptions);
     })->create();
