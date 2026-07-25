@@ -22,6 +22,7 @@ use App\Services\SkuService;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 
@@ -55,24 +56,30 @@ class ProdDemoSeeder extends Seeder
             return;
         }
 
-        $this->sku = new SkuService();
+        // Wrapped in a transaction: a failure partway through (e.g. a leftover
+        // orphaned user from a prior deletion, a MariaDB-only type mismatch) must
+        // roll back completely, never leave a broken half-seeded "Satv" tenant
+        // that then silently blocks every future re-run's exists() guard above.
+        DB::transaction(function () {
+            $this->sku = new SkuService();
 
-        $tenant = $this->tenant();
-        [$owner, $staff] = $this->users($tenant);
+            $tenant = $this->tenant();
+            [$owner, $staff] = $this->users($tenant);
 
-        // Act as the owner so the tenant global scope auto-stamps tenant_id.
-        Auth::login($owner);
+            // Act as the owner so the tenant global scope auto-stamps tenant_id.
+            Auth::login($owner);
 
-        $items = $this->inventory();
-        $customers = $this->customers();
-        $records = $this->eyeRecords($customers, $owner, $staff);
-        $this->orders($customers, $records, $items, $owner);
-        $this->whatsapp($tenant, $customers);
-        $this->activity($owner, $staff, $customers);
+            $items = $this->inventory();
+            $customers = $this->customers();
+            $records = $this->eyeRecords($customers, $owner, $staff);
+            $this->orders($customers, $records, $items, $owner);
+            $this->whatsapp($tenant, $customers);
+            $this->activity($owner, $staff, $customers);
 
-        Auth::logout();
+            Auth::logout();
 
-        $this->platformLevel($tenant, $owner);
+            $this->platformLevel($tenant, $owner);
+        });
 
         $this->command?->info('ProdDemoSeeder complete — "Satv" store fully populated.');
     }

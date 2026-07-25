@@ -130,4 +130,28 @@ class Phase59SeederTest extends TestCase
 
         $this->assertSame(1, Tenant::where('store_name', 'Satv')->count());
     }
+
+    /**
+     * A failure partway through must roll back completely — not leave a broken,
+     * ownerless "Satv" tenant that then permanently blocks every future re-run's
+     * exists() guard. This is exactly what happened in production: a leftover
+     * user with the owner's email caused a duplicate-key crash mid-seed, and
+     * without a transaction it left a tenant with no owner/orders/customers.
+     */
+    public function test_a_failure_partway_through_rolls_back_completely(): void
+    {
+        // Force the seeder's own owner-creation insert to collide.
+        User::factory()->create(['email' => 'developer@satvscript.com', 'tenant_id' => null]);
+
+        try {
+            $this->seed(ProdDemoSeeder::class);
+            $this->fail('Expected the seeder to throw on the duplicate email.');
+        } catch (\Illuminate\Database\QueryException $e) {
+            $this->assertStringContainsString('developer@satvscript.com', $e->getMessage());
+        }
+
+        // The transaction must have rolled back the tenant along with everything
+        // else — no broken partial store left behind.
+        $this->assertSame(0, Tenant::where('store_name', 'Satv')->count());
+    }
 }
