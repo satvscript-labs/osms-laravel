@@ -247,14 +247,25 @@ class ProdDemoSeeder extends Seeder
             [$customers[1], -2.25, 0, 0, null, -2.00, -0.25, 100, null, 60, 'First-time spectacles.'],
             [$customers[2], 0.75, -1.00, 15, '+1.75', 1.00, -1.25, 170, '+1.75', 64, 'Presbyopia — progressive advised.'],
             [$customers[3], -3.00, -1.50, 75, null, -3.25, -1.75, 105, null, 61, 'High myopia; recommend thin-index lens.'],
-        ])->map(fn ($r) => EyeRecord::create([
-            'customer_id' => $r[0]->id,
-            'recorded_by' => $owner->id,
-            'checked_by' => $staff->id,
-            'od_sph' => $r[1], 'od_cyl' => $r[2], 'od_axis' => $r[3], 'od_add' => $r[4], 'od_va' => '6/6', 'od_nv' => 'N6',
-            'os_sph' => $r[5], 'os_cyl' => $r[6], 'os_axis' => $r[7], 'os_add' => $r[8], 'os_va' => '6/6', 'os_nv' => 'N6',
-            'pd' => $r[9], 'notes' => $r[10],
-        ]));
+        ])->map(function ($r) use ($owner, $staff) {
+            // od_nv/os_nv are decimal(6,2) — near-vision power, NOT the Snellen
+            // "N6" text notation od_va uses. That string value passed SQLite (no
+            // type enforcement) but crashed on MariaDB with "Incorrect decimal
+            // value: 'N6'" (SQLSTATE 22007) — a real bug MySQL caught that SQLite
+            // silently hid. Reuse the near-add power (already in the fixture) as a
+            // domain-sensible decimal; 0.00 for the non-presbyopic rows.
+            $odNv = $r[4] !== null ? (float) str_replace('+', '', $r[4]) : 0.0;
+            $osNv = $r[8] !== null ? (float) str_replace('+', '', $r[8]) : 0.0;
+
+            return EyeRecord::create([
+                'customer_id' => $r[0]->id,
+                'recorded_by' => $owner->id,
+                'checked_by' => $staff->id,
+                'od_sph' => $r[1], 'od_cyl' => $r[2], 'od_axis' => $r[3], 'od_add' => $r[4], 'od_va' => '6/6', 'od_nv' => $odNv,
+                'os_sph' => $r[5], 'os_cyl' => $r[6], 'os_axis' => $r[7], 'os_add' => $r[8], 'os_va' => '6/6', 'os_nv' => $osNv,
+                'pd' => $r[9], 'notes' => $r[10],
+            ]);
+        });
     }
 
     // ---------------------------------------------------------------- orders
