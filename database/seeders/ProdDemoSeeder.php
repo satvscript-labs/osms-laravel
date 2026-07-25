@@ -150,7 +150,7 @@ class ProdDemoSeeder extends Seeder
             'email' => 'newhire@satvscript.com',
             'role' => 'staff',
             'token' => Str::random(48),
-            'expires_at' => now()->addDays(config('saas.invite_days', 7)),
+            'expires_at' => now()->addDays((int) config('saas.invite_days', 7)),
             'accepted_at' => null,
         ]);
         StaffInvitation::create([
