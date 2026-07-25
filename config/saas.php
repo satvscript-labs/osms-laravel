@@ -16,8 +16,11 @@ return [
 
     // ST-Staff (S3): max users per store (owner + staff). Flat cap at launch;
     // becomes tier-based later via Tenant::seatLimit(). Invitations expire after N days.
-    'max_staff' => env('SAAS_MAX_STAFF', 5),
-    'invite_days' => env('SAAS_INVITE_DAYS', 7),
+    // Cast here (not just at call sites): once a real .env file sets these, bare
+    // env() returns a numeric STRING, which crashes Carbon's addDays() with a
+    // TypeError (int|float required) — bit ProdDemoSeeder in CI.
+    'max_staff' => (int) env('SAAS_MAX_STAFF', 5),
+    'invite_days' => (int) env('SAAS_INVITE_DAYS', 7),
 
     // ST-Legal (S6) / invoices: the registered business behind OSMS.
     'legal_entity' => env('SAAS_LEGAL_ENTITY', '[Your Registered Business Name]'),

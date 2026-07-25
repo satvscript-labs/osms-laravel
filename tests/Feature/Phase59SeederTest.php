@@ -37,21 +37,50 @@ class Phase59SeederTest extends TestCase
     public function test_superadmin_seeder_is_env_driven_and_idempotent(): void
     {
         config([]); // ensure clean
-        putenv('SUPERADMIN_EMAIL=boss@example.test');
-        putenv('SUPERADMIN_PASSWORD=s3cret-pass');
-        putenv('SUPERADMIN_NAME=The Boss');
 
-        $this->seed(SuperadminSeeder::class);
-        $this->seed(SuperadminSeeder::class); // second run must not duplicate
+        // Laravel's env() reads $_ENV/$_SERVER BEFORE falling back to getenv(), and
+        // some CI PHP builds restrict putenv() outright — a bare putenv() here
+        // passed locally but silently no-opped on the GitHub Actions runner
+        // (env() saw nothing, so the seeder skipped and 0 users were created).
+        // Setting $_ENV/$_SERVER directly is what Laravel's own repository checks
+        // first, so it's picked up regardless of the putenv() restriction.
+        $this->setTestEnv([
+            'SUPERADMIN_EMAIL' => 'boss@example.test',
+            'SUPERADMIN_PASSWORD' => 's3cret-pass',
+            'SUPERADMIN_NAME' => 'The Boss',
+        ]);
 
-        $admins = User::where('email', 'boss@example.test')->get();
-        $this->assertCount(1, $admins);
-        $this->assertSame('superadmin', $admins->first()->role);
-        $this->assertNull($admins->first()->tenant_id);
+        try {
+            $this->seed(SuperadminSeeder::class);
+            $this->seed(SuperadminSeeder::class); // second run must not duplicate
 
-        putenv('SUPERADMIN_EMAIL');
-        putenv('SUPERADMIN_PASSWORD');
-        putenv('SUPERADMIN_NAME');
+            $admins = User::where('email', 'boss@example.test')->get();
+            $this->assertCount(1, $admins);
+            $this->assertSame('superadmin', $admins->first()->role);
+            $this->assertNull($admins->first()->tenant_id);
+        } finally {
+            $this->setTestEnv([
+                'SUPERADMIN_EMAIL' => null,
+                'SUPERADMIN_PASSWORD' => null,
+                'SUPERADMIN_NAME' => null,
+            ]);
+        }
+    }
+
+    /** Set/unset env vars in a way env() reliably sees across every PHP/CI setup. */
+    private function setTestEnv(array $vars): void
+    {
+        foreach ($vars as $key => $value) {
+            if ($value === null) {
+                unset($_ENV[$key], $_SERVER[$key]);
+                putenv($key);
+
+                continue;
+            }
+            $_ENV[$key] = $value;
+            $_SERVER[$key] = $value;
+            putenv("{$key}={$value}");
+        }
     }
 
     public function test_prod_demo_seeder_populates_the_whole_schema_with_variety(): void
