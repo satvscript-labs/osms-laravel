@@ -170,6 +170,30 @@ class WhatsAppConfig extends Model
             : (string) (config("whatsapp.default_messages.{$event}") ?? '');
     }
 
+    /**
+     * SHARE-01 — event keys whose message template does not name the customer.
+     *
+     * A phone number is a household handset. "Your order is ready" sent to a
+     * number four people share tells nobody whose order it is; the recipient's
+     * name is what makes it usable, and it is why every shipped default opens
+     * with "Hi {name}". A store can still edit that out, so this surfaces it as
+     * a warning in Settings rather than silently degrading their messages.
+     *
+     * @return list<string>
+     */
+    public function templatesMissingName(): array
+    {
+        $missing = [];
+
+        foreach (array_keys(self::EVENT_MSG_COLUMN) as $event) {
+            if (! str_contains($this->messageTemplate($event), '{name}')) {
+                $missing[] = $event;
+            }
+        }
+
+        return $missing;
+    }
+
     /** Fill an event template with an order's details. */
     public function renderOrderMessage(Order $order, string $event): string
     {

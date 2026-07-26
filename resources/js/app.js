@@ -22,6 +22,10 @@ import './settle-modal';
 // FT-WhatsApp — the automated "undo ring" on advanced orders (Phase 6)
 import './order-advance';
 
+// SHARE-01 — shared household ("who else is on this number?") behaviour, used by
+// both customer-creation surfaces.
+import './household';
+
 // Auto-enable tooltips
 document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach((el) => {

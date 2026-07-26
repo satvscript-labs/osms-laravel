@@ -18,6 +18,12 @@
 
     <form method="POST" action="{{ route('tenant.orders.store') }}" @submit="validateForm($event)">
         @csrf
+        {{-- A rejected submit used to discard the whole basket: the builder starts
+             from `items: []` with no old() restoration, so every line the staff
+             member had added was lost. Round-tripping the builder's own state
+             restores it exactly — including display-only fields like labels and
+             stock caps, which the posted items[] array does not carry. --}}
+        <input type="hidden" name="builder_state" :value="stateJson()">
         <input type="hidden" name="customer_id" :value="customerId">
         <input type="hidden" name="customer_name" :value="newMode ? newName.trim() : ''">
         <input type="hidden" name="customer_phone" :value="newMode ? newPhone : ''">
@@ -144,17 +150,24 @@
                                     <input type="text" class="form-control" x-model="newName" placeholder="Rahul Kumar">
                                 </div>
                                 <div class="col-12">
-                                    <label class="form-label small fw-medium mb-1">Phone</label>
+                                    <label class="form-label small fw-medium mb-1">
+                                        Phone <span class="text-faint fw-normal">· optional</span>
+                                    </label>
                                     <div class="input-group">
-                                        <select class="form-select flex-grow-0 w-auto" x-model="newCode" aria-label="Country code">
+                                        <select class="form-select flex-grow-0 w-auto" x-model="newCode" aria-label="Country code"
+                                                @change="lookupHousehold()">
                                             <template x-for="code in codes" :key="code"><option :value="code" x-text="code"></option></template>
                                         </select>
                                         <input type="tel" class="form-control" x-model="newPhone" placeholder="98765 43210"
                                                inputmode="numeric" maxlength="10"
-                                               @input="newPhone = newPhone.replace(/\D/g,'').slice(0,10)">
+                                               @input="newPhone = newPhone.replace(/\D/g,'').slice(0,10); lookupHousehold()">
                                     </div>
                                 </div>
                             </div>
+
+                            {{-- SHARE-01 — who else is on this number. Inline, so the
+                                 order already being built is never disturbed. --}}
+                            @include('tenant.customers.partials.household-chooser')
                             {{-- PRIV-01 — consent at the counter for a new walk-in (data consent required). --}}
                             <div class="mt-2">
                                 <label class="consent-row" for="newConsent">
@@ -169,7 +182,8 @@
                                 </label>
                             </div>
                             <p class="text-muted-foreground mb-0 mt-2" style="font-size:var(--text-xs);">
-                                Saved when you create the order. An existing phone links to that customer.
+                                Saved when you create the order. If the number is already in use we'll ask
+                                who this is — families can share one number.
                             </p>
                         </div>
 
@@ -480,6 +494,25 @@
 
     function orderBuilder() {
         return {
+            // SHARE-01 — the same household behaviour the customer form uses, so
+            // both creation surfaces ask the same question in the same way.
+            // Overrides below adapt it to this page: picking a member selects
+            // them INTO the order and loads their prescriptions, rather than
+            // navigating away — the order being built must never be disturbed.
+            ...window.household({ endpoint: @json(route('tenant.customers.by-phone')) }),
+
+            get householdNewName() { return (this.newName || '').trim(); },
+
+            lookupHousehold() { this.checkHousehold(this.newPhone, this.newCode); },
+
+            pickHousehold(m) {
+                this.householdNewPerson = false;
+                // selectCustomer() clears newMode and fetches their eye records,
+                // so the order carries on against the right person.
+                this.selectCustomer({ id: m.id, name: m.name, phone: this.newCode + ' ' + this.newPhone });
+                this.resetHousehold();
+            },
+
             // PERF-03 — customers are searched server-side (never embedded); inventory
             // stays embedded because it's bounded by the catalog and the local
             // barcode-scan path resolves against it.
@@ -496,9 +529,51 @@
             fulfillmentType: 'instant', estimatedReadyAt: @json(now()->addDays(3)->toDateString()),
 
             init() {
-                const pre = @json($selectedCustomer);
-                if (pre) this.selectCustomer(pre);
+                // Restore after a rejected submit, so the basket survives the round
+                // trip. Takes precedence over the preselected customer, which would
+                // otherwise clobber whatever was chosen before the error.
+                const restored = this.restoreState(@json(old('builder_state')));
+
+                if (!restored) {
+                    const pre = @json($selectedCustomer);
+                    if (pre) this.selectCustomer(pre);
+                }
                 window.addEventListener('osms-barcode', (e) => this.onScan(e.detail));
+            },
+
+            /** Everything worth surviving a failed submit. */
+            stateJson() {
+                return JSON.stringify({
+                    items: this.items,
+                    customerId: this.customerId, selectedCustomer: this.selectedCustomer,
+                    newMode: this.newMode, newName: this.newName, newPhone: this.newPhone,
+                    newCode: this.newCode, newConsent: this.newConsent, newWhatsapp: this.newWhatsapp,
+                    eyeRecordId: this.eyeRecordId,
+                    advancePaid: this.advancePaid, paymentMethod: this.paymentMethod,
+                    unit: this.unit, discountValue: this.discountValue,
+                    fulfillmentType: this.fulfillmentType, estimatedReadyAt: this.estimatedReadyAt,
+                });
+            },
+
+            restoreState(raw) {
+                if (!raw) return false;
+                let s;
+                // Never let a malformed round-trip break the page — a lost basket is
+                // bad, an unusable order screen is worse.
+                try { s = JSON.parse(raw); } catch { return false; }
+                if (!s || typeof s !== 'object') return false;
+
+                Object.assign(this, s);
+
+                // Eye records are fetched, not posted, so re-load them for whoever
+                // was selected.
+                // keepSelection: the restored eyeRecordId is the staff member's
+                // choice and must not be reset to the newest record.
+                if (this.customerId) this.loadEyeRecords(this.customerId, true);
+                // And re-check the household, so the chooser reappears if it applies.
+                if (this.newMode && this.newPhone) this.lookupHousehold();
+
+                return true;
             },
             money(n) { return '₹ ' + Number(n || 0).toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2}); },
             uid() { return 'u' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); },
@@ -525,12 +600,30 @@
                 this.customerId = c.id; this.selectedCustomer = c; this.customerSearch = '';
                 this.customerResults = [];
                 this.newMode = false; this.newName = ''; this.newPhone = '';
-                fetch(`{{ url('tenant/customers') }}/${c.id}/eye-records`, {headers:{'Accept':'application/json'}})
-                    .then(r => r.json()).then(d => { this.eyeRecords = d; this.eyeRecordId = d[0]?.id || ''; });
+                this.loadEyeRecords(c.id);
+            },
+            // Split out so a restored basket can re-fetch them too — prescriptions
+            // are fetched, never posted, so they don't survive a rejected submit.
+            loadEyeRecords(id, keepSelection = false) {
+                fetch(`{{ url('tenant/customers') }}/${id}/eye-records`, {headers:{'Accept':'application/json'}})
+                    .then(r => r.json())
+                    .then(d => {
+                        this.eyeRecords = d;
+                        if (!keepSelection || !d.some(r => r.id === this.eyeRecordId)) {
+                            this.eyeRecordId = d[0]?.id || '';
+                        }
+                    });
             },
             clearCustomer() { this.customerId=''; this.selectedCustomer=null; this.eyeRecords=[]; this.eyeRecordId=''; },
-            startNew() { this.newName = this.customerSearch.trim(); this.customerSearch = ''; this.customerResults = []; this.newMode = true; },
-            cancelNew() { this.newMode = false; this.newName = ''; this.newPhone = ''; },
+            startNew() {
+                this.newName = this.customerSearch.trim(); this.customerSearch = '';
+                this.customerResults = []; this.newMode = true;
+                this.resetHousehold();
+            },
+            cancelNew() {
+                this.newMode = false; this.newName = ''; this.newPhone = '';
+                this.resetHousehold();
+            },
             localDate(daysAhead) {
                 const d = new Date(); d.setDate(d.getDate() + daysAhead);
                 const m = String(d.getMonth() + 1).padStart(2, '0'), day = String(d.getDate()).padStart(2, '0');
@@ -626,10 +719,20 @@
                 return this.fulfillmentType === 'instant' ? this.total() : 0;
             },
             balance() { return Math.max(this.total() - this.effectiveAdvance(), 0); },
-            // A new walk-in needs name + phone + data consent (PRIV-01, mandatory).
-            hasCustomer() { return this.customerId !== '' || (this.newMode && this.newName.trim() !== '' && this.newPhone.trim() !== '' && this.newConsent); },
+            // A new walk-in needs a name and data consent (PRIV-01, mandatory).
+            // SHARE-01 — a phone is NOT required: someone who won't give a number
+            // is still a customer, and demanding one is what forced fake numbers
+            // into the data.
+            hasCustomer() {
+                return this.customerId !== ''
+                    || (this.newMode && this.newName.trim() !== '' && this.newConsent);
+            },
             canSubmit() {
                 return this.hasCustomer() && this.items.length > 0
+                    // SHARE-01 — an unresolved household is a deliberate stop, so
+                    // the order can never be silently attached to whoever happened
+                    // to match the number.
+                    && (!this.newMode || this.householdResolved)
                     && (this.fulfillmentType !== 'special' || !!this.estimatedReadyAt);
             },
             validateForm(e) {

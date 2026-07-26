@@ -114,8 +114,17 @@
                                         <span class="birthday-chip" x-text="birthdayLabel(c.days_until_birthday)"></span>
                                     </template>
                                 </div>
-                                <div class="text-muted-foreground text-sm mt-1">
-                                    <i class="bi bi-telephone me-1"></i><span x-text="c.phone"></span>
+                                <div class="text-muted-foreground text-sm mt-1 d-flex align-items-center gap-2 flex-wrap">
+                                    <span x-show="c.phone">
+                                        <i class="bi bi-telephone me-1"></i><span x-text="c.phone"></span>
+                                    </span>
+                                    {{-- SHARE-01 — a number is optional now, so say when there isn't one. --}}
+                                    <span x-show="!c.phone" x-cloak class="text-faint">
+                                        <i class="bi bi-telephone-x me-1"></i>No number
+                                    </span>
+                                    <template x-if="c.shares_number">
+                                        <span class="shared-chip"><i class="bi bi-people-fill"></i> Shared</span>
+                                    </template>
                                 </div>
                             </div>
                             <div class="d-none d-sm-flex align-items-center gap-2">
@@ -177,8 +186,18 @@
                                     <span class="birthday-chip">🎂 {{ $bdayDays === 0 ? 'Today' : ($bdayDays === 1 ? 'Tomorrow' : 'in ' . $bdayDays . ' days') }}</span>
                                 @endif
                             </div>
-                            <div class="text-muted-foreground text-sm mt-1">
-                                <i class="bi bi-telephone me-1"></i>{{ $c->phone }}
+                            <div class="text-muted-foreground text-sm mt-1 d-flex align-items-center gap-2 flex-wrap">
+                                @if ($c->phone)
+                                    <span><i class="bi bi-telephone me-1"></i>{{ $c->phone }}</span>
+                                @else
+                                    {{-- SHARE-01 — a number is optional now. --}}
+                                    <span class="text-faint"><i class="bi bi-telephone-x me-1"></i>No number</span>
+                                @endif
+                                @if ($c->phone && isset($sharedPhones[$c->phone]))
+                                    <span class="shared-chip" title="Shared with {{ $sharedPhones[$c->phone] - 1 }} other {{ Str::plural('person', $sharedPhones[$c->phone] - 1) }}">
+                                        <i class="bi bi-people-fill"></i> Shared
+                                    </span>
+                                @endif
                             </div>
                         </div>
                         <div class="d-none d-sm-flex align-items-center gap-2">

@@ -1187,6 +1187,145 @@ $wa-green-strong: #0b8043;
 }
 
 // ============================================================
+// 18b. HOUSEHOLD CHOOSER (SHARE-01)
+// ============================================================
+// A phone number is a household handset, so creating a customer on a number
+// that is already in use asks who this is. Used on BOTH creation surfaces —
+// the customer form and the order builder — so the two feel like one idea.
+// Entrance is height-animated via .reveal, never a display flip.
+.household {
+  border: 1px solid var(--osms-border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--surface-card);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+}
+.household-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.7rem 0.85rem;
+  background: var(--osms-primary-soft);
+  color: var(--osms-primary);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+.household-head .bi { font-size: 1rem; }
+
+.household-list { display: flex; flex-direction: column; }
+
+.household-member {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  width: 100%;
+  padding: 0.6rem 0.85rem;
+  border: 0;
+  border-top: 1px solid var(--osms-border);
+  background: var(--surface-card);
+  text-align: left;
+  color: var(--osms-fg);
+  cursor: pointer;
+
+  &:hover {
+    background: var(--osms-primary-soft);
+    .household-member-pick { opacity: 1; transform: translateX(0); }
+    .person-avatar { transform: scale(1.06); }
+  }
+  &:active { transform: scale(0.99); }
+}
+// The "use this person" affordance slides in on hover, like .person-chevron.
+.household-member-pick {
+  margin-left: auto;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  color: var(--osms-primary);
+  opacity: 0;
+  transform: translateX(-0.35rem);
+  transition: all var(--duration-base) var(--ease-spring);
+}
+// Touch devices have no hover — keep the affordance permanently visible.
+@media (hover: none) {
+  .household-member-pick { opacity: 1; transform: none; }
+}
+
+// The "no, this is someone else" escape hatch closes the set.
+.household-new {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.65rem 0.85rem;
+  border: 0;
+  border-top: 1px dashed var(--osms-border-strong);
+  background: var(--surface-sunken);
+  color: var(--osms-primary);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+
+  &:hover { background: var(--osms-primary-soft); }
+  &:active { transform: scale(0.99); }
+  &.is-chosen {
+    background: var(--osms-primary);
+    color: #fff;
+  }
+}
+
+// Shown once staff have committed to "a new person on this number".
+.household-confirmed {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.6rem 0.85rem;
+  font-size: var(--text-xs);
+  color: var(--tone-green);
+  background: var(--tone-green-bg);
+}
+
+// Loading placeholder while the lookup is in flight — never a bare spinner.
+.household-skeleton {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.6rem 0.85rem;
+  border-top: 1px solid var(--osms-border);
+}
+
+// "Coming soon" marker for a frozen feature, outside the segmented control
+// (.segmented-soon only styles inside one). Same look, usable anywhere —
+// dropdown items, buttons, list rows.
+.soon-badge {
+  padding: 0.05rem 0.4rem;
+  border-radius: var(--radius-pill);
+  background: var(--tone-amber-bg);
+  color: var(--tone-amber);
+  font-size: var(--text-3xs);
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+// A compact "shares a number" marker for list rows and profile headers.
+.shared-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: var(--radius-pill);
+  background: var(--tone-blue-bg);
+  color: var(--tone-blue);
+  font-size: var(--text-3xs);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+// ============================================================
 // 19. LAYOUT UTILITIES
 // ============================================================
 // Bootstrap ships no `min-w-0`, but a flex child defaults to `min-width: auto`

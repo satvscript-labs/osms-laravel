@@ -19,10 +19,28 @@
             <div class="min-w-0">
                 <h1 class="h3 fw-semibold font-display mb-1 text-truncate">{{ $customer->name }}</h1>
                 <div class="d-flex flex-wrap align-items-center gap-2 gap-md-3 text-muted-foreground text-sm">
-                    <span class="text-nowrap"><i class="bi bi-telephone me-1"></i>{{ $customer->phone }}</span>
+                    @if ($customer->phone)
+                        <span class="text-nowrap"><i class="bi bi-telephone me-1"></i>{{ $customer->phone }}</span>
+                    @else
+                        {{-- SHARE-01 — a number is optional; say so plainly and make it fixable. --}}
+                        <a href="{{ route('tenant.customers.edit', $customer) }}"
+                           class="meta-chip meta-chip-warn" title="No phone number on file — click to add one">
+                            <i class="bi bi-telephone-x"></i> No number
+                        </a>
+                    @endif
                     @if ($customer->age)<span class="text-nowrap"><i class="bi bi-calendar3 me-1"></i>{{ $customer->age }} yrs</span>@endif
                     @if ($customer->gender)<span class="text-capitalize">{{ $customer->gender }}</span>@endif
                     <span class="text-xs text-nowrap">Added {{ $customer->created_at->format('d M Y') }}</span>
+
+                    {{-- SHARE-01 — a household number is shared, so anything sent to
+                         it may be seen by a relative. Jumps to the panel below. --}}
+                    @if ($household->isNotEmpty())
+                        <a href="#household" class="shared-chip text-decoration-none"
+                           title="This number is shared with {{ $household->count() }} other {{ Str::plural('person', $household->count()) }}">
+                            <i class="bi bi-people-fill"></i>
+                            Shared with {{ $household->count() }}
+                        </a>
+                    @endif
 
                     {{-- PRIV-02 — a minor is legally relevant (guardian consent, no marketing). --}}
                     @if ($customer->isMinor())
@@ -48,8 +66,14 @@
              two labelled buttons stay on one line instead of wrapping raggedly. --}}
         <div class="d-flex flex-wrap flex-lg-nowrap align-items-center gap-2 flex-shrink-0">
             @if ($customer->whatsappUrl())
+                {{-- SHARE-01 — on a household number the message reaches a handset a
+                     relative may be holding. Say so in the tooltip rather than
+                     letting staff find out afterwards. --}}
                 <a href="{{ $customer->whatsappUrl() }}" target="_blank" rel="noopener"
-                   class="wa-pill contact-pill-round" title="Message on WhatsApp"
+                   class="wa-pill contact-pill-round"
+                   title="{{ $household->isNotEmpty()
+                        ? 'Shared number — ' . $household->count() . ' other ' . Str::plural('person', $household->count()) . ' may see this message'
+                        : 'Message on WhatsApp' }}"
                    aria-label="Message {{ $customer->name }} on WhatsApp">
                     <i class="bi bi-whatsapp" aria-hidden="true"></i> <span>WhatsApp</span>
                 </a>
@@ -77,6 +101,30 @@
                             <i class="bi bi-pencil"></i> Edit profile
                         </a>
                     </li>
+
+                    {{-- SHARE-01 — merging duplicates. Frozen as "Coming soon" in
+                         production: it re-points orders, payments and prescriptions
+                         and then discards a profile, which needs its own undo story
+                         before a shop can be handed it. Same freeze pattern as
+                         WhatsApp Automated. --}}
+                    <li>
+                        @if (config('customers.merge_enabled'))
+                            <a class="dropdown-item d-flex align-items-center gap-2"
+                               href="{{ safe_route('tenant.customers.merge', $customer) }}">
+                                <i class="bi bi-union"></i> Merge with another profile
+                            </a>
+                        @else
+                            <span class="dropdown-item d-flex align-items-center gap-2 disabled"
+                                  aria-disabled="true" tabindex="-1"
+                                  title="Merging duplicate profiles is coming soon"
+                                  style="cursor:not-allowed; color: var(--osms-faint);">
+                                <i class="bi bi-union"></i>
+                                Merge with another profile
+                                <span class="soon-badge ms-auto">Soon</span>
+                            </span>
+                        @endif
+                    </li>
+
                     <li><hr class="dropdown-divider"></li>
                     <li>
                         <form method="POST" action="{{ route('tenant.customers.destroy', $customer) }}" class="m-0">
@@ -94,6 +142,52 @@
             </div>
         </div>
     </div>
+
+    {{-- SHARE-01 — the household. A phone number is a handset a family shares, so
+         these are the other people reachable on it. Records are entirely separate;
+         this panel exists so staff know who else a call or message could reach, and
+         so a record filed against the wrong relative is easy to spot. --}}
+    @if ($household->isNotEmpty())
+        <div id="household" class="household mb-4 animate-fade-up">
+            <div class="household-head">
+                <i class="bi bi-people-fill"></i>
+                Also on {{ $customer->phone }}
+            </div>
+            <div class="household-list stagger">
+                @foreach ($household as $member)
+                    <a href="{{ route('tenant.customers.show', $member) }}"
+                       class="household-member text-decoration-none">
+                        <span class="person-avatar">
+                            {{ Str::of($member->name)->explode(' ')->take(2)->map(fn ($w) => Str::substr($w, 0, 1))->implode('') }}
+                        </span>
+                        <span class="min-w-0">
+                            <span class="d-block fw-medium text-truncate">{{ $member->name }}</span>
+                            <span class="d-flex align-items-center gap-2 mt-1">
+                                @if ($member->eye_records_count > 0)
+                                    <span class="osms-badge osms-badge-blue">
+                                        <span class="osms-badge-dot"></span>
+                                        {{ $member->eye_records_count }} {{ Str::plural('test', $member->eye_records_count) }}
+                                    </span>
+                                @endif
+                                @if ($member->age)
+                                    <span class="meta-chip"><i class="bi bi-person"></i> {{ $member->age }} yrs</span>
+                                @endif
+                                <span class="text-faint text-3xs">Added {{ $member->created_at->format('d M Y') }}</span>
+                            </span>
+                        </span>
+                        <span class="household-member-pick">Open <i class="bi bi-arrow-right"></i></span>
+                    </a>
+                @endforeach
+            </div>
+            <div class="household-confirmed">
+                <i class="bi bi-info-circle mt-1"></i>
+                <span>
+                    Separate profiles with separate prescription histories — they only share the
+                    number. Anything sent to it may be seen by any of them.
+                </span>
+            </div>
+        </div>
+    @endif
 
     <h2 class="h5 fw-semibold font-display mb-3">History</h2>
 

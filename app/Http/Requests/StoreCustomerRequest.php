@@ -32,7 +32,32 @@ class StoreCustomerRequest extends FormRequest
             // PRIV-01 — data consent is REQUIRED (must be ticked); WhatsApp opt-in is optional.
             'data_consent' => ['accepted'],
             'whatsapp_opt_in' => ['nullable', 'boolean'],
+            // SHARE-01 / PRIV — opting a customer into WhatsApp on a number a
+            // relative also holds means order updates about them land on a handset
+            // someone else may be holding. Consent is per person, so that has to
+            // be a deliberate acknowledgement rather than a default.
+            // Built conditionally rather than with requiredIf + accepted: `accepted`
+            // is not skipped when the field is absent, so pairing the two would
+            // reject every customer who simply isn't opting into WhatsApp.
+            'whatsapp_shared_ack' => $this->boolean('whatsapp_opt_in') && $this->phoneIsShared()
+                ? ['accepted']
+                : ['nullable'],
         ];
+    }
+
+    /** Whether another customer in this store already holds this number. */
+    private function phoneIsShared(): bool
+    {
+        $phone = $this->input('phone');
+
+        if (! is_string($phone) || $phone === '') {
+            return false;
+        }
+
+        return \App\Models\Customer::query()
+            ->sharingPhone($phone)
+            ->when($this->route('customer'), fn ($q, $c) => $q->whereKeyNot($c->id))
+            ->exists();
     }
 
     public function messages(): array
@@ -40,6 +65,8 @@ class StoreCustomerRequest extends FormRequest
         return [
             'phone.regex' => 'Enter a valid 10-digit phone number.',
             'data_consent.accepted' => 'Please record the customer\'s consent to continue.',
+            'whatsapp_shared_ack.required' => 'This number is shared with someone else. Confirm they\'re happy for updates about them to arrive on it.',
+            'whatsapp_shared_ack.accepted' => 'This number is shared with someone else. Confirm they\'re happy for updates about them to arrive on it.',
         ];
     }
 
