@@ -6,8 +6,11 @@ use App\Services\WhatsApp\LogDriver;
 use App\Services\WhatsApp\MetaCloudDriver;
 use App\Services\WhatsApp\WhatsAppGateway;
 use Illuminate\Pagination\Paginator;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
+use Illuminate\Support\Str;
+use RuntimeException;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -35,6 +38,47 @@ class AppServiceProvider extends ServiceProvider
         Paginator::defaultView('pagination::osms');
 
         $this->hardenForProduction();
+        $this->enforceLegacyReadOnly();
+    }
+
+    /**
+     * Make the `legacy` connection physically incapable of writing.
+     *
+     * The migration reads the customer's OLD system directly. The right control
+     * would be a MySQL user with SELECT only — but Hostinger's shared plans
+     * enforce a 1:1 database-to-user ratio and block CREATE USER / GRANT, so the
+     * connection has to reuse credentials that hold full privileges on that
+     * database. Since the database cannot enforce read-only, the application
+     * does: every statement is inspected before it runs and anything that is not
+     * a SELECT is refused.
+     *
+     * A code-level guard is weaker than a grant — code can be changed — but it
+     * is the strongest control this hosting plan permits, and an accidental
+     * UPDATE or DROP against a live customer's old system is exactly the kind of
+     * mistake that cannot be undone.
+     *
+     * See _artifacts/FirstCustomerFiles/LEGACY_DB_ACCESS.md.
+     */
+    protected function enforceLegacyReadOnly(): void
+    {
+        // Only wire it up when the connection is actually configured, so an
+        // unconfigured install doesn't try to resolve it at boot.
+        if (! config('database.connections.legacy.database')) {
+            return;
+        }
+
+        DB::connection('legacy')->beforeExecuting(function (string $query): void {
+            // Strip leading comments/whitespace before deciding — "/* x */ DROP"
+            // must not read as harmless.
+            $sql = ltrim(preg_replace('#^(\s|/\*.*?\*/|--[^\n]*\n)+#s', '', $query) ?? $query);
+
+            if (! preg_match('/^(select|show|describe|explain)\b/i', $sql)) {
+                throw new RuntimeException(
+                    'The legacy connection is read-only: only SELECT is permitted. Refused: '
+                    . Str::limit($sql, 80)
+                );
+            }
+        });
     }
 
     /**

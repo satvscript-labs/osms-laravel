@@ -4,8 +4,13 @@
     $val = function ($eye, $key) use ($record) {
         $v = $record->{"{$eye}_{$key}"};
         if ($v === null || $v === '') return '—';
+        // Plano is written bare — "+0.00" reads as a typo. Matches the entry form.
         if (in_array($key, ['sph', 'cyl', 'nv', 'add']) && is_numeric($v)) {
-            return sprintf('%+.2f', (float) $v);
+            return (float) $v > 0 ? sprintf('+%.2f', (float) $v) : sprintf('%.2f', (float) $v);
+        }
+        // An axis is degrees, and 0 means "not recorded" (1..180 is the range).
+        if ($key === 'axis' && is_numeric($v)) {
+            return (int) $v === 0 ? '—' : (int) $v . '°';
         }
         return $v;
     };

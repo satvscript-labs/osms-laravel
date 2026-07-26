@@ -27,6 +27,9 @@
     <div class="card-body p-4">
         <form method="POST"
               action="{{ $isEdit ? route('tenant.customers.update', $customer) : route('tenant.customers.store') }}"
+              {{-- Back after saving goes to the record (edit) or the list (create),
+                   never to this already-submitted form. --}}
+              data-leave-on-back="{{ $isEdit ? route('tenant.customers.show', $customer) : route('tenant.customers.index') }}"
               class="d-flex flex-column gap-3"
               x-data="customerForm()" @submit="onSubmit($event)">
             @csrf

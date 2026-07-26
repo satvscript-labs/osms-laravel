@@ -2,10 +2,10 @@
 
 namespace App\Console\Commands;
 
+use App\Console\Commands\Concerns\ReadsLegacySource;
 use App\Console\Commands\Concerns\ResolvesTargetTenant;
 use App\Models\Customer;
 use App\Support\Legacy\SahajLegacyImporter;
-use App\Support\Legacy\SqlDumpParser;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 
@@ -33,10 +33,12 @@ use Illuminate\Support\Facades\DB;
  */
 class RestoreSharedNumbers extends Command
 {
+    use ReadsLegacySource;
     use ResolvesTargetTenant;
 
     protected $signature = 'osms:restore-shared-numbers
                             {--dir= : Folder holding the legacy .sql dumps}
+                            {--from-db : Read the old system directly instead of dump files}
                             {--tenant= : Store name to restore into}
                             {--tenant-id= : Store UUID (unambiguous — prefer this)}
                             {--commit : Actually write (default is a dry run)}
@@ -48,21 +50,18 @@ class RestoreSharedNumbers extends Command
 
     public function handle(): int
     {
-        $dir = rtrim($this->option('dir')
-            ?: base_path('_artifacts/FirstCustomerFiles/u174003801_sahaj_optical_sql'), '/\\');
-
         $tenant = $this->resolveTenant();
         if (! $tenant) {
             return self::FAILURE;
         }
 
-        $this->info('Reading legacy SQL dumps from: ' . $dir);
+        $source = $this->resolveLegacySource();
+        if (! $source) {
+            return self::FAILURE;
+        }
 
         try {
-            $importer = (new SahajLegacyImporter(
-                SqlDumpParser::parseTable($dir . '/u174003801_sahaj_optical_table_eyerecourd.sql', 'eyerecourd'),
-                SqlDumpParser::parseTable($dir . '/u174003801_sahaj_optical_table_estimatebook.sql', 'estimatebook'),
-            ))->analyse();
+            $importer = (new SahajLegacyImporter($source->eyeRecords(), $source->estimates()))->analyse();
         } catch (\Throwable $e) {
             $this->error($e->getMessage());
 

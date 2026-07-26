@@ -18,47 +18,66 @@
                   style="width:3.25rem;height:3.25rem;"><i class="bi bi-person fs-4"></i></span>
             <div class="min-w-0">
                 <h1 class="h3 fw-semibold font-display mb-1 text-truncate">{{ $customer->name }}</h1>
+                {{-- FACTS — what this person IS. Plain text, no chrome, so the
+                     status chips below stay the only thing competing for attention. --}}
                 <div class="d-flex flex-wrap align-items-center gap-2 gap-md-3 text-muted-foreground text-sm">
                     @if ($customer->phone)
                         <span class="text-nowrap"><i class="bi bi-telephone me-1"></i>{{ $customer->phone }}</span>
-                    @else
-                        {{-- SHARE-01 — a number is optional; say so plainly and make it fixable. --}}
-                        <a href="{{ route('tenant.customers.edit', $customer) }}"
-                           class="meta-chip meta-chip-warn" title="No phone number on file — click to add one">
-                            <i class="bi bi-telephone-x"></i> No number
-                        </a>
                     @endif
                     @if ($customer->age)<span class="text-nowrap"><i class="bi bi-calendar3 me-1"></i>{{ $customer->age }} yrs</span>@endif
                     @if ($customer->gender)<span class="text-capitalize">{{ $customer->gender }}</span>@endif
                     <span class="text-xs text-nowrap">Added {{ $customer->created_at->format('d M Y') }}</span>
-
-                    {{-- SHARE-01 — a household number is shared, so anything sent to
-                         it may be seen by a relative. Jumps to the panel below. --}}
-                    @if ($household->isNotEmpty())
-                        <a href="#household" class="shared-chip text-decoration-none"
-                           title="This number is shared with {{ $household->count() }} other {{ Str::plural('person', $household->count()) }}">
-                            <i class="bi bi-people-fill"></i>
-                            Shared with {{ $household->count() }}
-                        </a>
-                    @endif
-
-                    {{-- PRIV-02 — a minor is legally relevant (guardian consent, no marketing). --}}
-                    @if ($customer->isMinor())
-                        <span class="meta-chip meta-chip-warn" title="Under 18 — guardian consent applies; excluded from birthday marketing">
-                            <i class="bi bi-person-exclamation"></i> Minor
-                        </span>
-                    @endif
-
-                    {{-- PRIV-01 — surface only the EXCEPTION. Consent on file is the normal
-                         state and needs no badge; a missing one is actionable, so it links
-                         straight to the form that fixes it. --}}
-                    @unless ($customer->data_consent_at)
-                        <a href="{{ route('tenant.customers.edit', $customer) }}"
-                           class="meta-chip meta-chip-warn" title="Data consent is not recorded — click to add it">
-                            <i class="bi bi-shield-exclamation"></i> No consent
-                        </a>
-                    @endunless
                 </div>
+
+                {{-- STATUS CHIPS — every chip here is an EXCEPTION worth acting on.
+                     They live in their own rail rather than mixed into the facts row:
+                     a profile can legitimately carry four or five at once (no number +
+                     shared + minor + no consent), and inline they used to wrap into a
+                     ragged block that pushed the header around. The rail wraps as one
+                     unit with an even rhythm, and scrolls sideways on a phone instead
+                     of stacking into four lines. --}}
+                @php
+                    $noContact = $customer->phone === null;
+                    $hasChips = $noContact || $household->isNotEmpty() || $customer->isMinor() || ! $customer->data_consent_at;
+                @endphp
+                @if ($hasChips)
+                    <div class="chip-rail mt-2">
+                        {{-- SHARE-01 — a number is optional; say so compactly and make it fixable. --}}
+                        @if ($noContact)
+                            <a href="{{ route('tenant.customers.edit', $customer) }}"
+                               class="meta-chip meta-chip-warn" title="No phone number on file — there is no way to reach this customer. Click to add one.">
+                                <i class="bi bi-telephone-x"></i> No contact
+                            </a>
+                        @endif
+
+                        {{-- SHARE-01 — a household number is shared, so anything sent to
+                             it may be seen by a relative. Jumps to the panel below. --}}
+                        @if ($household->isNotEmpty())
+                            <a href="#household" class="shared-chip text-decoration-none"
+                               title="This number is shared with {{ $household->count() }} other {{ Str::plural('person', $household->count()) }}">
+                                <i class="bi bi-people-fill"></i>
+                                Shared with {{ $household->count() }}
+                            </a>
+                        @endif
+
+                        {{-- PRIV-02 — a minor is legally relevant (guardian consent, no marketing). --}}
+                        @if ($customer->isMinor())
+                            <span class="meta-chip meta-chip-warn" title="Under 18 — guardian consent applies; excluded from birthday marketing">
+                                <i class="bi bi-person-exclamation"></i> Minor
+                            </span>
+                        @endif
+
+                        {{-- PRIV-01 — surface only the EXCEPTION. Consent on file is the normal
+                             state and needs no badge; a missing one is actionable, so it links
+                             straight to the form that fixes it. --}}
+                        @unless ($customer->data_consent_at)
+                            <a href="{{ route('tenant.customers.edit', $customer) }}"
+                               class="meta-chip meta-chip-warn" title="Data consent is not recorded — click to add it">
+                                <i class="bi bi-shield-exclamation"></i> No consent
+                            </a>
+                        @endunless
+                    </div>
+                @endif
             </div>
         </div>
 
@@ -164,9 +183,12 @@
                             <span class="d-block fw-medium text-truncate">{{ $member->name }}</span>
                             <span class="d-flex align-items-center gap-2 mt-1">
                                 @if ($member->eye_records_count > 0)
-                                    <span class="osms-badge osms-badge-blue">
-                                        <span class="osms-badge-dot"></span>
-                                        {{ $member->eye_records_count }} {{ Str::plural('test', $member->eye_records_count) }}
+                                    {{-- Just the eye glyph and a count. "1 test" read as
+                                         test DATA, and "1 eye test" is more words than a
+                                         number in a chip can carry. --}}
+                                    <span class="osms-badge osms-badge-blue"
+                                          title="{{ $member->eye_records_count }} {{ Str::plural('prescription', $member->eye_records_count) }} on record">
+                                        <i class="bi bi-eye"></i> {{ $member->eye_records_count }}
                                     </span>
                                 @endif
                                 @if ($member->age)

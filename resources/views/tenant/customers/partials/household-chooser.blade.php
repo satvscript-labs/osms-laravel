@@ -52,8 +52,12 @@
                             <span class="d-flex align-items-center gap-2 mt-1">
                                 <template x-if="m.is_patient">
                                     <span class="osms-badge osms-badge-blue">
-                                        <span class="osms-badge-dot"></span>
-                                        <span x-text="m.eye_records + (m.eye_records === 1 ? ' test' : ' tests')"></span>
+                                        {{-- Just the eye glyph and a count — see show.blade.php.
+                                             The glyph replaces the status dot; two marks in one
+                                             chip is noise. --}}
+                                        <i class="bi bi-eye"></i>
+                                        <span x-text="m.eye_records"
+                                              :title="m.eye_records + (m.eye_records === 1 ? ' prescription' : ' prescriptions') + ' on record'"></span>
                                     </span>
                                 </template>
                                 <template x-if="m.age">

@@ -69,6 +69,37 @@ return [
             ]) : [],
         ],
 
+        /*
+         | The customer's OLD system, read directly.
+         |
+         | Sahaj Optical's legacy database lives on the same hosting account as
+         | OSMS, so a migration does not need a dump file shuttled onto the
+         | server — it can read the live tables. That removes the whole
+         | export → upload → checksum cycle, and means a top-up import always
+         | sees current data instead of a snapshot that silently went stale.
+         |
+         | STRICTLY READ-ONLY. Nothing in this codebase writes to it, and the
+         | credentials should belong to a MySQL user with SELECT only. It is
+         | unconfigured (and therefore unusable) unless LEGACY_DB_DATABASE is set.
+         */
+        'legacy' => [
+            'driver' => env('LEGACY_DB_DRIVER', 'mysql'),
+            'host' => env('LEGACY_DB_HOST', '127.0.0.1'),
+            'port' => env('LEGACY_DB_PORT', '3306'),
+            'database' => env('LEGACY_DB_DATABASE'),
+            'username' => env('LEGACY_DB_USERNAME'),
+            'password' => env('LEGACY_DB_PASSWORD', ''),
+            'unix_socket' => env('DB_SOCKET', ''),
+            'charset' => env('LEGACY_DB_CHARSET', 'utf8mb4'),
+            // The old system predates utf8mb4 conventions; letting the driver
+            // pick keeps Gujarati names intact rather than mangling them.
+            'collation' => env('LEGACY_DB_COLLATION', 'utf8mb4_unicode_ci'),
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'strict' => false,
+            'engine' => null,
+        ],
+
         'mariadb' => [
             'driver' => 'mariadb',
             'url' => env('DB_URL'),

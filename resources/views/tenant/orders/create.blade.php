@@ -16,7 +16,10 @@
         </div>
     @endif
 
-    <form method="POST" action="{{ route('tenant.orders.store') }}" @submit="validateForm($event)">
+    {{-- Back after placing an order returns to the board, never to a builder whose
+         basket was already turned into a real order. --}}
+    <form method="POST" action="{{ route('tenant.orders.store') }}" @submit="validateForm($event)"
+          data-leave-on-back="{{ route('tenant.orders.index') }}">
         @csrf
         {{-- A rejected submit used to discard the whole basket: the builder starts
              from `items: []` with no old() restoration, so every line the staff
