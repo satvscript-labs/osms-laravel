@@ -31,6 +31,7 @@ class ImportSahajLegacy extends Command
                             {--tenant=Sahaj Optical : Store name to import into}
                             {--tenant-id= : Store UUID — unambiguous, preferred in production}
                             {--report= : Where to write the .xlsx review workbook}
+                            {--no-report : Skip the workbook (shared hosting may cap memory below what it needs)}
                             {--commit : Actually write to the database (default is a dry run)}
                             {--force : Skip confirmation prompts (for scripted/local runs)}';
 
@@ -66,9 +67,17 @@ class ImportSahajLegacy extends Command
         $importer = (new SahajLegacyImporter($eyeRows, $estimateRows))->analyse();
         $this->renderSummary($importer);
 
-        $reportPath = $this->writeReport($importer, $commit);
-        $this->newLine();
-        $this->info('Review workbook: ' . $reportPath);
+        // The workbook is deterministic — same input files, same code, same
+        // output — so on a memory-capped host it can be skipped here and
+        // generated on a workstation instead. It is built BEFORE any writing,
+        // so running out of memory would otherwise abort the whole import.
+        if ($this->option('no-report')) {
+            $this->newLine();
+            $this->comment('Workbook skipped (--no-report).');
+        } else {
+            $this->newLine();
+            $this->info('Review workbook: ' . $this->writeReport($importer, $commit));
+        }
 
         if (! $commit) {
             $this->newLine();

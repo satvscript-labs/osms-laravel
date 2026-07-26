@@ -224,6 +224,38 @@ class Phase60SahajLegacyImportTest extends TestCase
         $this->assertNull(SahajLegacyImporter::mapCheckedBy(''));
     }
 
+    // ------------------------------------------------------------ the command
+
+    /**
+     * The workbook is built before anything is written, so on a memory-capped
+     * host it has to be skippable or it would block the import entirely.
+     */
+    public function test_no_report_skips_the_workbook_and_still_writes_nothing_on_a_dry_run(): void
+    {
+        $dir = sys_get_temp_dir() . '/sahaj_' . uniqid();
+        mkdir($dir);
+        file_put_contents($dir . '/u174003801_sahaj_optical_table_eyerecourd.sql',
+            "INSERT INTO `eyerecourd` (`id`, `name`, `contectno`, `date`, `lspl`) VALUES\n"
+            . "('1', 'ANJALI SHAH', '9824459668', '2024-05-01', '-2.00');\n");
+        file_put_contents($dir . '/u174003801_sahaj_optical_table_estimatebook.sql',
+            "INSERT INTO `estimatebook` (`order_no`, `first_name`, `contact`, `date`, `total`) VALUES\n"
+            . "('1', 'RAJ MEHTA', '9824459669', '2024-05-02', '900');\n");
+
+        $before = glob($dir . '/*.xlsx');
+
+        $this->artisan('osms:import-sahaj-legacy', [
+            '--dir' => $dir,
+            '--report' => $dir . '/report.xlsx',
+            '--no-report' => true,
+        ])->assertSuccessful();
+
+        $this->assertSame($before, glob($dir . '/*.xlsx'), 'no workbook may be written');
+        $this->assertFileDoesNotExist($dir . '/report.xlsx');
+
+        array_map('unlink', glob($dir . '/*'));
+        rmdir($dir);
+    }
+
     // -------------------------------------------------- low-priority dropping
 
     /**
