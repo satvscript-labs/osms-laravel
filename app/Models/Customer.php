@@ -85,6 +85,63 @@ class Customer extends Model
 
     /*
     |--------------------------------------------------------------------------
+    | Households (SHARE-01)
+    |
+    | A phone number identifies a handset, which a family shares — not a person.
+    | There is no `households` table: the household IS "everyone on this number",
+    | derived on demand. See _artifacts/SHARED_PHONE_DESIGN.md §3.1 for why a
+    | table was considered and deliberately not added.
+    |--------------------------------------------------------------------------
+    */
+
+    /** Everyone else in this store reachable on the same number. */
+    public function householdMembers(): Builder
+    {
+        return static::query()
+            ->where('phone', $this->phone)
+            ->whereKeyNot($this->getKey())
+            // A customer with no number is not in a household with every other
+            // numberless customer.
+            ->when($this->phone === null, fn ($q) => $q->whereRaw('1 = 0'));
+    }
+
+    /** Whether anyone else in this store shares this customer's number. */
+    public function isPhoneShared(): bool
+    {
+        return $this->phone !== null && $this->householdMembers()->exists();
+    }
+
+    /** Scope to every customer on a given number (the household). */
+    public function scopeSharingPhone(Builder $query, ?string $phone): Builder
+    {
+        return $phone === null
+            ? $query->whereRaw('1 = 0')
+            : $query->where('phone', $phone);
+    }
+
+    /**
+     * Loose name equality, for deciding whether a name typed at the counter is
+     * the SAME person already on this number or a relative.
+     *
+     * Deliberately forgiving about case, spacing and punctuation, and
+     * deliberately NOT fuzzy beyond that: "Priya Shah" and "Priya" are treated
+     * as different people, because on a shared household number they very often
+     * are, and guessing wrong misfiles a prescription.
+     */
+    public static function sameName(?string $a, ?string $b): bool
+    {
+        $normalise = static fn (?string $v): string => preg_replace(
+            '/\s+/', ' ',
+            trim(mb_strtolower(preg_replace('/[^\p{L}\p{N}\s]+/u', ' ', (string) $v) ?? ''))
+        ) ?? '';
+
+        $a = $normalise($a);
+
+        return $a !== '' && $a === $normalise($b);
+    }
+
+    /*
+    |--------------------------------------------------------------------------
     | Contact links (FT-WhatsApp req 2) — always manual, staff-device initiated.
     | These open a chat/dialer from the staff member's own phone and are wholly
     | independent of the store's automated-messaging mode.

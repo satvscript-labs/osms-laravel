@@ -143,10 +143,15 @@ class Phase40ConsentTest extends TestCase
             'cost_price' => 100, 'selling_price' => 500, 'stock_qty' => 5, 'min_alert_qty' => 1,
         ]);
 
-        // A new walk-in add posting the SAME phone must reuse the customer and NOT
-        // stamp consent onto them (firstOrCreate only applies values on create).
+        // A walk-in add posting the SAME name and phone reuses the customer and
+        // must NOT stamp consent onto them.
+        //
+        // SHARE-01 — this used to post a DIFFERENT name, which reused the profile
+        // by phone alone. That path now (correctly) creates a separate person, so
+        // it no longer exercises reuse at all; the name is matched here so the
+        // test still tests what it was written to test.
         $this->actingAs($this->user)->post(route('tenant.orders.store'), [
-            'customer_name' => 'Different Name', 'customer_phone' => '9876500007', 'customer_country_code' => '+91',
+            'customer_name' => 'Existing Ed', 'customer_phone' => '9876500007', 'customer_country_code' => '+91',
             'customer_consent' => 1,
             'items' => [['inventory_id' => $item->id, 'quantity' => 1]],
         ])->assertRedirect();

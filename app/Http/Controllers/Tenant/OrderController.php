@@ -249,16 +249,31 @@ class OrderController extends Controller
         // Inline walk-in add: normalise the new-customer phone (code + national)
         // to the stored "{code} {national}" shape before validation.
         if (! $request->filled('customer_id') && $request->filled('customer_phone')) {
+            $raw = (string) $request->input('customer_phone');
             $code = trim((string) ($request->input('customer_country_code') ?: '+91'));
-            $national = preg_replace('/\D/', '', (string) $request->input('customer_phone'));
-            $request->merge(['customer_phone' => $national !== '' ? $code . ' ' . $national : '']);
+            $national = preg_replace('/\D/', '', $raw);
+
+            // SHARE-01 — a genuinely absent number becomes NULL, never "": an empty
+            // string is a value, and `sharingPhone('')` would treat every
+            // numberless customer as one household. But input that contained
+            // something unusable ("abc") is passed through UNCHANGED so the regex
+            // rejects it — nulling it would silently discard a typo as "no number".
+            $request->merge([
+                'customer_phone' => match (true) {
+                    $national !== '' => $code . ' ' . $national,
+                    trim($raw) === '' => null,
+                    default => $raw,
+                },
+            ]);
         }
 
         $validated = $request->validate([
             // Either pick an existing customer, or supply a new name + phone inline.
             'customer_id'    => ['nullable', 'required_without:customer_name', 'exists:customers,id'],
             'customer_name'  => ['nullable', 'required_without:customer_id', 'string', 'max:255'],
-            'customer_phone' => ['nullable', 'required_with:customer_name', 'string', 'max:30', 'regex:/^\+\d{1,4}\s\d{10}$/'],
+            // SHARE-01 — optional: a walk-in who won't give a number is still a
+            // customer. If one IS given it must be well-formed.
+            'customer_phone' => ['nullable', 'string', 'max:30', 'regex:/^\+\d{1,4}\s\d{10}$/'],
             // PRIV-01 — consent for an inline walk-in add (applied only to a
             // newly-created customer; an existing match is never overwritten).
             // Made mandatory below when a NEW customer is being created inline.
@@ -297,22 +312,11 @@ class OrderController extends Controller
         }
 
         $order = DB::transaction(function () use ($validated) {
-            // Resolve the customer: an existing one (tenant-checked → 404 if not) or
-            // find-or-create by phone for an inline walk-in add. An existing phone
-            // reuses that customer (never overwrites the name); the unique
-            // (tenant_id, phone) index backstops against duplicates.
+            // Resolve the customer: an existing one (tenant-checked → 404 if not),
+            // or an inline walk-in add — see resolveInlineCustomer().
             $customer = ! empty($validated['customer_id'])
                 ? Customer::findOrFail($validated['customer_id'])
-                : Customer::firstOrCreate(
-                    ['tenant_id' => auth()->user()->tenant_id, 'phone' => $validated['customer_phone']],
-                    [
-                        'name' => $validated['customer_name'],
-                        // PRIV-01 — consent captured at the counter only stamps a
-                        // brand-new customer; an existing phone match is untouched.
-                        'data_consent_at' => ! empty($validated['customer_consent']) ? now() : null,
-                        'whatsapp_opt_in' => ! empty($validated['customer_whatsapp_opt_in']),
-                    ],
-                );
+                : $this->resolveInlineCustomer($validated);
 
             // A prescription, if attached, must belong to this customer (the exists
             // rule above is unscoped, so re-check it here).
@@ -746,6 +750,53 @@ class OrderController extends Controller
     private function isEditable(Order $order): bool
     {
         return in_array($order->status, ['pending', 'ready_for_pickup'], true);
+    }
+
+    /**
+     * SHARE-01 — resolve the customer for an inline "new customer" add.
+     *
+     * This used to be `Customer::firstOrCreate(['tenant_id', 'phone'], [...])`,
+     * which matched on the PHONE ALONE. Because a number belongs to a household
+     * rather than a person, typing a family member's name against a number
+     * already on file silently returned the relative's profile and discarded the
+     * typed name — filing the order, and any prescription attached to it, under
+     * the wrong person. No error was raised. It is the reason this method exists.
+     *
+     * The rule now:
+     *   • same number AND the same name  → the same person being re-typed
+     *     instead of searched for. Reuse their profile, never overwriting it.
+     *   • same number, a different name  → a relative. Create them as their own
+     *     person on that shared number.
+     *
+     * The default deliberately favours creating over matching. A spurious
+     * duplicate is visible and repairable (that is what the merge tool is for);
+     * a prescription filed against the wrong family member is neither.
+     *
+     * @param  array<string,mixed>  $validated
+     */
+    private function resolveInlineCustomer(array $validated): Customer
+    {
+        $name = trim((string) $validated['customer_name']);
+        $phone = $validated['customer_phone'] ?? null;
+
+        if ($phone !== null) {
+            $onThisNumber = Customer::sharingPhone($phone)->get();
+
+            foreach ($onThisNumber as $candidate) {
+                if (Customer::sameName($candidate->name, $name)) {
+                    return $candidate;
+                }
+            }
+        }
+
+        return Customer::create([
+            'name' => $name,
+            'phone' => $phone,
+            // PRIV-01 — consent captured at the counter stamps only this new
+            // customer. An existing profile returned above is never touched.
+            'data_consent_at' => ! empty($validated['customer_consent']) ? now() : null,
+            'whatsapp_opt_in' => ! empty($validated['customer_whatsapp_opt_in']),
+        ]);
     }
 
     /**
