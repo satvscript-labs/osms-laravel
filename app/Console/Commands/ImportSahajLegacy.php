@@ -2,10 +2,10 @@
 
 namespace App\Console\Commands;
 
+use App\Console\Commands\Concerns\ResolvesTargetTenant;
 use App\Exports\Legacy\SahajMigrationReport;
 use App\Models\Customer;
 use App\Models\EyeRecord;
-use App\Models\Tenant;
 use App\Support\Legacy\SahajLegacyImporter;
 use App\Support\Legacy\SqlDumpParser;
 use Illuminate\Console\Command;
@@ -24,9 +24,12 @@ use Maatwebsite\Excel\Facades\Excel;
  */
 class ImportSahajLegacy extends Command
 {
+    use ResolvesTargetTenant;
+
     protected $signature = 'osms:import-sahaj-legacy
                             {--dir= : Folder holding the legacy .sql dumps}
                             {--tenant=Sahaj Optical : Store name to import into}
+                            {--tenant-id= : Store UUID — unambiguous, preferred in production}
                             {--report= : Where to write the .xlsx review workbook}
                             {--commit : Actually write to the database (default is a dry run)}
                             {--force : Skip confirmation prompts (for scripted/local runs)}';
@@ -35,6 +38,7 @@ class ImportSahajLegacy extends Command
 
     /** Placeholder numbers use a 0-prefixed block no real Indian mobile can occupy. */
     private const PLACEHOLDER_PREFIX = '+91 0';
+
 
     public function handle(): int
     {
@@ -85,6 +89,7 @@ class ImportSahajLegacy extends Command
         $this->line(sprintf('  %-42s %s', 'eyerecourd rows', number_format($s['source_eye_rows'])));
         $this->line(sprintf('  %-42s %s', 'estimatebook rows', number_format($s['source_estimate_rows'])));
         $this->line(sprintf('  %-42s %s', 'excluded (not customers)', number_format($s['excluded_rows'])));
+        $this->line(sprintf('  %-42s %s', 'dropped (no phone AND no eye test)', number_format($s['low_priority_dropped'])));
 
         $this->newLine();
         $this->line('<options=bold>Will create</>');
@@ -92,6 +97,15 @@ class ImportSahajLegacy extends Command
         $this->line(sprintf('  %-42s %s', '  with a real phone', number_format($s['with_real_phone'])));
         $this->line(sprintf('  %-42s %s', '  with a placeholder phone', number_format($s['with_placeholder_phone'])));
         $this->line(sprintf('  %-42s %s', 'eye prescriptions', number_format($s['eye_records_to_import'])));
+        $this->line(sprintf('  %-42s %s', '  patients (have at least one eye test)', number_format($s['patients'])));
+
+        $this->newLine();
+        $this->line('<options=bold>Name markers</>');
+        $this->line(sprintf('  %-42s %s', SahajLegacyImporter::MARKER_ACTION, number_format($s['needs_action'])));
+        $this->line(sprintf('  %-42s %s', '    patients missing their own number', number_format($s['patients_needing_a_number'])));
+        $this->line(sprintf('  %-42s %s', '    odd name but a real number attached', number_format($s['kept_despite_odd_name'])));
+        $this->line(sprintf('  %-42s %s', SahajLegacyImporter::MARKER_SHARED, number_format($s['shared_number'])));
+        $this->line(sprintf('  %-42s %s', '    (non-patients on a relative\'s number)', ''));
 
         $this->newLine();
         $this->line('<options=bold>Flagged in the workbook</>');
@@ -121,15 +135,13 @@ class ImportSahajLegacy extends Command
 
     private function import(SahajLegacyImporter $importer): int
     {
-        $tenantName = (string) $this->option('tenant');
-        $tenant = Tenant::where('store_name', $tenantName)->first();
+        $tenant = $this->resolveTenant();
 
         if (! $tenant) {
-            $this->error("No store named \"{$tenantName}\". Create it first, or pass --tenant.");
-
             return self::FAILURE;
         }
 
+        $tenantName = $tenant->store_name;
         $force = (bool) $this->option('force');
 
         $existing = Customer::withoutGlobalScopes()->where('tenant_id', $tenant->id)->count();
@@ -162,7 +174,7 @@ class ImportSahajLegacy extends Command
 
                 $customer = Customer::withoutGlobalScopes()->create([
                     'tenant_id' => $tenant->id,
-                    'name' => self::displayName($profile['name']),
+                    'name' => self::displayName($profile['name'], $profile['marker'] ?? null),
                     'phone' => $phone,
                     // Legacy data carries no consent record, and these people
                     // never opted in — leaving both unset keeps the app's own
@@ -202,9 +214,17 @@ class ImportSahajLegacy extends Command
         return self::SUCCESS;
     }
 
-    /** Legacy names are stored SHOUTING; Title Case reads better in the UI. */
-    private static function displayName(string $name): string
+    /**
+     * Legacy names are stored SHOUTING; Title Case reads better in the UI.
+     *
+     * A marker ("[Action needed]" / "[Shared number]") is appended as a visible
+     * suffix so these profiles surface in the customer list and in a plain text
+     * search, without needing a new column on the table.
+     */
+    public static function displayName(string $name, ?string $marker = null): string
     {
-        return mb_convert_case(mb_strtolower($name), MB_CASE_TITLE, 'UTF-8');
+        $display = mb_convert_case(mb_strtolower($name), MB_CASE_TITLE, 'UTF-8');
+
+        return $marker ? $display . ' ' . $marker : $display;
     }
 }

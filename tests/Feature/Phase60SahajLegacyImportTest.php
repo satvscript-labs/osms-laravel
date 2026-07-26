@@ -73,9 +73,51 @@ class Phase60SahajLegacyImportTest extends TestCase
             'VIJAY' => ['VIJAY', false, false],
             'CHIMAN' => ['CHIMAN', false, false],
             'KRUPA' => ['KRUPA', false, false],
-            // A phone on record earns the benefit of the doubt.
+            // Multi-word cash entries — the class that slipped through the first
+            // build, because the old rule only looked at single-token names.
+            'CASE SALE' => ['CASE SALE', false, true],
+            'CASH BETALA' => ['CASH BETALA', false, true],
+            'CASHH GOGGELS' => ['CASHH GOGGELS', false, true],
+            'CASE 8/1/24' => ['CASE 8/1/24', false, true],
+            'CASEB LENS' => ['CASEB LENS', false, true],
+            // Stock/service lines filed under the name field.
+            'RB & SV GOGGLES' => ['RB & SV GOGGLES', false, true],
+            'LENSE SOLUTION' => ['LENSE SOLUTION', false, true],
+            'JANKI LENS' => ['JANKI LENS', false, true],
+            'GOGALSE (misspelling)' => ['GOGALSE', false, true],
+            // Payment-mode notes and bare dates.
+            'OLD 06/12/23' => ['OLD 06/12/23', false, true],
+            'ONLINE 18/12/233' => ['ONLINE 18/12/233', false, true],
+            '2/7/24' => ['2/7/24', false, true],
+            // Keyboard mash — only the two unambiguous signals.
+            'no vowels at all' => ['VXSSDH', false, true],
+            'same letter x4' => ['WWWW', false, true],
+            'triple letter' => ['SAAA', false, true],
+            // Softer gibberish is deliberately KEPT and flagged, not deleted.
+            'CSADA is kept for review' => ['CSADA', false, false],
+            // Real Gujarati names that sit within 2 edits of "cas" — the anchor
+            // on a leading "ca" is the only thing saving them.
+            'JAY' => ['JAY', false, false],
+            'YASH' => ['YASH', false, false],
+            'HARSH' => ['HARSH', false, false],
+            'DAKSH' => ['DAKSH', false, false],
+            'VASU' => ['VASU', false, false],
+            'RAJ' => ['RAJ', false, false],
+            'ANSH' => ['ANSH', false, false],
+            'VANSH' => ['VANSH', false, false],
+            'DARSH' => ['DARSH', false, false],
+            'ASHA' => ['ASHA', false, false],
+            'DAX' => ['DAX', false, false],
+            // Real names that merely contain a flagged substring, not the token.
+            'KISHAN is not "cash"' => ['KISHAN', false, false],
+            'FRAMEZ is not "frame"' => ['FRAMEZ', false, false],
+            // A phone on record earns the benefit of the doubt — every heuristic
+            // yields to it, because a bad name is fixable and a deleted row is not.
             'CADE with a phone' => ['CADE', true, false],
-            // Structural junk.
+            'CASE SALE with a phone' => ['CASE SALE', true, false],
+            'VXSSDH with a phone' => ['VXSSDH', true, false],
+            'JANKI LENS with a phone' => ['JANKI LENS', true, false],
+            // Structural junk — unusable even with a phone, so still rejected.
             'blank' => ['', false, true],
             'single letter' => ['Q', false, true],
             'two letters' => ['AA', false, true],
@@ -83,6 +125,89 @@ class Phase60SahajLegacyImportTest extends TestCase
             // Ordinary full names.
             'full name' => ['MIHIR BHAVESH CHANDARANA', false, false],
         ];
+    }
+
+    // -------------------------------------------------------- name markers
+
+    /**
+     * @param  array{0:string,1:bool,2:bool,3:bool}  $args  name, ownPhone, hadPhone, isPatient
+     */
+    #[DataProvider('markerProvider')]
+    public function test_name_marker(array $args, ?string $expected): void
+    {
+        $marker = SahajLegacyImporter::markerFor(...$args)['marker'] ?? null;
+
+        $this->assertSame($expected, $marker, "marker for '{$args[0]}'");
+    }
+
+    public static function markerProvider(): array
+    {
+        $action = SahajLegacyImporter::MARKER_ACTION;
+        $shared = SahajLegacyImporter::MARKER_SHARED;
+
+        return [
+            // A PATIENT without their own number always gets the loud marker —
+            // even when a relative's number is on file. Confirmed with the owner:
+            // these are the records the shop most needs to keep hold of.
+            'patient, no number anywhere' => [['ANJALI SHAH', false, false, true], $action],
+            'patient on a relative\'s number' => [['ANJALI SHAH', false, true, true], $action],
+
+            // A NON-patient on a relative's number is context, not a to-do.
+            'non-patient on a relative\'s number' => [['MOTHER PATEL', false, true, false], $shared],
+
+            // A suspect name kept only because a real number is attached.
+            'cash entry with a phone' => [['CASE', true, true, false], $action],
+            'stock line with a phone' => [['JANKI LENS', true, true, false], $action],
+            'keyboard mash with a phone' => [['VXSSDH', true, true, false], $action],
+
+            // Nothing wrong with these at all — no marker.
+            'clean name, own phone' => [['RUSHI PATEL', true, true, false], null],
+            'clean patient, own phone' => [['RUSHI PATEL', true, true, true], null],
+            'long clean name, own phone' => [['MIHIR BHAVESH CHANDARANA', true, true, false], null],
+        ];
+    }
+
+    public function test_the_marker_is_appended_to_the_display_name(): void
+    {
+        $this->assertSame(
+            'Rushi Patel [Action needed]',
+            \App\Console\Commands\ImportSahajLegacy::displayName('RUSHI PATEL', SahajLegacyImporter::MARKER_ACTION),
+        );
+        $this->assertSame(
+            'Rushi Patel [Shared number]',
+            \App\Console\Commands\ImportSahajLegacy::displayName('RUSHI PATEL', SahajLegacyImporter::MARKER_SHARED),
+        );
+        $this->assertSame(
+            'Rushi Patel',
+            \App\Console\Commands\ImportSahajLegacy::displayName('RUSHI PATEL'),
+        );
+    }
+
+    /** Every patient without their own number must carry [Action needed]. */
+    public function test_no_patient_missing_a_number_is_left_unflagged(): void
+    {
+        $shared = '9824459668';
+        $importer = (new SahajLegacyImporter([
+            // Parent and child on one number; both have eye tests. Only one can
+            // hold the number, so the other must still be flagged.
+            ['id' => '1', 'name' => 'MOTHER PATEL', 'contectno' => $shared, 'date' => '2022-01-01', 'lspl' => '-1.00'],
+            ['id' => '2', 'name' => 'CHILD PATEL', 'contectno' => $shared, 'date' => '2025-01-01', 'lspl' => '-2.00'],
+        ], []))->analyse();
+
+        foreach ($importer->profiles as $p) {
+            if ($p['is_patient'] && $p['phone'] === null) {
+                $this->assertSame(SahajLegacyImporter::MARKER_ACTION, $p['marker'],
+                    "patient '{$p['name']}' has no number and must be flagged for action");
+            }
+        }
+
+        // The newest visit keeps the number; the parent loses it but, being a
+        // patient, is flagged for action rather than merely noted as shared.
+        $byName = array_column($importer->profiles, null, 'name');
+        $this->assertSame('+91 ' . $shared, $byName['CHILD PATEL']['phone']);
+        $this->assertNull($byName['CHILD PATEL']['marker']);
+        $this->assertNull($byName['MOTHER PATEL']['phone']);
+        $this->assertSame(SahajLegacyImporter::MARKER_ACTION, $byName['MOTHER PATEL']['marker']);
     }
 
     // -------------------------------------------------------------- checkedby
@@ -97,6 +222,92 @@ class Phase60SahajLegacyImportTest extends TestCase
         $this->assertSame('RUSHI', SahajLegacyImporter::mapCheckedBy('RUSHI'));
         $this->assertSame('KALARIYA HOS.', SahajLegacyImporter::mapCheckedBy('KALARIYA HOS.'));
         $this->assertNull(SahajLegacyImporter::mapCheckedBy(''));
+    }
+
+    // -------------------------------------------------- low-priority dropping
+
+    /**
+     * Confirmed with the shop owner: a profile earns its place by being either
+     * contactable (a number on record) or clinically useful (an eye test).
+     * Neither means there is nothing to keep.
+     */
+    public function test_a_profile_with_no_phone_and_no_eye_test_is_dropped(): void
+    {
+        $importer = (new SahajLegacyImporter([], [
+            ['first_name' => 'GHOST WALKIN', 'contact' => '0000000000', 'date' => '2024-03-04', 'total' => '900', 'order_no' => '1'],
+        ]))->analyse();
+
+        $this->assertCount(0, $importer->profiles);
+        $this->assertCount(1, $importer->lowPriority);
+        $this->assertSame('GHOST WALKIN', $importer->lowPriority[0]['name']);
+    }
+
+    public function test_an_eye_test_alone_is_enough_to_keep_a_profile(): void
+    {
+        $importer = (new SahajLegacyImporter([
+            ['id' => '1', 'name' => 'NO PHONE PATIENT', 'contectno' => '0000000000', 'date' => '2024-03-04', 'lspl' => '-1.00'],
+        ], []))->analyse();
+
+        $this->assertCount(1, $importer->profiles);
+        $this->assertSame(1, $importer->profiles[0]['eye_record_count']);
+        // ...and it is flagged, because the shop still needs a number for them.
+        $this->assertTrue($importer->profiles[0]['needs_action']);
+    }
+
+    public function test_a_phone_alone_is_enough_to_keep_a_profile(): void
+    {
+        $importer = (new SahajLegacyImporter([], [
+            ['first_name' => 'BUYER ONLY', 'contact' => '9824459668', 'date' => '2024-03-04', 'total' => '900', 'order_no' => '1'],
+        ]))->analyse();
+
+        $this->assertCount(1, $importer->profiles);
+        $this->assertCount(0, $importer->lowPriority);
+        $this->assertFalse($importer->profiles[0]['needs_action']);
+    }
+
+    /**
+     * The destructive misreading of the rule: someone who DID have a number but
+     * lost a shared household one to a more recent visitor still has a number on
+     * record, and must survive.
+     */
+    public function test_losing_a_shared_number_does_not_make_a_person_droppable(): void
+    {
+        $shared = '9824459668';
+        $importer = (new SahajLegacyImporter([], [
+            // Two different people on one family number, neither with an eye test.
+            ['first_name' => 'MOTHER PATEL', 'contact' => $shared, 'date' => '2022-01-01', 'total' => '500', 'order_no' => '1'],
+            ['first_name' => 'CHILD PATEL', 'contact' => $shared, 'date' => '2025-01-01', 'total' => '500', 'order_no' => '2'],
+        ]))->analyse();
+
+        $this->assertCount(2, $importer->profiles, 'neither person may be dropped');
+        $this->assertCount(0, $importer->lowPriority);
+
+        $names = array_column($importer->profiles, 'name');
+        $this->assertContains('MOTHER PATEL', $names);
+        $this->assertContains('CHILD PATEL', $names);
+
+        // The newest visit keeps the number; the other is flagged, not deleted.
+        $byName = array_column($importer->profiles, null, 'name');
+        $this->assertSame('+91 ' . $shared, $byName['CHILD PATEL']['phone']);
+        $this->assertNull($byName['MOTHER PATEL']['phone']);
+        $this->assertTrue($byName['MOTHER PATEL']['had_phone_on_record']);
+        // Neither has an eye test, so this is context, not a to-do.
+        $this->assertSame(SahajLegacyImporter::MARKER_SHARED, $byName['MOTHER PATEL']['marker']);
+    }
+
+    public function test_dropping_is_judged_on_the_merged_person_not_the_single_row(): void
+    {
+        // The estimate row alone has neither a phone nor an eye test, but it is
+        // the same person as the eye-record row and must not be dropped.
+        $importer = (new SahajLegacyImporter([
+            ['id' => '1', 'name' => 'ANJALI SHAH', 'contectno' => '0000000000', 'date' => '2024-05-01', 'lspl' => '-2.00'],
+        ], [
+            ['first_name' => 'ANJALI SHAH', 'contact' => '0000000000', 'date' => '2024-06-01', 'total' => '900', 'order_no' => '1'],
+        ]))->analyse();
+
+        $this->assertCount(1, $importer->profiles);
+        $this->assertCount(0, $importer->lowPriority);
+        $this->assertSame(2, $importer->profiles[0]['source_rows']);
     }
 
     // ------------------------------------------------------ identity grouping

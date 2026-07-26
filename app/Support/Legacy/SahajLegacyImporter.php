@@ -23,6 +23,29 @@ class SahajLegacyImporter
         'old', 'old payment', 'oldpayment', 'bhul', 'test', 'testing', 'abc',
         'ase', 'xyz', 'na', 'n/a', 'nil', 'none', 'unknown', 'lens', 'frame',
         'ffff', 'fffe', 'vxcas', 'dummy', 'sample', 'x',
+        // Cash-entry typos that don't begin "ca", so the anchored fuzzy rule in
+        // looksLikeCashEntry() can't reach them. Observed in the real dump.
+        'xas', 'czse',
+    ];
+
+    /**
+     * Stock and service lines the shop filed under the name field ("CASH LENSE
+     * SPRAY", "RB & SV GOGGLES", "LENSE SOLUTION"). Matched as whole tokens
+     * anywhere in the name — no Indian given name collides with any of these.
+     */
+    private const PRODUCT_WORDS = [
+        'lens', 'lense', 'lenses', 'goggle', 'goggles', 'frame', 'frames',
+        'rayban', 'spray', 'solution', 'sale', 'cover', 'chasma', 'chashma',
+        'cloth', 'nosepad', 'screw', 'stock', 'repair', 'oneday',
+    ];
+
+    /**
+     * Payment-mode notes typed where a name belongs ("OLD 06/12/23",
+     * "ONLINE 18/12/233"). Only ever matched as the FIRST token.
+     */
+    private const MODE_WORDS = [
+        'old', 'online', 'olnine', 'onlin', 'onl', 'gpay', 'phonepe', 'paytm',
+        'upi', 'card', 'credit', 'debit', 'due', 'pending', 'balance', 'advance',
     ];
 
     /**
@@ -31,6 +54,12 @@ class SahajLegacyImporter
      * owner; stored as "Self" rather than the literal legacy string.
      */
     private const SELF_PREFIXES = ['old', '0ld', 'olf', 'oldd'];
+
+    /** A gap only the shop can close — shown as a suffix on the customer name. */
+    public const MARKER_ACTION = '[Action needed]';
+
+    /** Context, not a gap: this person is reachable on a relative's number. */
+    public const MARKER_SHARED = '[Shared number]';
 
     /** @var list<array<string,mixed>> */
     public array $profiles = [];
@@ -43,6 +72,10 @@ class SahajLegacyImporter
 
     /** @var list<array<string,mixed>> */
     public array $autoPickedPhone = [];
+
+    /** Profiles dropped for holding neither a phone nor an eye test. */
+    /** @var list<array<string,mixed>> */
+    public array $lowPriority = [];
 
     /** @var array<string,int> */
     public array $stats = [];
@@ -64,9 +97,61 @@ class SahajLegacyImporter
         );
 
         $this->groupIntoProfiles($records);
+        $this->dropLowPriority();
         $this->buildStats();
 
         return $this;
+    }
+
+    /**
+     * Drop profiles that carry no usable information at all.
+     *
+     * Confirmed with the shop owner: a profile is worth keeping if it is either
+     * CONTACTABLE (a number was recorded for them somewhere) or CLINICALLY
+     * USEFUL (it holds at least one eye test). One of the two is enough. A
+     * profile with neither is a bare name typed on an estimate — there is
+     * nothing to call, nothing to prescribe from, and no way to tell whether it
+     * was even a person.
+     *
+     * Runs AFTER grouping, deliberately: a name that looks empty on its own may
+     * pick up a phone or a prescription once merged with the same person's other
+     * rows, and must be judged on the merged result.
+     */
+    private function dropLowPriority(): void
+    {
+        $keep = [];
+
+        foreach ($this->profiles as $profile) {
+            // had_phone_on_record, NOT phone: someone who lost a shared household
+            // number to a more recent visitor still had a number on file, and is
+            // contactable via the family. Deleting them would be the one
+            // genuinely destructive reading of this rule.
+            if ($profile['had_phone_on_record'] || $profile['eye_record_count'] > 0) {
+                $keep[] = $profile;
+
+                continue;
+            }
+
+            $this->lowPriority[] = [
+                'name' => $profile['name'],
+                'name_variants' => implode(' / ', $profile['name_variants']),
+                'first_seen' => $profile['first_seen'],
+                'last_seen' => $profile['last_seen'],
+                'source_rows' => $profile['source_rows'],
+                'sources' => $profile['sources'],
+                'reason' => 'No phone number and no eye test on record — nothing to contact or prescribe from',
+            ];
+        }
+
+        $this->profiles = $keep;
+
+        // A dropped person may have been the only one contesting a number, so
+        // anyone still flagged for a shared phone must actually still exist.
+        $names = array_column($this->profiles, 'name');
+        $this->manualReview = array_values(array_filter(
+            $this->manualReview,
+            static fn ($r) => in_array($r['name'], $names, true),
+        ));
     }
 
     // ------------------------------------------------------------------ intake
@@ -324,10 +409,27 @@ class SahajLegacyImporter
         $newest = $person['newest'];
         $eyeRecords = array_values(array_filter(array_column($rows, 'eye_record')));
 
+        $phone = $keepsPhone ? $person['preferred_phone'] : null;
+
+        // Whether a number was ever recorded for this person ANYWHERE in the
+        // legacy data — distinct from `$phone`, which is null when they lost a
+        // shared-household number to a more recent visitor. The low-priority
+        // rule below must read this one, or it would delete people who did have
+        // a number and merely lost the contest for it.
+        $hadPhoneOnRecord = $person['preferred_phone'] !== null;
+
+        $isPatient = $eyeRecords !== [];
+        $flag = self::markerFor($newest['name'], $phone !== null, $hadPhoneOnRecord, $isPatient);
+
         $profile = [
             'name' => $newest['name'],
             'name_variants' => array_values(array_unique(array_column($rows, 'name'))),
-            'phone' => $keepsPhone ? $person['preferred_phone'] : null,
+            'phone' => $phone,
+            'had_phone_on_record' => $hadPhoneOnRecord,
+            'is_patient' => $isPatient,
+            'marker' => $flag['marker'] ?? null,
+            'marker_reason' => $flag['reason'] ?? '',
+            'needs_action' => ($flag['marker'] ?? null) === self::MARKER_ACTION,
             'shares_phone_with' => '',
             'first_seen' => self::earliest($rows)?->toDateString() ?? '',
             'last_seen' => $newest['date']?->toDateString() ?? '',
@@ -452,24 +554,197 @@ class SahajLegacyImporter
         if (preg_match('/^[\d\s\-\+]+$/', $name)) {
             return 'Name is numeric (a phone number or amount typed into the name field)';
         }
+        // Everything below is a heuristic about what a name LOOKS like, and any
+        // heuristic will eventually be wrong about a real person. A valid phone
+        // number is hard evidence to the contrary — the shop only bothered
+        // typing one for an actual customer — so it overrides all of them. Such
+        // rows are imported and flagged instead (see actionReason()), which is
+        // the recoverable outcome: staff can fix a bad name, not a deleted row.
+        if ($hasPhone) {
+            return null;
+        }
+
         if (in_array(strtolower($name), self::JUNK_WORDS, true)) {
             return 'Bookkeeping placeholder, not a customer name';
         }
+        if (self::looksLikeCashEntry($name)) {
+            return 'Cash-entry pseudo-name (no phone on record)';
+        }
+        if ($word = self::productWordIn($name)) {
+            return "Stock/service line, not a person (contains \"{$word}\")";
+        }
+        if (self::firstTokenIsPaymentMode($name)) {
+            return 'Payment-mode note typed into the name field';
+        }
+        if (preg_match('#\d{1,2}[/\-.]\d{1,2}([/\-.]\d{2,4})?#', $name)) {
+            return 'A date was typed into the name field';
+        }
+        if ($reason = self::gibberishReason($name)) {
+            return $reason;
+        }
 
-        // The shop logged thousands of walk-in cash sales under the pseudo-name
-        // "CASE"/"CASH", fat-fingered a different way nearly every time (CASE3,
-        // CASHHH, CASWE, XAS, CAWE…). An exact word list can't keep up, but real
-        // names never sit 1-2 edits from "cash" — VEDANT, VIVEK, KAJAL and VIJAY
-        // are all 4+ edits away, so they survive this check.
-        if (! $hasPhone && ! str_contains($name, ' ') && mb_strlen($name) <= 7) {
-            foreach (['cash', 'case', 'cas'] as $target) {
-                if (levenshtein(strtolower($name), $target) <= 2) {
-                    return 'Cash-entry typo variant (no phone on record)';
-                }
+        return null;
+    }
+
+    /**
+     * The suffix an imported profile carries in the app, or null if it's clean.
+     *
+     * Two markers, deliberately distinct:
+     *
+     *   [Action needed]  a real gap only the shop can close. Reserved for
+     *                    PATIENTS without their own number — a file with eye
+     *                    tests in it is the one thing the shop cannot afford to
+     *                    lose track of, so it gets the loud marker even when a
+     *                    relative's number is on file — and for a suspect name
+     *                    that survived only because a real number is attached.
+     *
+     *   [Shared number]  not a gap, just context: a non-patient reachable on a
+     *                    household number a relative holds. Without it the
+     *                    placeholder `+91 0…` would appear on screen with no
+     *                    explanation, which reads like a bug.
+     *
+     * @return array{marker:string,reason:string}|null
+     */
+    public static function markerFor(
+        string $name,
+        bool $hasOwnPhone,
+        bool $hadPhoneOnRecord = false,
+        bool $isPatient = false,
+    ): ?array {
+        if (! $hasOwnPhone) {
+            if ($isPatient) {
+                return [
+                    'marker' => self::MARKER_ACTION,
+                    'reason' => $hadPhoneOnRecord
+                        ? 'Has eye tests on file, but a relative holds the shared number — collect their own'
+                        : 'Has eye tests on file but no phone number anywhere — collect one',
+                ];
+            }
+
+            if ($hadPhoneOnRecord) {
+                return [
+                    'marker' => self::MARKER_SHARED,
+                    'reason' => 'Reachable on a household number a relative holds',
+                ];
+            }
+
+            // Unreachable in practice — dropLowPriority() removes anyone with
+            // neither a number nor an eye test — but kept so the rule is total.
+            return ['marker' => self::MARKER_ACTION, 'reason' => 'No phone number on record'];
+        }
+
+        // It kept its real phone, so junkReason() waved it through. The name
+        // still reads like a bookkeeping entry, and only the shop can say who
+        // this actually is.
+        if (in_array(mb_strtolower($name), self::JUNK_WORDS, true)
+            || self::looksLikeCashEntry($name)
+            || self::productWordIn($name) !== null
+            || self::firstTokenIsPaymentMode($name)
+            || self::gibberishReason($name) !== null) {
+            return [
+                'marker' => self::MARKER_ACTION,
+                'reason' => 'Name looks like a bookkeeping entry, but a real phone number is attached',
+            ];
+        }
+
+        return null;
+    }
+
+    /**
+     * The shop logged walk-in cash sales under the pseudo-name "CASE"/"CASH",
+     * fat-fingered differently nearly every time (CASE SALE, CASHH GOGGELS,
+     * CASEB LENS, CASE 8/1/24).
+     *
+     * The match is anchored on the leading "ca" before the edit-distance test.
+     * That anchor is doing real work: without it, distance alone sweeps up a
+     * long list of genuine Gujarati names — JAY, YASH, HARSH, DAKSH, VASU, RAJ,
+     * ANSH, VANSH, DARSH, PAL, ASHA, RAM, DAX are every one of them within two
+     * edits of "cas". None of them begin "ca", so the anchor keeps them.
+     */
+    public static function looksLikeCashEntry(string $name): bool
+    {
+        $token = self::normaliseToken(self::firstToken($name));
+
+        if ($token === '' || mb_strlen($token) > 8) {
+            return false;
+        }
+        if (! preg_match('/^[ck][a@oz]/', $token)) {
+            return false;
+        }
+
+        foreach (['cash', 'case', 'cas'] as $target) {
+            if (levenshtein($token, $target) <= 2) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /** Returns the offending product word, or null. */
+    public static function productWordIn(string $name): ?string
+    {
+        foreach (self::tokens($name) as $token) {
+            if (in_array($token, self::PRODUCT_WORDS, true)) {
+                return $token;
+            }
+            // "GOGGELS", "GOGALSE", "GOGEELS", "GOGLES" — one misspelling per
+            // entry. Anchored on "gog" so it can't reach a real name.
+            if (str_starts_with($token, 'gog') && levenshtein($token, 'goggles') <= 3) {
+                return $token;
             }
         }
 
         return null;
+    }
+
+    public static function firstTokenIsPaymentMode(string $name): bool
+    {
+        return in_array(self::normaliseToken(self::firstToken($name)), self::MODE_WORDS, true);
+    }
+
+    /**
+     * Keyboard mash typed to get past a required field (VXSSDH, DJHJD, WWWW).
+     *
+     * Deliberately conservative — only two signals, both of which no real name
+     * can produce. Softer gibberish (CSADA, CADWD) is left alone and imported
+     * with an "[Action needed]" flag rather than risk deleting a real person.
+     */
+    public static function gibberishReason(string $name): ?string
+    {
+        if (str_contains($name, ' ')) {
+            return null;   // multi-word entries are almost always real
+        }
+
+        $token = self::normaliseToken($name);
+        if (mb_strlen($token) < 3) {
+            return null;
+        }
+
+        if (preg_match('/(.)\1{2,}/', $token)) {
+            return 'Keyboard mash — the same letter three or more times in a row';
+        }
+        if (! preg_match('/[aeiou]/', $token)) {
+            return 'Keyboard mash — no vowels at all';
+        }
+
+        return null;
+    }
+
+    /** @return list<string> lower-cased word tokens, punctuation stripped */
+    private static function tokens(string $name): array
+    {
+        $parts = preg_split('/[\s\/\-&,+.]+/', mb_strtolower($name)) ?: [];
+
+        return array_values(array_filter(array_map(
+            static fn (string $t): string => self::normaliseToken($t),
+            $parts
+        )));
+    }
+
+    private static function normaliseToken(string $token): string
+    {
+        return trim(mb_strtolower($token), " \t.,\-/&+");
     }
 
     /**
@@ -559,6 +834,21 @@ class SahajLegacyImporter
             'eye_records_to_import' => array_sum(array_column($this->profiles, 'eye_record_count')),
             'phone_auto_picked' => count($this->autoPickedPhone),
             'merged_name_variants' => count(array_filter($this->profiles, fn ($p) => count($p['name_variants']) > 1)),
+            'patients' => count(array_filter($this->profiles, fn ($p) => $p['is_patient'])),
+            'needs_action' => count(array_filter($this->profiles, fn ($p) => $p['needs_action'])),
+            'shared_number' => count(array_filter(
+                $this->profiles,
+                fn ($p) => $p['marker'] === self::MARKER_SHARED
+            )),
+            'patients_needing_a_number' => count(array_filter(
+                $this->profiles,
+                fn ($p) => $p['is_patient'] && $p['phone'] === null
+            )),
+            'kept_despite_odd_name' => count(array_filter(
+                $this->profiles,
+                fn ($p) => $p['needs_action'] && $p['phone'] !== null
+            )),
+            'low_priority_dropped' => count($this->lowPriority),
         ];
     }
 }

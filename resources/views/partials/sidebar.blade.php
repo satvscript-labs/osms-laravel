@@ -85,21 +85,37 @@
     @endif
 
     {{-- User footer --}}
+    @php
+        $displayName = $user?->name ?? 'User';
+        // Initials from the first and last word, so "Sahaj Optical (Local Test Owner)"
+        // still reduces to a clean two-letter mark.
+        $words = preg_split('/\s+/', trim(preg_replace('/[^\p{L}\p{N}\s]+/u', ' ', $displayName)) ?: 'U');
+        $initials = mb_strtoupper(mb_substr($words[0] ?? 'U', 0, 1) . (count($words) > 1 ? mb_substr(end($words), 0, 1) : ''));
+    @endphp
     <div class="border-top px-2 py-2">
-        <div class="d-flex align-items-center gap-2 px-2 py-1">
+        <div class="sidebar-account">
+            <span class="sidebar-account-avatar">{{ $initials }}</span>
+            {{-- min-w-0 is what allows text-truncate to engage inside a flex row. --}}
             <div class="flex-grow-1 min-w-0">
-                <p class="mb-0 fw-medium text-truncate" style="font-size:var(--text-sm);">{{ $user?->name ?? 'User' }}</p>
+                <p class="mb-0 fw-medium text-truncate" style="font-size:var(--text-sm);"
+                   title="{{ $displayName }}">{{ $displayName }}</p>
+                @if ($user?->email)
+                    <p class="mb-0 text-muted-foreground text-truncate" style="font-size:var(--text-3xs);"
+                       title="{{ $user->email }}">{{ $user->email }}</p>
+                @endif
             </div>
-            <a href="{{ route('profile.edit') }}"
-               class="btn btn-sm {{ request()->routeIs('profile.edit') ? 'btn-primary' : 'btn-light' }}" title="Settings">
-                <i class="bi bi-gear"></i>
-            </a>
-            <form method="POST" action="{{ route('logout') }}" class="m-0">
-                @csrf
-                <button type="submit" class="btn btn-sm btn-light" title="Log out">
-                    <i class="bi bi-box-arrow-right"></i>
-                </button>
-            </form>
+            <div class="sidebar-account-actions">
+                <a href="{{ route('profile.edit') }}"
+                   class="btn btn-sm {{ request()->routeIs('profile.edit') ? 'btn-primary' : 'btn-light' }}" title="Settings">
+                    <i class="bi bi-gear"></i>
+                </a>
+                <form method="POST" action="{{ route('logout') }}" class="m-0">
+                    @csrf
+                    <button type="submit" class="btn btn-sm btn-light" title="Log out">
+                        <i class="bi bi-box-arrow-right"></i>
+                    </button>
+                </form>
+            </div>
         </div>
     </div>
 </aside>

@@ -29,8 +29,10 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        // Render paginator links with Bootstrap 5 markup (matches the UI kit).
+        // Bootstrap 5 markup (matches the UI kit), then our own compact window —
+        // the stock view renders ~11 page links, which swamps a 75-page list.
         Paginator::useBootstrapFive();
+        Paginator::defaultView('pagination::osms');
 
         $this->hardenForProduction();
     }

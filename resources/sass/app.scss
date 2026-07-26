@@ -83,6 +83,7 @@ $enable-negative-margins:  true;
 @import "bootstrap/scss/alert";
 @import "bootstrap/scss/progress";
 @import "bootstrap/scss/list-group";
+@import "bootstrap/scss/pagination";
 @import "bootstrap/scss/close";
 @import "bootstrap/scss/modal";
 @import "bootstrap/scss/tooltip";
@@ -1186,7 +1187,96 @@ $wa-green-strong: #0b8043;
 }
 
 // ============================================================
-// 19. PRINT  (thermal receipt + A4)
+// 19. LAYOUT UTILITIES
+// ============================================================
+// Bootstrap ships no `min-w-0`, but a flex child defaults to `min-width: auto`
+// and therefore refuses to shrink below its content — which silently defeats
+// `text-truncate` on every long name in a flex row (sidebar store name, sidebar
+// account footer). This is the one line that lets truncation actually work.
+.min-w-0 { min-width: 0 !important; }
+
+// ============================================================
+// 20. SIDEBAR ACCOUNT FOOTER
+// ============================================================
+.sidebar-account {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.5rem;
+  border-radius: var(--radius);
+  transition: background var(--duration-base) var(--ease-spring);
+
+  &:hover { background: var(--osms-primary-soft); }
+}
+.sidebar-account-avatar {
+  width: 2rem; height: 2rem; flex-shrink: 0;
+  border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, var(--osms-primary-soft), #dbe6ef);
+  color: var(--osms-primary);
+  font-weight: 600; font-size: var(--text-2xs); letter-spacing: 0.02em;
+  box-shadow: inset 0 0 0 1px rgba(0, 79, 117, 0.08);
+  transition: transform var(--duration-base) var(--ease-spring);
+}
+.sidebar-account:hover .sidebar-account-avatar { transform: scale(1.06); }
+.sidebar-account-actions { display: flex; gap: 0.25rem; flex-shrink: 0; }
+
+// ============================================================
+// 21. PAGINATION
+// ============================================================
+// Bootstrap's pagination partial supplies the structural reset (list-style,
+// flex row); everything below is the OSMS skin on top of it.
+.pagination {
+  gap: 0.25rem;
+  margin-bottom: 0;
+  flex-wrap: wrap;
+}
+.page-link {
+  min-width: 2.25rem;
+  padding: 0.4rem 0.6rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--osms-fg);
+  background: var(--surface-card);
+  border: 1px solid var(--osms-border);
+  border-radius: var(--radius-sm) !important;   // Bootstrap squares off inner items
+  box-shadow: var(--shadow-sm);
+
+  &:hover {
+    background: var(--osms-primary-soft);
+    border-color: var(--osms-primary);
+    color: var(--osms-primary);
+    box-shadow: var(--shadow-raised);
+  }
+  &:focus { box-shadow: var(--shadow-focus); }
+}
+.page-item.active .page-link {
+  background: var(--osms-primary);
+  border-color: var(--osms-primary);
+  color: #fff;
+  box-shadow: var(--shadow-raised);
+}
+.page-item.disabled .page-link {
+  color: var(--osms-faint);
+  background: var(--surface-sunken);
+  border-color: var(--osms-border);
+  box-shadow: none;
+}
+// The "…" gap marker is a label, not a target — strip the affordances.
+.page-item.disabled .page-link.osms-page-gap,
+.page-link.osms-page-gap {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  min-width: 1.5rem;
+  color: var(--osms-faint);
+}
+
+// ============================================================
+// 22. PRINT  (thermal receipt + A4)
 // ============================================================
 @media print {
   .app-sidebar, .no-print, .btn { display: none !important; }
