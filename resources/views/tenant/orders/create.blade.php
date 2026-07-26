@@ -30,6 +30,7 @@
         <input type="hidden" name="customer_country_code" :value="newCode">
         <input type="hidden" name="customer_consent" :value="newMode && newConsent ? 1 : 0">
         <input type="hidden" name="customer_whatsapp_opt_in" :value="newMode && newWhatsapp ? 1 : 0">
+        <input type="hidden" name="customer_whatsapp_shared_ack" :value="newMode && newSharedAck ? 1 : 0">
         <input type="hidden" name="eye_record_id" :value="eyeRecordId">
         <input type="hidden" name="advance_paid" :value="effectiveAdvance()">
         <input type="hidden" name="payment_method" :value="paymentMethod">
@@ -180,6 +181,29 @@
                                     <input class="form-check-input" type="checkbox" id="newWhatsapp" x-model="newWhatsapp">
                                     <span style="font-size:var(--text-xs);">Agrees to WhatsApp updates</span>
                                 </label>
+
+                                {{-- SHARE-01 / PRIV — same acknowledgement the customer form
+                                     demands, enforced server-side in both places. Reveals the
+                                     moment the number is known to be shared AND WhatsApp is
+                                     opted in — height-animated, never a pop-in. --}}
+                                <div class="reveal" :class="{ 'reveal-open': newWhatsapp && householdMembers.length }">
+                                    <div class="reveal-inner">
+                                        <label class="consent-row align-items-start mt-1" for="newSharedAck"
+                                               style="background: var(--tone-amber-bg); border-radius: var(--radius-sm);">
+                                            <input class="form-check-input mt-1" type="checkbox"
+                                                   id="newSharedAck" x-model="newSharedAck">
+                                            <span style="font-size:var(--text-2xs); color: var(--tone-amber);">
+                                                <i class="bi bi-people-fill me-1"></i>
+                                                <strong>This number is shared.</strong>
+                                                Updates about <span x-text="newName.trim() || 'this customer'"></span>
+                                                will reach a phone
+                                                <span x-text="householdMembers.length"></span>
+                                                other <span x-text="householdMembers.length === 1 ? 'person' : 'people'"></span>
+                                                also <span x-text="householdMembers.length === 1 ? 'uses' : 'use'"></span>.
+                                            </span>
+                                        </label>
+                                    </div>
+                                </div>
                             </div>
                             <p class="text-muted-foreground mb-0 mt-2" style="font-size:var(--text-xs);">
                                 Saved when you create the order. If the number is already in use we'll ask
@@ -521,6 +545,7 @@
             codes: ['+91', '+1', '+44', '+971', '+61', '+65', '+880', '+977'],
             customerId: '', selectedCustomer: null, customerSearch: '',
             newMode: false, newName: '', newPhone: '', newCode: '+91', newConsent: false, newWhatsapp: false,
+            newSharedAck: false,
             eyeRecords: [], eyeRecordId: '',
             items: [], itemSearch: '', scanFlash: null,
             customMode: false, customName: '', customPrice: '', customQty: 1,
@@ -548,6 +573,7 @@
                     customerId: this.customerId, selectedCustomer: this.selectedCustomer,
                     newMode: this.newMode, newName: this.newName, newPhone: this.newPhone,
                     newCode: this.newCode, newConsent: this.newConsent, newWhatsapp: this.newWhatsapp,
+                    newSharedAck: this.newSharedAck,
                     eyeRecordId: this.eyeRecordId,
                     advancePaid: this.advancePaid, paymentMethod: this.paymentMethod,
                     unit: this.unit, discountValue: this.discountValue,
@@ -733,6 +759,9 @@
                     // the order can never be silently attached to whoever happened
                     // to match the number.
                     && (!this.newMode || this.householdResolved)
+                    // SHARE-01 / PRIV — opting a new person in on a shared handset
+                    // needs the acknowledgement ticked (server enforces it too).
+                    && !(this.newMode && this.newWhatsapp && this.householdMembers.length && !this.newSharedAck)
                     && (this.fulfillmentType !== 'special' || !!this.estimatedReadyAt);
             },
             validateForm(e) {

@@ -279,6 +279,9 @@ class OrderController extends Controller
             // Made mandatory below when a NEW customer is being created inline.
             'customer_consent' => ['nullable', 'boolean'],
             'customer_whatsapp_opt_in' => ['nullable', 'boolean'],
+            // SHARE-01 — required only when opting in on an already-used number;
+            // enforced in resolveInlineCustomer() where the household is known.
+            'customer_whatsapp_shared_ack' => ['nullable', 'boolean'],
             'eye_record_id' => ['nullable', 'exists:eye_records,id'],
             'fulfillment_type' => ['nullable', 'in:instant,special'],
             // Required only for a special order (a prepared job needs a promised date).
@@ -786,6 +789,23 @@ class OrderController extends Controller
                 if (Customer::sameName($candidate->name, $name)) {
                     return $candidate;
                 }
+            }
+
+            // SHARE-01 / PRIV — the same acknowledgement the customer form
+            // demands. Consent is per person but a handset is shared, so opting
+            // a NEW person in on a number a relative already uses means their
+            // order updates land on someone else's phone. Enforced here as well
+            // because the counter is the surface where this is most likely to be
+            // rushed — leaving it to the form would make it trivially bypassable.
+            if ($onThisNumber->isNotEmpty()
+                && ! empty($validated['customer_whatsapp_opt_in'])
+                && empty($validated['customer_whatsapp_shared_ack'])) {
+                throw ValidationException::withMessages([
+                    'customer_whatsapp_shared_ack' => 'This number is shared with '
+                        . $onThisNumber->count() . ' other '
+                        . ($onThisNumber->count() === 1 ? 'person' : 'people')
+                        . ". Confirm they're happy for updates about {$name} to arrive on it.",
+                ]);
             }
         }
 

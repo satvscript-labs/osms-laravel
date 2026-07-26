@@ -99,9 +99,15 @@
             @endphp
             <div class="rounded-3 p-2" style="background: var(--surface-sunken);">
                 <p class="section-label mb-1 px-2 pt-1">Consent</p>
+                {{-- Ticking data consent auto-ticks WhatsApp (faster capture); staff can
+                     untick it after. This MUST go through Alpine rather than setting
+                     .checked directly — a programmatic .checked fires no event, so
+                     x-model never sees it and the shared-number acknowledgement below
+                     would stay hidden until a failed submit revealed it server-side. --}}
                 <label class="consent-row" for="data_consent">
                     <input class="form-check-input @error('data_consent') is-invalid @enderror" type="checkbox"
-                           name="data_consent" value="1" id="data_consent" @checked($consentChecked)>
+                           name="data_consent" value="1" id="data_consent"
+                           x-model="dataConsent" @change="if (dataConsent) waOptIn = true">
                     <span class="small">Consents to storing their details &amp; prescription <span class="text-danger">*</span></span>
                 </label>
                 <label class="consent-row" for="whatsapp_opt_in">
@@ -174,6 +180,7 @@
             pickHousehold(m) { window.location.href = m.url; },
 
             name: @json(old('name', $customer->name ?? '')),
+            dataConsent: @json((bool) $consentChecked),
             waOptIn: @json((bool) old('whatsapp_opt_in', ($customer && $customer->whatsapp_opt_in))),
             code: @json($oldCode),
             national: @json($oldNational),
@@ -198,15 +205,6 @@
             },
         };
     }
-
-    // PRIV-01 — ticking data consent auto-ticks WhatsApp opt-in (faster capture);
-    // staff can still untick WhatsApp afterwards.
-    (function () {
-        const dc = document.getElementById('data_consent');
-        const wa = document.getElementById('whatsapp_opt_in');
-        if (!dc || !wa) return;
-        dc.addEventListener('change', () => { if (dc.checked) wa.checked = true; });
-    })();
 
     // 5.5 — derive age from the birthday. When a birthday is set, the age is
     // computed and the field locked; clearing the birthday makes age editable again.

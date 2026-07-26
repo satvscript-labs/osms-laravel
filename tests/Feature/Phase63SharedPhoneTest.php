@@ -328,6 +328,47 @@ class Phase63SharedPhoneTest extends TestCase
         $this->assertTrue(Customer::withoutGlobalScopes()->where('name', 'Priya Shah')->firstOrFail()->whatsapp_opt_in);
     }
 
+    /**
+     * The counter is the surface where this is most likely to be rushed, so the
+     * order builder must enforce the same acknowledgement as the customer form —
+     * otherwise the protection is one click away from being bypassed.
+     */
+    public function test_the_order_page_cannot_bypass_the_shared_number_acknowledgement(): void
+    {
+        $this->makeCustomer('Sunita Shah', '+91 9824459668');
+
+        $this->placeOrder([
+            'customer_whatsapp_opt_in' => 1,
+        ])->assertSessionHasErrors('customer_whatsapp_shared_ack');
+
+        $this->assertSame(0, Order::withoutGlobalScopes()->count(), 'no order may be created');
+        $this->assertSame(1, Customer::withoutGlobalScopes()->count(), 'no customer may be created');
+    }
+
+    public function test_the_order_page_proceeds_once_the_shared_number_is_acknowledged(): void
+    {
+        $this->makeCustomer('Sunita Shah', '+91 9824459668');
+
+        $this->placeOrder([
+            'customer_whatsapp_opt_in' => 1,
+            'customer_whatsapp_shared_ack' => 1,
+        ])->assertSessionHasNoErrors();
+
+        $priya = Customer::withoutGlobalScopes()->where('name', 'Priya Shah')->firstOrFail();
+        $this->assertTrue($priya->whatsapp_opt_in);
+        $this->assertSame(1, Order::withoutGlobalScopes()->where('customer_id', $priya->id)->count());
+    }
+
+    /** Not opting into WhatsApp at the counter needs no acknowledgement. */
+    public function test_the_order_page_needs_no_acknowledgement_without_whatsapp_opt_in(): void
+    {
+        $this->makeCustomer('Sunita Shah', '+91 9824459668');
+
+        $this->placeOrder()->assertSessionHasNoErrors();
+
+        $this->assertSame(2, Customer::withoutGlobalScopes()->count());
+    }
+
     /** An unshared number must not gain an extra hoop. */
     public function test_whatsapp_opt_in_on_an_unshared_number_needs_no_acknowledgement(): void
     {
