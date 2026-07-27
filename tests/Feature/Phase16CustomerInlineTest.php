@@ -75,14 +75,22 @@ class Phase16CustomerInlineTest extends TestCase
         $this->assertDatabaseHas('orders', ['customer_id' => $customer->id]);
     }
 
-    public function test_inline_reuses_an_existing_customer_by_phone(): void
+    /**
+     * SHARE-01 — reuse now requires the NAME to match as well as the number.
+     *
+     * This test previously asserted that the same phone with a DIFFERENT typed
+     * name reused the existing profile. That was the bug: a phone number belongs
+     * to a household, so it silently filed a relative's order under whoever was
+     * already on the number. See _artifacts/SHARED_PHONE_DESIGN.md.
+     */
+    public function test_inline_reuses_an_existing_customer_by_name_and_phone(): void
     {
         $item = $this->makeItem();
         $existing = Customer::create(['tenant_id' => $this->user->tenant_id, 'name' => 'Rahul', 'phone' => '+91 9000012345']);
 
         $this->actingAs($this->user)->post(route('tenant.orders.store'), [
-            // Same phone, different typed name — must reuse, not duplicate or rename.
-            'customer_name' => 'Different Name',
+            // Same person re-typed instead of searched for — reuse, don't duplicate.
+            'customer_name' => 'Rahul',
             'customer_country_code' => '+91',
             'customer_phone' => '90000 12345',
             'customer_consent' => 1,
@@ -92,6 +100,29 @@ class Phase16CustomerInlineTest extends TestCase
         $this->assertDatabaseCount('customers', 1);
         $this->assertSame('Rahul', $existing->fresh()->name); // name untouched
         $this->assertDatabaseHas('orders', ['customer_id' => $existing->id]);
+    }
+
+    public function test_inline_a_different_name_on_the_same_number_is_a_separate_person(): void
+    {
+        $item = $this->makeItem();
+        $existing = Customer::create(['tenant_id' => $this->user->tenant_id, 'name' => 'Rahul', 'phone' => '+91 9000012345']);
+
+        $this->actingAs($this->user)->post(route('tenant.orders.store'), [
+            // A family member on the household number.
+            'customer_name' => 'Rahul\'s Sister',
+            'customer_country_code' => '+91',
+            'customer_phone' => '90000 12345',
+            'customer_consent' => 1,
+            'items' => [['inventory_id' => $item->id, 'quantity' => 1]],
+        ])->assertRedirect();
+
+        $this->assertDatabaseCount('customers', 2);
+        $this->assertSame('Rahul', $existing->fresh()->name);
+
+        $sister = Customer::where('name', 'Rahul\'s Sister')->firstOrFail();
+        $this->assertSame('+91 9000012345', $sister->phone, 'she keeps the household number');
+        $this->assertDatabaseHas('orders', ['customer_id' => $sister->id]);
+        $this->assertDatabaseMissing('orders', ['customer_id' => $existing->id]);
     }
 
     public function test_order_requires_a_customer_id_or_a_new_name(): void
@@ -105,16 +136,26 @@ class Phase16CustomerInlineTest extends TestCase
         $this->assertDatabaseCount('orders', 0);
     }
 
-    public function test_inline_new_customer_requires_a_phone(): void
+    /**
+     * SHARE-01 — a phone is no longer required. This previously demanded one,
+     * which is why the Sahaj migration had to fabricate numbers for people who
+     * genuinely had none, and why a walk-in who won't give a number could not be
+     * served at all.
+     */
+    public function test_inline_new_customer_does_not_require_a_phone(): void
     {
         $item = $this->makeItem();
 
         $this->actingAs($this->user)->post(route('tenant.orders.store'), [
             'customer_name' => 'No Phone',
+            'customer_consent' => 1,
             'items' => [['inventory_id' => $item->id, 'quantity' => 1]],
-        ])->assertSessionHasErrors('customer_phone');
+        ])->assertRedirect()->assertSessionHasNoErrors();
 
-        $this->assertDatabaseCount('orders', 0);
+        $customer = Customer::where('name', 'No Phone')->firstOrFail();
+
+        $this->assertNull($customer->phone, 'stored as NULL, never an empty string');
+        $this->assertDatabaseHas('orders', ['customer_id' => $customer->id]);
     }
 
     public function test_inline_new_customer_phone_format_is_validated(): void

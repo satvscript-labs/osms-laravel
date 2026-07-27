@@ -82,8 +82,12 @@ class Phase10FeatureGapsATest extends TestCase
         $customer = Customer::create(['name' => 'Rahul', 'phone' => '+91 9876543210']);
         $record = EyeRecord::create(['customer_id' => $customer->id, 'od_sph' => -1.0, 'recorded_by' => $user->id]);
 
+        // A cylinder is included because an axis without one is not a valid
+        // prescription — the axis says which way the astigmatism lies, so on its
+        // own there is nothing for it to describe. Rejected since SHARE-01;
+        // this fixture predated the rule.
         $this->actingAs($user)->put(route('tenant.eye-records.update', $record), [
-            'od_sph' => -2.5, 'od_axis' => 45, 'pd' => 60,
+            'od_sph' => -2.5, 'od_cyl' => -0.75, 'od_axis' => 45, 'pd' => 60,
         ])->assertRedirect(route('tenant.customers.show', $customer));
 
         $this->assertDatabaseHas('eye_records', [

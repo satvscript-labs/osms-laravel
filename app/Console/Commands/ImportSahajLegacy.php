@@ -2,12 +2,12 @@
 
 namespace App\Console\Commands;
 
+use App\Console\Commands\Concerns\ReadsLegacySource;
 use App\Console\Commands\Concerns\ResolvesTargetTenant;
 use App\Exports\Legacy\SahajMigrationReport;
 use App\Models\Customer;
 use App\Models\EyeRecord;
 use App\Support\Legacy\SahajLegacyImporter;
-use App\Support\Legacy\SqlDumpParser;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Maatwebsite\Excel\Facades\Excel;
@@ -24,10 +24,12 @@ use Maatwebsite\Excel\Facades\Excel;
  */
 class ImportSahajLegacy extends Command
 {
+    use ReadsLegacySource;
     use ResolvesTargetTenant;
 
     protected $signature = 'osms:import-sahaj-legacy
                             {--dir= : Folder holding the legacy .sql dumps}
+                            {--from-db : Read the old system directly instead of dump files}
                             {--tenant=Sahaj Optical : Store name to import into}
                             {--tenant-id= : Store UUID — unambiguous, preferred in production}
                             {--report= : Where to write the .xlsx review workbook}
@@ -48,23 +50,21 @@ class ImportSahajLegacy extends Command
         // headroom that a web request could not.
         ini_set('memory_limit', '1G');
 
-        $dir = rtrim($this->option('dir')
-            ?: base_path('_artifacts/FirstCustomerFiles/u174003801_sahaj_optical_sql'), '/\\');
-
         $commit = (bool) $this->option('commit');
 
-        $this->info('Reading legacy SQL dumps from: ' . $dir);
+        $source = $this->resolveLegacySource();
+        if (! $source) {
+            return self::FAILURE;
+        }
 
         try {
-            $eyeRows = SqlDumpParser::parseTable($dir . '/u174003801_sahaj_optical_table_eyerecourd.sql', 'eyerecourd');
-            $estimateRows = SqlDumpParser::parseTable($dir . '/u174003801_sahaj_optical_table_estimatebook.sql', 'estimatebook');
+            $importer = (new SahajLegacyImporter($source->eyeRecords(), $source->estimates()))->analyse();
         } catch (\Throwable $e) {
             $this->error($e->getMessage());
 
             return self::FAILURE;
         }
 
-        $importer = (new SahajLegacyImporter($eyeRows, $estimateRows))->analyse();
         $this->renderSummary($importer);
 
         // The workbook is deterministic — same input files, same code, same

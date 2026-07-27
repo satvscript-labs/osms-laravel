@@ -745,6 +745,42 @@ body {
   &:hover { background: var(--tone-amber); color: #fff; }
 }
 
+// ------------------------------------------------------------
+// CHIP RAIL — the row of status chips under a record's title.
+//
+// Chips are exceptions worth acting on (no contact / shared / minor / no
+// consent), and a profile can carry several at once. Mixed into the facts row
+// they wrapped into a ragged block that pushed the header around, so they get
+// their own rail: one even rhythm, wrapping as a unit. On a phone it scrolls
+// sideways rather than stacking into four lines and burying the content below.
+// ------------------------------------------------------------
+.chip-rail {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+
+  // Chips in a rail are secondary to the title — hold them to one compact size
+  // regardless of which chip class they use, so a mixed rail still reads evenly.
+  > .meta-chip,
+  > .shared-chip,
+  > .birthday-chip {
+    font-size: var(--text-3xs);
+    padding: 0.15rem 0.5rem;
+  }
+
+  @media (max-width: 575.98px) {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    // Bleed to the card edge so a scrolled chip isn't clipped mid-pill.
+    margin-inline: -0.15rem;
+    padding-inline: 0.15rem;
+    &::-webkit-scrollbar { display: none; }
+    > * { flex-shrink: 0; }
+  }
+}
+
 // Festive birthday chip (customers "Birthdays" tab) — warm amber, celebratory.
 .birthday-chip {
   display: inline-flex; align-items: center; gap: 0.3rem;
@@ -1184,6 +1220,240 @@ $wa-green-strong: #0b8043;
   border: 1px solid var(--osms-border);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-overlay);
+}
+
+// ============================================================
+// 18b. HOUSEHOLD CHOOSER (SHARE-01)
+// ============================================================
+// A phone number is a household handset, so creating a customer on a number
+// that is already in use asks who this is. Used on BOTH creation surfaces —
+// the customer form and the order builder — so the two feel like one idea.
+// Entrance is height-animated via .reveal, never a display flip.
+.household {
+  border: 1px solid var(--osms-border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--surface-card);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+}
+.household-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.7rem 0.85rem;
+  background: var(--osms-primary-soft);
+  color: var(--osms-primary);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+.household-head .bi { font-size: 1rem; }
+
+.household-list { display: flex; flex-direction: column; }
+
+.household-member {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  width: 100%;
+  padding: 0.6rem 0.85rem;
+  border: 0;
+  border-top: 1px solid var(--osms-border);
+  background: var(--surface-card);
+  text-align: left;
+  color: var(--osms-fg);
+  cursor: pointer;
+
+  &:hover {
+    background: var(--osms-primary-soft);
+    .household-member-pick { opacity: 1; transform: translateX(0); }
+    .person-avatar { transform: scale(1.06); }
+  }
+  &:active { transform: scale(0.99); }
+}
+// The "use this person" affordance slides in on hover, like .person-chevron.
+.household-member-pick {
+  margin-left: auto;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  color: var(--osms-primary);
+  opacity: 0;
+  transform: translateX(-0.35rem);
+  transition: all var(--duration-base) var(--ease-spring);
+}
+// Touch devices have no hover — keep the affordance permanently visible.
+@media (hover: none) {
+  .household-member-pick { opacity: 1; transform: none; }
+}
+
+// The "no, this is someone else" escape hatch closes the set.
+.household-new {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.65rem 0.85rem;
+  border: 0;
+  border-top: 1px dashed var(--osms-border-strong);
+  background: var(--surface-sunken);
+  color: var(--osms-primary);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+
+  &:hover { background: var(--osms-primary-soft); }
+  &:active { transform: scale(0.99); }
+  &.is-chosen {
+    background: var(--osms-primary);
+    color: #fff;
+  }
+}
+
+// Shown once staff have committed to "a new person on this number".
+.household-confirmed {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.6rem 0.85rem;
+  font-size: var(--text-xs);
+  color: var(--tone-green);
+  background: var(--tone-green-bg);
+}
+
+// Loading placeholder while the lookup is in flight — never a bare spinner.
+.household-skeleton {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.6rem 0.85rem;
+  border-top: 1px solid var(--osms-border);
+}
+
+// "Coming soon" marker for a frozen feature, outside the segmented control
+// (.segmented-soon only styles inside one). Same look, usable anywhere —
+// dropdown items, buttons, list rows.
+.soon-badge {
+  padding: 0.05rem 0.4rem;
+  border-radius: var(--radius-pill);
+  background: var(--tone-amber-bg);
+  color: var(--tone-amber);
+  font-size: var(--text-3xs);
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+// A compact "shares a number" marker for list rows and profile headers.
+.shared-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: var(--radius-pill);
+  background: var(--tone-blue-bg);
+  color: var(--tone-blue);
+  font-size: var(--text-3xs);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+// ============================================================
+// 18b. TOASTS
+// ============================================================
+// Flash messages used to be inserted into the page: arriving pushed everything
+// down, dismissing snapped it back, and whatever the user was about to click
+// moved under the cursor. They float now, so the layout never shifts.
+// ------------------------------------------------------------
+.toast-rail {
+  position: fixed;
+  top: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1080;                 // above modals' backdrop, below modals
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  width: min(30rem, calc(100vw - 2rem));
+  pointer-events: none;          // never blocks the page underneath
+}
+
+.osms-toast {
+  pointer-events: auto;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: var(--radius-lg);
+  background: var(--surface-card);
+  border: 1px solid var(--osms-border);
+  box-shadow: var(--shadow-overlay);
+  font-size: var(--text-sm);
+  color: var(--osms-fg);
+  animation: toastIn var(--duration-slow) var(--ease-spring) both;
+}
+
+.osms-toast-icon { flex-shrink: 0; margin-top: 0.05rem; }
+.osms-toast-body { flex: 1; min-width: 0; }
+
+.osms-toast-success .osms-toast-icon { color: var(--tone-green); }
+.osms-toast-success { border-color: color-mix(in srgb, var(--tone-green) 35%, var(--osms-border)); }
+.osms-toast-error   .osms-toast-icon { color: var(--tone-red); }
+.osms-toast-error   { border-color: color-mix(in srgb, var(--tone-red) 35%, var(--osms-border)); }
+
+.osms-toast-close {
+  flex-shrink: 0;
+  border: 0;
+  background: none;
+  padding: 0.1rem 0.2rem;
+  line-height: 1;
+  color: var(--osms-faint);
+  font-size: var(--text-2xs);
+  border-radius: var(--radius-sm);
+  transition: all var(--duration-fast) var(--ease-out);
+
+  &:hover { color: var(--osms-fg); background: var(--surface-sunken); }
+}
+
+// The bar drains left-to-right so the remaining time is visible — the toast
+// leaves on its own and nothing has to be dismissed.
+.osms-toast-timer {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  width: 100%;
+  background: var(--tone-green);
+  transform-origin: left center;
+  animation: toastDrain 4.5s linear forwards;
+}
+
+.osms-toast.is-leaving { animation: toastOut var(--duration-base) var(--ease-out) both; }
+
+@keyframes toastIn {
+  from { opacity: 0; transform: translateY(-0.9rem) scale(0.97); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes toastOut {
+  from { opacity: 1; transform: none; max-height: 8rem; }
+  to   { opacity: 0; transform: translateY(-0.6rem) scale(0.98); max-height: 0; }
+}
+@keyframes toastDrain {
+  from { transform: scaleX(1); }
+  to   { transform: scaleX(0); }
+}
+
+// Reduced motion still gets the toast, just without the travel — and the timer
+// stops animating, so the close button becomes the way out.
+@media (prefers-reduced-motion: reduce) {
+  .osms-toast { animation: none; }
+  .osms-toast.is-leaving { animation: none; opacity: 0; }
+  .osms-toast-timer { animation-duration: 4.5s; }
 }
 
 // ============================================================

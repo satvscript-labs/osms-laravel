@@ -426,6 +426,11 @@ class SahajLegacyImporter
             'name_variants' => array_values(array_unique(array_column($rows, 'name'))),
             'phone' => $phone,
             'had_phone_on_record' => $hadPhoneOnRecord,
+            // The number that WAS on record, even when this person could not be
+            // given it because a more recent visitor held the same one. Kept so
+            // the restore pass (SHARE-01 phase 5) can hand it back once a number
+            // is allowed to be shared. Identical to `phone` when they kept it.
+            'phone_on_record' => $person['preferred_phone'],
             'is_patient' => $isPatient,
             'marker' => $flag['marker'] ?? null,
             'marker_reason' => $flag['reason'] ?? '',
