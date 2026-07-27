@@ -6,14 +6,18 @@ use App\Models\Subscription;
 use App\Models\SubscriptionInvoice;
 use App\Models\WebhookEvent;
 use App\Services\BillingService;
+use App\Services\SubscriptionLifecycle;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 
 class RazorpayWebhookController extends Controller
 {
-    public function handle(Request $request, BillingService $billing): JsonResponse
-    {
+    public function handle(
+        Request $request,
+        BillingService $billing,
+        SubscriptionLifecycle $lifecycle,
+    ): JsonResponse {
         $payload = $request->getContent();
         $signature = $request->header('X-Razorpay-Signature', '');
 
@@ -63,26 +67,16 @@ class RazorpayWebhookController extends Controller
             default => null,
         };
 
-        if ($status) {
-            $subscription->status = $status;
-            if ($status === 'canceled') {
-                $subscription->cancel_at_period_end = false; // the cancel has taken effect
-            }
-        }
-
-        if (! empty($sub['current_end'])) {
-            $subscription->current_period_end = Carbon::createFromTimestamp($sub['current_end']);
-        }
-
-        // Reflect the billing interval from the charged plan; clear a pending switch once applied.
-        if ($interval = $billing->planInterval($sub['plan_id'] ?? null)) {
-            $subscription->interval = $interval;
-            if ($subscription->pending_interval === $interval) {
-                $subscription->pending_interval = null;
-            }
-        }
-
-        $subscription->save();
+        // BUG-P01 — entitlement is mutated in exactly one place, which knows about
+        // operator overrides. Note the payment was already recorded above: money that
+        // changed hands is always written to the ledger, even when the operator has
+        // overruled what it means for access.
+        $lifecycle->applyGatewayEntitlement(
+            $subscription,
+            $status,
+            ! empty($sub['current_end']) ? Carbon::createFromTimestamp($sub['current_end']) : null,
+            $billing->planInterval($sub['plan_id'] ?? null),
+        );
 
         return response()->json(['ok' => true]);
     }

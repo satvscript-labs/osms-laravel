@@ -1,4 +1,25 @@
-@php $tax = $invoice->taxBreakdown(); @endphp
+@php
+    /**
+     * BUG-P02 — this document is a TAX INVOICE only when the platform is actually
+     * GST-registered. It previously always rendered an 18%-inclusive CGST/SGST
+     * split beneath a blank GSTIN, asserting tax collected by an entity not
+     * registered to collect it — on a document a customer might submit for input
+     * tax credit.
+     *
+     * Not registered => a plain "Payment Receipt": one total, no tax lines, no
+     * GSTIN. Flipping `saas.gst_registered` restores the compliant invoice with
+     * no template change.
+     */
+    $isTaxInvoice = (bool) config('saas.gst_registered');
+    $tax = $isTaxInvoice ? $invoice->taxBreakdown() : null;
+
+    // BUG-P10 — never render a labelled-but-empty legal field. Blank values make
+    // the whole line disappear rather than leaving "GSTIN:" hanging.
+    $legalEntity = trim((string) config('saas.legal_entity'));
+    $address     = trim((string) config('saas.contact_address'));
+    $gstin       = trim((string) config('saas.gst_number'));
+    $support     = trim((string) config('saas.support_email'));
+@endphp
 <!DOCTYPE html>
 <html>
 <head>
@@ -27,12 +48,14 @@
         <tr>
             <td style="width:60%;">
                 <h1>OSMS</h1>
-                <div class="muted" style="margin-top:4px;">{{ config('saas.legal_entity') }}</div>
-                <div class="muted">{{ config('saas.contact_address') }}</div>
-                <div class="muted">GSTIN: {{ config('saas.gst_number') }}</div>
+                @if ($legalEntity)<div class="muted" style="margin-top:4px;">{{ $legalEntity }}</div>@endif
+                @if ($address)<div class="muted">{{ $address }}</div>@endif
+                @if ($isTaxInvoice && $gstin)<div class="muted">GSTIN: {{ $gstin }}</div>@endif
             </td>
             <td style="width:40%;" class="right">
-                <div style="font-size:18px; font-weight:bold;">TAX INVOICE</div>
+                <div style="font-size:18px; font-weight:bold;">
+                    {{ $isTaxInvoice ? 'TAX INVOICE' : 'PAYMENT RECEIPT' }}
+                </div>
                 <div class="muted" style="margin-top:6px;">
                     No: {{ strtoupper(substr($invoice->id, 0, 8)) }}<br>
                     Date: {{ optional($invoice->paid_at ?? $invoice->created_at)->format('d M Y') }}
@@ -42,7 +65,7 @@
     </table>
 
     <div class="box">
-        <div class="label">Billed to</div>
+        <div class="label">{{ $isTaxInvoice ? 'Billed to' : 'Received from' }}</div>
         <div style="margin-top:4px; font-weight:bold;">{{ $tenant->store_name }}</div>
         @if ($tenant->tax_id)<div class="muted">GSTIN: {{ $tenant->tax_id }}</div>@endif
         @if ($tenant->address)<div class="muted">{{ $tenant->address }}</div>@endif
@@ -57,22 +80,35 @@
         </thead>
         <tbody>
             <tr>
-                <td>OSMS subscription — monthly<br><span class="muted">Payment ref: {{ $invoice->razorpay_payment_id }}</span></td>
-                <td class="right">₹ {{ number_format($tax['base'], 2) }}</td>
+                <td>
+                    OSMS subscription
+                    @if ($invoice->razorpay_payment_id)
+                        <br><span class="muted">Payment ref: {{ $invoice->razorpay_payment_id }}</span>
+                    @endif
+                </td>
+                <td class="right">
+                    ₹ {{ number_format($isTaxInvoice ? $tax['base'] : $invoice->amount, 2) }}
+                </td>
             </tr>
         </tbody>
     </table>
 
     <table class="totals">
-        <tr><td class="muted">Taxable value</td><td class="right">₹ {{ number_format($tax['base'], 2) }}</td></tr>
-        <tr><td class="muted">CGST @ {{ $tax['rate'] / 2 }}%</td><td class="right">₹ {{ number_format($tax['cgst'], 2) }}</td></tr>
-        <tr><td class="muted">SGST @ {{ $tax['rate'] / 2 }}%</td><td class="right">₹ {{ number_format($tax['sgst'], 2) }}</td></tr>
-        <tr class="grand"><td>Total ({{ $invoice->currency }})</td><td class="right">₹ {{ number_format($tax['total'], 2) }}</td></tr>
+        @if ($isTaxInvoice)
+            <tr><td class="muted">Taxable value</td><td class="right">₹ {{ number_format($tax['base'], 2) }}</td></tr>
+            <tr><td class="muted">CGST @ {{ $tax['rate'] / 2 }}%</td><td class="right">₹ {{ number_format($tax['cgst'], 2) }}</td></tr>
+            <tr><td class="muted">SGST @ {{ $tax['rate'] / 2 }}%</td><td class="right">₹ {{ number_format($tax['sgst'], 2) }}</td></tr>
+            <tr class="grand"><td>Total ({{ $invoice->currency }})</td><td class="right">₹ {{ number_format($tax['total'], 2) }}</td></tr>
+        @else
+            {{-- No tax lines: none was charged. A single honest total. --}}
+            <tr class="grand"><td>Total paid ({{ $invoice->currency }})</td><td class="right">₹ {{ number_format($invoice->amount, 2) }}</td></tr>
+        @endif
     </table>
 
     <div class="foot">
-        This is a computer-generated invoice and does not require a signature.
-        Amounts are GST-inclusive. For questions, contact {{ config('saas.support_email') }}.
+        This is a computer-generated {{ $isTaxInvoice ? 'invoice' : 'receipt' }} and does not require a signature.
+        @if ($isTaxInvoice) Amounts are GST-inclusive. @endif
+        @if ($support) For questions, contact {{ $support }}. @endif
     </div>
 </body>
 </html>

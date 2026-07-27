@@ -36,6 +36,10 @@ class SubscriptionController extends Controller
             'current_period_end' => $s?->current_period_end?->toDateString(),
             'cancel_at_period_end' => (bool) $s?->cancel_at_period_end,
             'manual' => (bool) $s?->manual,
+            // BUG-P01 — the override is now part of the commercial state, so a
+            // before/after diff that omitted it would hide why a webhook was ignored.
+            'override_kind' => $s?->override_kind,
+            'override_until' => $s?->override_until?->toDateString(),
         ];
     }
 
@@ -57,7 +61,7 @@ class SubscriptionController extends Controller
         // Previously these fell back to null, so submitting the form without them
         // silently cleared the billing period: status=active + current_period_end=null
         // means accessState() has no boundary to check, i.e. access forever.
-        $subscription->update([
+        $subscription->fill([
             'status' => $validated['status'],
             'tier' => $validated['tier'],
             'interval' => $validated['interval'] ?? $subscription->interval,
@@ -65,6 +69,21 @@ class SubscriptionController extends Controller
             'cancel_at_period_end' => (bool) ($request->boolean('cancel_at_period_end')),
             'manual' => true,
         ]);
+
+        // BUG-P01 — a hand-edited subscription must survive the next webhook. A
+        // cancellation is indefinite (null `until`); anything else holds until the
+        // period the operator set.
+        $subscription->applyOverride(
+            kind: $validated['status'] === 'canceled' ? 'cancellation' : 'manual_edit',
+            until: $validated['status'] === 'canceled'
+                ? null
+                : ($subscription->current_period_end
+                    ? Carbon::parse($subscription->current_period_end->toDateString(), $this->tz())
+                    : null),
+            reason: $request->input('reason'),
+        );
+
+        $subscription->save();
 
         AdminAuditLog::record(
             'subscription.updated',
@@ -93,12 +112,23 @@ class SubscriptionController extends Controller
             : Carbon::today($this->tz());
         $base = $base->max(Carbon::today($this->tz()));
 
-        $subscription->update([
+        $newEnd = $base->copy()->addDays((int) $validated['days']);
+
+        $subscription->fill([
             'status' => 'trialing',
-            'current_period_end' => $base->copy()->addDays((int) $validated['days']),
+            'current_period_end' => $newEnd,
             'cancel_at_period_end' => false,
             'manual' => true,
         ]);
+
+        // BUG-P01 — hold the granted window against any incoming webhook.
+        $subscription->applyOverride(
+            kind: 'extension',
+            until: $newEnd,
+            reason: $request->input('reason'),
+        );
+
+        $subscription->save();
 
         AdminAuditLog::record(
             'subscription.trial_extended',
@@ -121,13 +151,25 @@ class SubscriptionController extends Controller
         $subscription = $tenant->subscription;
         $before = $this->snapshot($tenant);
 
-        $subscription->update([
+        $newEnd = Carbon::today($this->tz())->addMonths((int) $validated['months']);
+
+        $subscription->fill([
             'status' => 'active',
             'interval' => $validated['interval'],
-            'current_period_end' => Carbon::today($this->tz())->addMonths((int) $validated['months']),
+            'current_period_end' => $newEnd,
             'cancel_at_period_end' => false,
             'manual' => true,
         ]);
+
+        // BUG-P01 — this is the exact case that was silently destroyed: a comp on a
+        // store with a live Razorpay mandate. The grant now outlives the next charge.
+        $subscription->applyOverride(
+            kind: 'comp',
+            until: $newEnd,
+            reason: $request->input('reason'),
+        );
+
+        $subscription->save();
 
         AdminAuditLog::record(
             'subscription.comped',
@@ -157,11 +199,22 @@ class SubscriptionController extends Controller
             }
         }
 
-        $subscription->update([
+        $subscription->fill([
             'status' => 'canceled',
             'cancel_at_period_end' => false,
             'manual' => true,
         ]);
+
+        // BUG-P01 — a cancellation is INDEFINITE (null `until`). Without this, a
+        // `subscription.charged` webhook from the still-settling mandate would flip
+        // the store straight back to active.
+        $subscription->applyOverride(
+            kind: 'cancellation',
+            until: null,
+            reason: $request->input('reason'),
+        );
+
+        $subscription->save();
 
         AdminAuditLog::record(
             'subscription.canceled',

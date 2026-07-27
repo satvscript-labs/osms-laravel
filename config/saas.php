@@ -23,10 +23,29 @@ return [
     'invite_days' => (int) env('SAAS_INVITE_DAYS', 7),
 
     // ST-Legal (S6) / invoices: the registered business behind OSMS.
-    'legal_entity' => env('SAAS_LEGAL_ENTITY', '[Your Registered Business Name]'),
-    'gst_number' => env('SAAS_GST_NUMBER', '[Your GSTIN]'),
+    //
+    // BUG-P10 — these default to EMPTY, never to a bracketed placeholder. A blank
+    // value makes the template omit the whole field (see BUG-P02); a placeholder
+    // like "[Your GSTIN]" would render literally on the public contact page, which
+    // is exactly the defect being fixed.
+    'legal_entity' => env('SAAS_LEGAL_ENTITY', 'SatvScript'),
+    'gst_number' => env('SAAS_GST_NUMBER', ''),
     'support_email' => env('SAAS_SUPPORT_EMAIL', 'support@osms.satvscript.com'),
-    'contact_address' => env('SAAS_CONTACT_ADDRESS', '[Your Registered Business Address]'),
+    'contact_address' => env('SAAS_CONTACT_ADDRESS', ''),
+
+    /*
+    | BUG-P02 — is the platform GST-registered?
+    |
+    | SatvScript is NOT registered (below threshold), so subscription payments are
+    | documented as a plain "Payment Receipt": no GSTIN line, no CGST/SGST split.
+    | Previously the PDF rendered an 18%-inclusive tax breakdown under a blank
+    | GSTIN — asserting tax was collected by an entity not registered to collect
+    | it, on a document a customer might submit for input-tax credit.
+    |
+    | Flip to true (and set SAAS_GST_NUMBER) once registered: the same template
+    | then renders a compliant tax invoice again. Registration is the ONLY switch.
+    */
+    'gst_registered' => (bool) env('SAAS_GST_REGISTERED', false),
 
     /*
     | OPS-01 — backup health monitoring.

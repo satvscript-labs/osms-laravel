@@ -170,7 +170,13 @@ class BillingController extends Controller
             ->with('status', 'Payment received — your subscription will activate momentarily.');
     }
 
-    /** Download a GST invoice for a subscription payment (tenant-scoped binding). */
+    /**
+     * Download the document for a subscription payment (tenant-scoped binding).
+     *
+     * BUG-P02 — this is a tax invoice only when the platform is GST-registered;
+     * otherwise it is a plain payment receipt. The filename follows, so a customer
+     * filing it away is not told it is an invoice when it is not.
+     */
     public function invoicePdf(Request $request, SubscriptionInvoice $invoice): Response
     {
         $tenant = $request->user()->tenant;
@@ -181,7 +187,8 @@ class BillingController extends Controller
         ]);
 
         $date = optional($invoice->paid_at ?? $invoice->created_at)->format('Y-m-d');
+        $kind = config('saas.gst_registered') ? 'invoice' : 'receipt';
 
-        return $pdf->download("OSMS-invoice-{$date}.pdf");
+        return $pdf->download("OSMS-{$kind}-{$date}.pdf");
     }
 }

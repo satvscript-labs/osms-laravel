@@ -15,13 +15,77 @@ class Subscription extends Model
         'tenant_id', 'razorpay_subscription_id', 'razorpay_customer_id',
         'status', 'tier', 'interval', 'pending_interval',
         'current_period_end', 'cancel_at_period_end', 'manual',
+        'override_kind', 'override_until', 'override_reason', 'override_by', 'override_at',
     ];
 
     protected $casts = [
         'current_period_end' => 'date',
         'cancel_at_period_end' => 'boolean',
         'manual' => 'boolean',
+        'override_until' => 'date',
+        'override_at' => 'datetime',
     ];
+
+    /*
+    |--------------------------------------------------------------------------
+    | Operator override (P0 / BUG-P01)
+    |--------------------------------------------------------------------------
+    | A human decision must outlive the next automated pass. `manual` only ever
+    | recorded "a human touched this"; these express "a human's decision is in
+    | force, until <date>" — which is what the webhook guard actually needs.
+    */
+
+    /**
+     * Is an operator's decision currently governing this subscription?
+     *
+     * A set `override_kind` with a NULL `override_until` is deliberately
+     * INDEFINITE — a cancellation or suspension holds until an operator clears
+     * it, not until a date passes.
+     */
+    public function hasActiveOverride(): bool
+    {
+        if (! $this->override_kind) {
+            return false;
+        }
+
+        if ($this->override_until === null) {
+            return true; // indefinite — cancellation / suspension
+        }
+
+        $tz = config('billing.timezone', 'Asia/Kolkata');
+
+        return Carbon::today($tz)->lte(
+            Carbon::parse($this->override_until->toDateString(), $tz)
+        );
+    }
+
+    /** Record an operator decision as the governing state. */
+    public function applyOverride(
+        string $kind,
+        ?Carbon $until = null,
+        ?string $reason = null,
+        ?int $byUserId = null,
+    ): void {
+        $this->forceFill([
+            'override_kind' => $kind,
+            'override_until' => $until?->toDateString(),
+            'override_reason' => $reason,
+            'override_by' => $byUserId ?? auth()->id(),
+            'override_at' => now(),
+        ]);
+    }
+
+    /** Hand control back to the automated lane. */
+    public function clearOverride(): void
+    {
+        $this->forceFill([
+            'override_kind' => null,
+            'override_until' => null,
+            'override_reason' => null,
+            'override_by' => null,
+            'override_at' => null,
+        ]);
+    }
 
     public function isPastDue(): bool
     {
