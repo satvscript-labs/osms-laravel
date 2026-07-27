@@ -33,9 +33,16 @@ Route::get('locked', SubscriptionLockController::class)->name('locked');
 Route::get('customers', [CustomerController::class, 'index'])->name('customers.index');
 Route::get('customers/create', [CustomerController::class, 'create'])->name('customers.create');
 Route::get('customers/trash', [CustomerController::class, 'trash'])->name('customers.trash'); // FG-Delete archive
+// SHARE-01 — household lookup for the "who else is on this number?" chooser.
+// Throttled: it fires as staff type a phone number.
+Route::middleware('throttle:120,1')
+    ->get('customers/by-phone', [CustomerController::class, 'byPhone'])->name('customers.by-phone');
 Route::post('customers', [CustomerController::class, 'store'])->name('customers.store');
 Route::get('customers/{customer}', [CustomerController::class, 'show'])->name('customers.show');
 Route::get('customers/{customer}/edit', [CustomerController::class, 'edit'])->name('customers.edit');
+// SHARE-01 — merge duplicates. Frozen as "Coming soon"; the action itself
+// aborts unless config('customers.merge_enabled'), so the URL is not a way in.
+Route::get('customers/{customer}/merge', [CustomerController::class, 'merge'])->name('customers.merge');
 Route::put('customers/{customer}', [CustomerController::class, 'update'])->name('customers.update');
 Route::delete('customers/{customer}', [CustomerController::class, 'destroy'])->name('customers.destroy');
 Route::patch('customers/{customer}/restore', [CustomerController::class, 'restore'])->name('customers.restore')->withTrashed();

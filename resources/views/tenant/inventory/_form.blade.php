@@ -12,6 +12,8 @@
 
 <form method="POST"
       action="{{ $isEdit ? route('tenant.inventory.update', $item) : route('tenant.inventory.store') }}"
+      {{-- Back after saving goes to the item (edit) or the list (create). --}}
+      data-leave-on-back="{{ $isEdit ? route('tenant.inventory.edit', $item) : route('tenant.inventory.index') }}"
       class="d-flex flex-column gap-4">
     @csrf
     @if ($isEdit) @method('PUT') @endif

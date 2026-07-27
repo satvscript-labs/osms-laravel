@@ -6,6 +6,8 @@
     $p = $order->customer;
     $num = strtoupper(substr($order->id, 0, 8));
     $nz = fn ($v) => is_null($v) ? '—' : $v;
+    // An axis is degrees; 0 means "not recorded" (the range is 1..180).
+    $axis = fn ($v) => is_null($v) || (int) $v === 0 ? '—' : (int) $v . '°';
     // Manual "Send on WhatsApp" pill for this order's current status (FT-WhatsApp).
     $pill = $waConfig->orderPill($order);
     // A pending automated message (still cancellable) supersedes the manual pill.
@@ -156,10 +158,10 @@
                                     <tbody class="font-monospace">
                                         <tr><td class="fw-semibold text-muted-foreground">OD</td>
                                             <td>{{ $nz($rx->od_sph) }}</td><td>{{ $nz($rx->od_cyl) }}</td>
-                                            <td>{{ $nz($rx->od_axis) }}</td><td>{{ $nz($rx->od_add) }}</td><td>{{ $rx->od_va ?? '—' }}</td></tr>
+                                            <td>{{ $axis($rx->od_axis) }}</td><td>{{ $nz($rx->od_add) }}</td><td>{{ $rx->od_va ?? '—' }}</td></tr>
                                         <tr><td class="fw-semibold text-muted-foreground">OS</td>
                                             <td>{{ $nz($rx->os_sph) }}</td><td>{{ $nz($rx->os_cyl) }}</td>
-                                            <td>{{ $nz($rx->os_axis) }}</td><td>{{ $nz($rx->os_add) }}</td><td>{{ $rx->os_va ?? '—' }}</td></tr>
+                                            <td>{{ $axis($rx->os_axis) }}</td><td>{{ $nz($rx->os_add) }}</td><td>{{ $rx->os_va ?? '—' }}</td></tr>
                                     </tbody>
                                 </table>
                                 @if (! is_null($rx->pd))

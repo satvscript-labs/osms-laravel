@@ -18,7 +18,8 @@
         </div>
     @endif
 
-    <form method="POST" action="{{ route('tenant.orders.update', $order) }}" @submit="validateForm($event)">
+    <form method="POST" action="{{ route('tenant.orders.update', $order) }}" @submit="validateForm($event)"
+          data-leave-on-back="{{ route('tenant.orders.show', $order) }}">
         @csrf
         @method('PUT')
         <input type="hidden" name="eye_record_id" :value="eyeRecordId">

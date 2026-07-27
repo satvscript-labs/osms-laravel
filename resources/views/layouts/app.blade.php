@@ -24,24 +24,34 @@
                 <span style="width:2rem;"></span>
             </div>
 
-            @if (session('status'))
-                <div class="px-4 px-md-5 pt-4 no-print">
-                    {{-- UX-06 — announce flash messages to assistive tech. --}}
-                    <div class="alert alert-success alert-dismissible fade show d-flex align-items-center gap-2 mb-0 rounded-3" role="status" aria-live="polite">
-                        <i class="bi bi-check-circle-fill"></i>
-                        <div>{{ session('status') }}</div>
-                        <button type="button" class="btn-close ms-auto" data-bs-dismiss="alert" aria-label="Close"></button>
-                    </div>
-                </div>
-            @endif
+            {{-- Flash messages float above the page instead of being inserted into
+                 it. Inline they pushed every page down on arrival and snapped it
+                 back on dismiss, which moved whatever the user was about to click.
+                 UX-06 — still announced to assistive tech. --}}
+            @if (session('status') || session('error'))
+                <div class="toast-rail no-print">
+                    @if (session('status'))
+                        <div class="osms-toast osms-toast-success" role="status" aria-live="polite" data-toast>
+                            <i class="bi bi-check-circle-fill osms-toast-icon"></i>
+                            <div class="osms-toast-body">{{ session('status') }}</div>
+                            <button type="button" class="osms-toast-close" aria-label="Dismiss" data-toast-close>
+                                <i class="bi bi-x-lg"></i>
+                            </button>
+                            <span class="osms-toast-timer" aria-hidden="true"></span>
+                        </div>
+                    @endif
 
-            @if (session('error'))
-                <div class="px-4 px-md-5 pt-4 no-print">
-                    <div class="alert alert-danger alert-dismissible fade show d-flex align-items-center gap-2 mb-0 rounded-3" role="alert">
-                        <i class="bi bi-exclamation-triangle-fill"></i>
-                        <div>{{ session('error') }}</div>
-                        <button type="button" class="btn-close ms-auto" data-bs-dismiss="alert" aria-label="Close"></button>
-                    </div>
+                    @if (session('error'))
+                        {{-- Errors do not auto-dismiss: something went wrong and the
+                             user must be the one to acknowledge it. --}}
+                        <div class="osms-toast osms-toast-error" role="alert" data-toast data-toast-sticky>
+                            <i class="bi bi-exclamation-triangle-fill osms-toast-icon"></i>
+                            <div class="osms-toast-body">{{ session('error') }}</div>
+                            <button type="button" class="osms-toast-close" aria-label="Dismiss" data-toast-close>
+                                <i class="bi bi-x-lg"></i>
+                            </button>
+                        </div>
+                    @endif
                 </div>
             @endif
 

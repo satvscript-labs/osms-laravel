@@ -45,14 +45,24 @@ class Phase2PatientTest extends TestCase
         ]);
     }
 
-    public function test_duplicate_phone_rejected_within_same_tenant(): void
+    /**
+     * SHARE-01 — this previously asserted the opposite. A phone number identifies
+     * a household handset, not a person: families routinely share one, and
+     * rejecting the second person made them unrecordable. Duplicate handling now
+     * lives in the UI as an explicit choice, not a hard database constraint.
+     * See _artifacts/SHARED_PHONE_DESIGN.md.
+     */
+    public function test_two_people_may_share_a_phone_within_the_same_tenant(): void
     {
         $user = $this->storeUser();
         $this->actingAs($user);
         Customer::create(['name' => 'A', 'phone' => '+91 9876543210']);
 
-        $this->post(route('tenant.customers.store'), ['name' => 'B', 'country_code' => '+91', 'phone' => '9876543210'])
-            ->assertSessionHasErrors('phone');
+        $this->post(route('tenant.customers.store'), [
+            'name' => 'B', 'country_code' => '+91', 'phone' => '9876543210', 'data_consent' => '1',
+        ])->assertSessionHasNoErrors();
+
+        $this->assertSame(2, Customer::where('phone', '+91 9876543210')->count());
     }
 
     public function test_same_phone_allowed_across_tenants(): void
