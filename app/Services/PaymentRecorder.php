@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\AdminAuditLog;
 use App\Models\Subscription;
 use App\Models\SubscriptionInvoice;
 use Illuminate\Support\Carbon;
@@ -78,6 +79,52 @@ class PaymentRecorder
                 'paid_at' => $options['paid_at'] ?? now(),
                 'receipt_no' => $this->nextReceiptNo(),
             ]);
+        });
+    }
+
+    /**
+     * P3 / matrix row 11 — reverse a payment.
+     *
+     * A reversal is a STATE, never a delete: the original row stays visible
+     * (struck through in the panel) and a compensating record explains it. An
+     * operator who mis-keys ₹49,990 must be able to correct it without the
+     * ledger quietly losing the fact that it happened.
+     *
+     * ⚠ Reversing does NOT revoke entitlement on its own — the caller decides
+     * that, because "wrong amount, re-enter it" and "refunded, cut access" are
+     * different intents and conflating them would surprise the operator.
+     */
+    public function reverse(SubscriptionInvoice $invoice, string $reason): SubscriptionInvoice
+    {
+        if (blank($reason)) {
+            throw new InvalidArgumentException('A reversal must say why — it is a discretionary correction.');
+        }
+
+        if ($invoice->isReversed()) {
+            throw new InvalidArgumentException('That payment has already been reversed.');
+        }
+
+        return DB::transaction(function () use ($invoice, $reason) {
+            $invoice->forceFill([
+                'reversed_at' => now(),
+                'reversed_by' => auth()->id(),
+                'reversal_reason' => $reason,
+            ])->save();
+
+            AdminAuditLog::record(
+                'payment.reversed',
+                "Reversed ₹" . number_format((float) $invoice->amount, 2) . " ({$invoice->methodLabel()})",
+                $invoice->tenant_id,
+                [
+                    'account_id' => $invoice->account_id,
+                    'receipt_no' => $invoice->receipt_no,
+                    'amount' => (float) $invoice->amount,
+                    'method' => $invoice->method,
+                    'reason' => $reason,
+                ],
+            );
+
+            return $invoice->refresh();
         });
     }
 

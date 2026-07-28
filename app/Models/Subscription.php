@@ -143,6 +143,18 @@ class Subscription extends Model
      */
     public function accessState(): string
     {
+        // P3 — a deliberate operator SUSPENSION beats every grace window.
+        //
+        // Suspension preserves the paid-through date on purpose (so
+        // reactivating loses nothing), and it is expressed as `past_due` +
+        // an override. But `past_due` normally earns a grace period, which
+        // would leave a suspended-yet-paid-up customer with full access —
+        // i.e. the lever would silently do nothing, while the operator
+        // believed they had cut access. Caught by test, fixed here.
+        if ($this->override_kind === 'suspension' && $this->hasActiveOverride()) {
+            return 'locked';
+        }
+
         $boundary = $this->periodEndBoundary();
         $now = Carbon::now();
         $grace = $this->graceDays();

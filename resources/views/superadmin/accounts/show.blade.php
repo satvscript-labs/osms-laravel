@@ -11,9 +11,14 @@
 
 @section('content')
 {{--
-    P2 / 06 §9 — the Customer 360. One account, every commercial fact, on one
-    screen. READ-ONLY in P2: the action modals (record payment, renew, comp,
-    suspend…) land in P3 together with the overlay machinery they need.
+    06 §9 — the Customer 360. One account, every commercial fact and every
+    lever, on one screen.
+
+    P3 added the actions. Each one lives in the shared <x-operator-modal>,
+    previews before it commits, requires a reason when discretionary, and
+    routes through SubscriptionLifecycle — the panel never mutates commercial
+    state directly. Triggers are in the header dropdown, the Stores tab and
+    the Ledger rows, so every matrix row is ≤3 clicks from here.
 --}}
 <div class="p-4 p-md-5">
 
@@ -24,9 +29,60 @@
 
     {{-- ---- Header band ---- --}}
     <div class="d-flex flex-wrap align-items-start gap-3 mb-4">
-        <span class="d-inline-flex align-items-center justify-content-center rounded-4 bg-primary text-white fw-semibold flex-shrink-0"
+        <span class="d-inline-flex align-items-center justify-content-center rounded-4 bg-primary text-white fw-semibold flex-shrink-0 order-1"
               style="width:3rem;height:3rem;font-size:1.25rem;">{{ mb_strtoupper(mb_substr($account->displayName(), 0, 1)) }}</span>
-        <div class="min-w-0 flex-grow-1">
+
+        {{-- P3 — primary action + the full lever set, inline and reachable
+             without scrolling. Every matrix row is ≤3 clicks from here.
+             Rendered after the identity block in DOM order so the heading is
+             read first; `ms-lg-auto` pushes it right on wide screens and it
+             wraps below on narrow ones. --}}
+        @if ($subscription)
+        <div class="ms-lg-auto d-flex gap-2 flex-shrink-0 order-3">
+            <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#m-payment">
+                <i class="bi bi-cash-coin me-1"></i> Record payment
+            </button>
+            <div class="dropdown">
+                <button class="btn btn-light" type="button" data-bs-toggle="dropdown" aria-expanded="false"
+                        aria-label="More actions">
+                    <i class="bi bi-three-dots"></i>
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end" style="box-shadow: var(--shadow-overlay);">
+                    <li><h6 class="dropdown-header">Money</h6></li>
+                    <li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#m-renew"><i class="bi bi-arrow-repeat me-2"></i>Renew now</button></li>
+                    <li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#m-price"><i class="bi bi-tag me-2"></i>Set negotiated price</button></li>
+                    @if ($subscription->hasNegotiatedPrice())
+                        <li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#m-clear-price"><i class="bi bi-tag me-2"></i>Back to list price</button></li>
+                    @endif
+                    <li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#m-interval"><i class="bi bi-calendar3 me-2"></i>Switch billing period</button></li>
+
+                    <li><hr class="dropdown-divider"></li>
+                    <li><h6 class="dropdown-header">Time</h6></li>
+                    <li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#m-extend"><i class="bi bi-hourglass-split me-2"></i>Extend</button></li>
+                    <li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#m-comp"><i class="bi bi-gift me-2"></i>Grant free access</button></li>
+
+                    @if ($subscription->status === 'past_due')
+                        <li><hr class="dropdown-divider"></li>
+                        <li><h6 class="dropdown-header">Overdue</h6></li>
+                        <li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#m-markpaid"><i class="bi bi-check2-circle me-2"></i>Mark as paid</button></li>
+                        <li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#m-waive"><i class="bi bi-hand-thumbs-up me-2"></i>Waive</button></li>
+                    @endif
+
+                    <li><hr class="dropdown-divider"></li>
+                    <li><h6 class="dropdown-header">Access</h6></li>
+                    @if ($subscription->override_kind === 'suspension')
+                        <li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#m-reactivate"><i class="bi bi-play-circle me-2"></i>Reactivate</button></li>
+                    @else
+                        <li><button class="dropdown-item text-danger" data-bs-toggle="modal" data-bs-target="#m-suspend"><i class="bi bi-pause-circle me-2"></i>Suspend access</button></li>
+                    @endif
+                    <li><button class="dropdown-item text-danger" data-bs-toggle="modal" data-bs-target="#m-cancel"><i class="bi bi-x-octagon me-2"></i>Cancel customer</button></li>
+                    <li><button class="dropdown-item text-danger" data-bs-toggle="modal" data-bs-target="#m-expire"><i class="bi bi-exclamation-octagon me-2"></i>End access now</button></li>
+                </ul>
+            </div>
+        </div>
+        @endif
+
+        <div class="min-w-0 flex-grow-1 order-2">
             <h1 class="h4 fw-semibold font-display mb-1 text-truncate">{{ $account->displayName() }}</h1>
             <div class="chip-rail">
                 @include('superadmin.partials.status-pill', ['status' => $s?->status ?? 'none', 'access' => $access])
@@ -117,6 +173,18 @@
                         </div>
                         <i class="bi bi-chevron-right person-chevron"></i>
                     </a>
+                    <div class="d-flex gap-2 px-3 pb-3" style="margin-top:-.5rem;">
+                        <button type="button" class="btn btn-light btn-sm"
+                                data-bs-toggle="modal" data-bs-target="#m-store-{{ $store->id }}">
+                            <i class="bi {{ $store->store_status === 'suspended' ? 'bi-play-circle' : 'bi-pause-circle' }} me-1"></i>
+                            {{ $store->store_status === 'suspended' ? 'Reactivate' : 'Suspend' }}
+                        </button>
+                        <button type="button" class="btn btn-light btn-sm"
+                                data-bs-toggle="modal" data-bs-target="#m-bill-{{ $store->id }}">
+                            <i class="bi bi-receipt-cutoff me-1"></i>
+                            {{ $store->is_billable ? 'Exclude from billing' : 'Include in billing' }}
+                        </button>
+                    </div>
                 @empty
                     <p class="text-muted-foreground text-center py-4 mb-0 text-sm">No stores under this customer.</p>
                 @endforelse
@@ -236,6 +304,13 @@
                             <div class="text-sm">{{ ($row->paid_at ?? $row->created_at)?->format('d M Y') }}</div>
                             <div class="text-3xs text-faint">{{ $row->recordedBy?->name ?? 'automatic' }}</div>
                         </div>
+                        @unless ($row->isReversed())
+                            <button type="button" class="btn btn-light btn-sm ms-2"
+                                    data-bs-toggle="modal" data-bs-target="#m-rev-{{ $row->id }}"
+                                    title="Reverse this payment" aria-label="Reverse this payment">
+                                <i class="bi bi-arrow-counterclockwise"></i>
+                            </button>
+                        @endunless
                     </div>
                 @empty
                     <p class="text-muted-foreground text-center py-4 mb-0 text-sm">
@@ -276,7 +351,13 @@
                 <div class="col-lg-5">
                     <div class="card border-0 shadow-sm rounded-4">
                         <div class="card-body p-4">
-                            <p class="section-label mb-2">Internal notes</p>
+                            <div class="d-flex align-items-start justify-content-between gap-2 mb-2">
+                                <p class="section-label mb-0">Internal notes</p>
+                                <button type="button" class="btn btn-light btn-sm"
+                                        data-bs-toggle="modal" data-bs-target="#m-notes">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                            </div>
                             <p class="text-muted-foreground text-sm mb-3">Private — never shown to the customer.</p>
                             <p class="mb-0 text-md" style="white-space:pre-line;">{{ $account->internal_notes ?: '—' }}</p>
                         </div>
@@ -303,4 +384,7 @@
         </div>
     </div>
 </div>
+
+{{-- P3 — every action's overlay, rendered once. Triggers live above. --}}
+@include('superadmin.accounts.partials.actions')
 @endsection

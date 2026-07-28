@@ -26,6 +26,7 @@ class Phase71SuperadminBoundaryTest extends TestCase
     use RefreshDatabase;
 
     private Tenant $tenant;
+    private \App\Models\SubscriptionInvoice $invoice;
 
     protected function setUp(): void
     {
@@ -34,6 +35,11 @@ class Phase71SuperadminBoundaryTest extends TestCase
         $owner = User::factory()->create(['tenant_id' => null, 'role' => 'store_admin']);
         $this->tenant = app(\App\Services\StoreProvisioner::class)
             ->provision($owner, ['store_name' => 'Boundary Optical']);
+
+        // A real ledger row, so the reversal route resolves and its gate is
+        // genuinely exercised rather than 404-ing during model binding.
+        $this->invoice = app(\App\Services\PaymentRecorder::class)
+            ->record($this->tenant->account->subscription, 100, 'cash');
     }
 
     /**
@@ -51,6 +57,7 @@ class Phase71SuperadminBoundaryTest extends TestCase
             'tenant' => $this->tenant->id,
             'account' => $this->tenant->account_id,
             'store' => $this->tenant->id,
+            'invoice' => $this->invoice->id,
         ];
 
         foreach (Route::getRoutes() as $route) {
@@ -126,6 +133,8 @@ class Phase71SuperadminBoundaryTest extends TestCase
     {
         $staff = User::factory()->create(['tenant_id' => $this->tenant->id, 'role' => 'staff']);
         $before = $this->tenant->subscription->only(['status', 'current_period_end', 'override_kind']);
+        $ledgerBefore = \App\Models\SubscriptionInvoice::withoutGlobalScopes()->count();
+        $reversedBefore = $this->invoice->fresh()->reversed_at;
 
         foreach ($this->superadminRoutes() as [$method, $uri, $name]) {
             if ($method === 'GET') {
@@ -134,13 +143,24 @@ class Phase71SuperadminBoundaryTest extends TestCase
 
             $this->actingAs($staff)
                 ->withSession(['auth.password_confirmed_at' => time()])
-                ->call($method, $uri, ['months' => 12, 'days' => 30, 'interval' => 'yearly', 'status' => 'active', 'tier' => 'basic']);
+                ->call($method, $uri, [
+                    'months' => 12, 'days' => 30, 'interval' => 'yearly',
+                    'status' => 'active', 'tier' => 'basic',
+                    'action' => 'comp', 'reason' => 'should never apply',
+                    'price' => 1, 'amount' => 1, 'method' => 'cash',
+                    'store_status' => 'suspended', 'is_billable' => 0,
+                ]);
         }
 
         $after = $this->tenant->subscription()->first()->only(['status', 'current_period_end', 'override_kind']);
 
         $this->assertEquals($before, $after, 'A refused mutation still changed commercial state.');
         $this->assertSame(0, AdminAuditLog::count(), 'A refused mutation wrote an audit row.');
-        $this->assertDatabaseCount('subscription_invoices', 0);
+        // The ledger is untouched — no row added, and the existing one not reversed.
+        $this->assertSame($ledgerBefore, \App\Models\SubscriptionInvoice::withoutGlobalScopes()->count());
+        $this->assertSame($reversedBefore, $this->invoice->fresh()->reversed_at);
+        // And no per-store lever moved either.
+        $this->assertSame('active', $this->tenant->fresh()->store_status);
+        $this->assertTrue((bool) $this->tenant->fresh()->is_billable);
     }
 }

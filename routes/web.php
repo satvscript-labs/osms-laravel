@@ -4,6 +4,7 @@ use App\Http\Controllers\InvitationController;
 use App\Http\Controllers\OnboardingController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\RazorpayWebhookController;
+use App\Http\Controllers\Superadmin\AccountActionController as SuperadminAccountAction;
 use App\Http\Controllers\Superadmin\AccountController as SuperadminAccount;
 use App\Http\Controllers\Superadmin\AuditLogController as SuperadminAuditLog;
 use App\Http\Controllers\Superadmin\BillingController as SuperadminBilling;
@@ -138,6 +139,22 @@ Route::middleware(['auth', 'superadmin', 'throttle:120,1'])
 
         // Mutations — require recent re-authentication.
         Route::middleware('password.confirm')->group(function () {
+            /*
+            | P3 — the operator action surface (dual-lane matrix, 03 §4).
+            |
+            | `preview` runs the action inside a rolled-back transaction and
+            | returns exactly what would happen; `commit` runs the same code
+            | path for real. They cannot disagree, because the preview IS the
+            | commit, undone.
+            */
+            Route::post('/customers/{account}/preview', [SuperadminAccountAction::class, 'preview'])->name('accounts.preview');
+            Route::post('/customers/{account}/action', [SuperadminAccountAction::class, 'commit'])->name('accounts.action');
+            Route::post('/customers/{account}/payment', [SuperadminAccountAction::class, 'recordPayment'])->name('accounts.payment');
+            Route::post('/customers/{account}/payment/{invoice}/reverse', [SuperadminAccountAction::class, 'reversePayment'])->name('accounts.payment.reverse');
+            Route::patch('/customers/{account}/stores/{tenant}/status', [SuperadminAccountAction::class, 'storeStatus'])->name('accounts.store.status');
+            Route::patch('/customers/{account}/stores/{tenant}/billable', [SuperadminAccountAction::class, 'storeBillable'])->name('accounts.store.billable');
+            Route::patch('/customers/{account}/notes', [SuperadminAccountAction::class, 'updateNotes'])->name('accounts.notes');
+
             Route::patch('/stores/{tenant}/notes', [SuperadminTenant::class, 'updateNotes'])->name('tenants.notes');
             Route::patch('/stores/{tenant}/subscription', [SuperadminSubscription::class, 'update'])->name('subscription.update');
             Route::post('/stores/{tenant}/subscription/extend-trial', [SuperadminSubscription::class, 'extendTrial'])->name('subscription.extend-trial');

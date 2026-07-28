@@ -4,30 +4,351 @@ namespace App\Services;
 
 use App\Models\AdminAuditLog;
 use App\Models\Subscription;
+use App\Models\SubscriptionInvoice;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
+use InvalidArgumentException;
 
 /**
- * The single place entitlement state is mutated (P0 / BUG-P01).
+ * The single place entitlement state is mutated (P0 / BUG-P01, grown in P3).
  *
  * Both lanes — the automated Razorpay webhook and the operator's manual actions —
- * route through here, so the "a human decision outlives the robot" rule holds
- * uniformly instead of being re-implemented (and forgotten) per caller.
+ * route through here, so "a human decision outlives the robot" holds uniformly
+ * instead of being re-implemented (and forgotten) per caller.
  *
- * P0 ships only the webhook gate, which is the bleeding. P1 grows this into the
- * full lifecycle service described in _artifacts/platform/03_SUPERADMIN_DESIGN.md §2.4.
+ * Every public action below follows the same contract, which is what makes the
+ * panel trustworthy (03 §4.1 / playbook §5.2):
+ *
+ *   1. PREVIEW and COMMIT share this code path — `preview()` runs the action
+ *      inside a rolled-back transaction, so what the operator was shown is
+ *      exactly what happens. They cannot drift.
+ *   2. Discretionary actions REQUIRE a reason. Not a nicety: six months on, the
+ *      audit trail must say *why* a store is free until 2031.
+ *   3. Manual decisions are STICKY — they set an override the webhook obeys.
+ *   4. Every mutation is AUDITED with before → after.
+ *   5. Nothing here silently reduces coverage; callers state before → after.
  */
 class SubscriptionLifecycle
 {
+    /** Actions that cannot commit without an operator's stated reason. */
+    private const REASON_REQUIRED = [
+        'extend', 'comp', 'suspend', 'reactivate', 'cancel',
+        'force_expire', 'set_price', 'clear_price', 'mark_paid', 'waive',
+    ];
+
+    public function __construct(
+        private readonly PriceResolver $prices,
+        private readonly PaymentRecorder $payments,
+    ) {}
+
+    // ---------------------------------------------------------------
+    // Preview — the "quote before charge" contract
+    // ---------------------------------------------------------------
+
+    /**
+     * Run an action WITHOUT committing, and report exactly what it would do.
+     *
+     * The action really executes, inside a transaction that is always rolled
+     * back — so the preview cannot disagree with the commit, because it *is*
+     * the commit, undone. A hand-written "what would happen" summary is the
+     * thing that silently rots; this cannot.
+     */
+    public function preview(Subscription $subscription, string $action, array $input = []): array
+    {
+        $before = $this->snapshot($subscription);
+        $ledgerBefore = SubscriptionInvoice::withoutGlobalScopes()
+            ->where('account_id', $subscription->account_id)->count();
+
+        $after = $before;
+        $ledgerAfter = $ledgerBefore;
+        $error = null;
+
+        try {
+            DB::transaction(function () use ($subscription, $action, $input, &$after, &$ledgerAfter) {
+                $this->apply($subscription, $action, $input, audit: false);
+
+                $after = $this->snapshot($subscription->refresh());
+                $ledgerAfter = SubscriptionInvoice::withoutGlobalScopes()
+                    ->where('account_id', $subscription->account_id)->count();
+
+                // Always undo — this is a dry run by construction.
+                throw new PreviewRollback();
+            });
+        } catch (PreviewRollback) {
+            // expected
+        } catch (InvalidArgumentException $e) {
+            $error = $e->getMessage();
+        }
+
+        // The in-memory model was mutated during the rolled-back attempt;
+        // reload so the caller is never handed a dirty object.
+        $subscription->refresh();
+
+        return [
+            'action' => $action,
+            'error' => $error,
+            'before' => $before,
+            'after' => $after,
+            'changes' => $this->diff($before, $after),
+            'ledger_rows_added' => $ledgerAfter - $ledgerBefore,
+        ];
+    }
+
+    /** Execute for real, audited. */
+    public function commit(Subscription $subscription, string $action, array $input = []): Subscription
+    {
+        return DB::transaction(function () use ($subscription, $action, $input) {
+            return $this->apply($subscription, $action, $input, audit: true);
+        });
+    }
+
+    // ---------------------------------------------------------------
+    // The action table — one entry per dual-lane matrix row
+    // ---------------------------------------------------------------
+
+    private function apply(Subscription $s, string $action, array $input, bool $audit): Subscription
+    {
+        $reason = trim((string) ($input['reason'] ?? ''));
+
+        if (in_array($action, self::REASON_REQUIRED, true) && $reason === '') {
+            throw new InvalidArgumentException("A reason is required to {$action} — it is a discretionary decision and the audit trail must record why.");
+        }
+
+        $before = $this->snapshot($s);
+
+        match ($action) {
+            'extend' => $this->doExtend($s, (int) ($input['days'] ?? 0), $reason),
+            'comp' => $this->doComp($s, (int) ($input['months'] ?? 0), $reason),
+            'renew' => $this->doRenew($s, $input),
+            'set_price' => $this->doSetPrice($s, $input['price'] ?? null, $reason),
+            'clear_price' => $this->doClearPrice($s, $reason),
+            'suspend' => $this->doSuspend($s, $reason),
+            'reactivate' => $this->doReactivate($s, $reason),
+            'cancel' => $this->doCancel($s, $reason, (bool) ($input['at_period_end'] ?? false)),
+            'force_expire' => $this->doForceExpire($s, $reason),
+            'switch_interval' => $this->doSwitchInterval($s, (string) ($input['interval'] ?? '')),
+            'mark_paid' => $this->doMarkPaid($s, $input, $reason),
+            'waive' => $this->doWaive($s, $reason),
+            default => throw new InvalidArgumentException("Unknown lifecycle action [{$action}]."),
+        };
+
+        $s->save();
+
+        if ($audit) {
+            AdminAuditLog::record(
+                "subscription.{$action}",
+                $this->describe($action, $s, $input),
+                $s->tenant_id,
+                [
+                    'account_id' => $s->account_id,
+                    'reason' => $reason ?: null,
+                    'input' => collect($input)->except(['password', 'password_confirmation', '_token'])->all(),
+                    'before' => $before,
+                    'after' => $this->snapshot($s),
+                ],
+            );
+        }
+
+        return $s;
+    }
+
+    // ---- Row 3 · Trial extended -------------------------------------
+
+    private function doExtend(Subscription $s, int $days, string $reason): void
+    {
+        if ($days < 1 || $days > 365) {
+            throw new InvalidArgumentException('Extend by between 1 and 365 days.');
+        }
+
+        // Extend from the LATER of today or the existing end, so an in-window
+        // trial is lengthened rather than silently shortened.
+        $base = $this->clockBase($s);
+        $s->current_period_end = $base->copy()->addDays($days);
+        $s->cancel_at_period_end = false;
+
+        if ($s->status === 'canceled') {
+            $s->status = 'trialing';
+        }
+
+        $s->applyOverride('extension', $s->current_period_end, $reason);
+    }
+
+    // ---- Row 6 · Comp / favour --------------------------------------
+
+    private function doComp(Subscription $s, int $months, string $reason): void
+    {
+        if ($months < 1 || $months > 60) {
+            throw new InvalidArgumentException('Comp for between 1 and 60 months.');
+        }
+
+        $base = $this->clockBase($s);
+        $s->status = 'active';
+        $s->current_period_end = $base->copy()->addMonths($months);
+        $s->cancel_at_period_end = false;
+        $s->applyOverride('comp', $s->current_period_end, $reason);
+
+        // A grant is a ₹0 LEDGER ROW, never an absent one — otherwise lifetime
+        // value is wrong for every comped customer (playbook §3.2 / BUG-P04).
+        $this->payments->recordComp($s, $reason, $base, $s->current_period_end);
+    }
+
+    // ---- Row 5 · Renewal (manual) -----------------------------------
+
+    private function doRenew(Subscription $s, array $input): void
+    {
+        $method = (string) ($input['method'] ?? 'cash');
+        $interval = (string) ($input['interval'] ?? $s->interval ?? 'monthly');
+        $amount = $input['amount'] !== null && $input['amount'] !== ''
+            ? (float) $input['amount']
+            : $this->prices->effectivePrice($s, $interval);
+
+        $base = $this->clockBase($s);
+        $end = $interval === 'yearly' ? $base->copy()->addYear() : $base->copy()->addMonth();
+
+        $this->payments->record($s, $amount, $method, [
+            'reference' => $input['reference'] ?? null,
+            'period_start' => $base,
+            'period_end' => $end,
+            'reason' => $input['reason'] ?? null,
+        ]);
+
+        $s->status = 'active';
+        $s->interval = $interval;
+        $s->current_period_end = $end;
+        $s->cancel_at_period_end = false;
+
+        // Manual wins for this cycle — the webhook must not undo a renewal the
+        // operator just took money for.
+        $s->applyOverride('manual_renewal', $end, $input['reason'] ?? 'Manual renewal');
+    }
+
+    // ---- Row 7 · Price change ---------------------------------------
+
+    private function doSetPrice(Subscription $s, mixed $price, string $reason): void
+    {
+        if (! is_numeric($price) || (float) $price < 0) {
+            throw new InvalidArgumentException('A negotiated price must be zero or more.');
+        }
+
+        $s->negotiated_price = round((float) $price, 2);
+        $s->negotiated_reason = $reason;
+        $s->negotiated_by = auth()->id();
+        $s->negotiated_at = now();
+    }
+
+    private function doClearPrice(Subscription $s, string $reason): void
+    {
+        $s->negotiated_price = null;
+        $s->negotiated_reason = null;
+        $s->negotiated_by = auth()->id();
+        $s->negotiated_at = now();
+    }
+
+    // ---- Row 10 · Suspension ----------------------------------------
+
+    private function doSuspend(Subscription $s, string $reason): void
+    {
+        // ⚠ The clock is PRESERVED. Suspension cuts access without destroying
+        // what the customer paid for — the gap BUG-P06 identified in the old
+        // panel, where the only lever was cancel.
+        $s->status = 'past_due';
+        $s->applyOverride('suspension', null, $reason);
+    }
+
+    private function doReactivate(Subscription $s, string $reason): void
+    {
+        $s->clearOverride();
+
+        // Their paid period may still be running; if so they are simply active
+        // again, and nothing was lost by the suspension.
+        $s->status = $s->current_period_end && $s->current_period_end->gte(now()->startOfDay())
+            ? 'active'
+            : 'past_due';
+
+        AdminAuditLog::record('subscription.override_cleared', 'Operator override cleared on reactivate', $s->tenant_id, [
+            'reason' => $reason,
+        ]);
+    }
+
+    // ---- Row 12 · Cancellation --------------------------------------
+
+    private function doCancel(Subscription $s, string $reason, bool $atPeriodEnd): void
+    {
+        if ($atPeriodEnd) {
+            // Decision C3 — no refunds, so access continues to the end of the
+            // period they already paid for. This is the default, humane path.
+            $s->cancel_at_period_end = true;
+            $s->applyOverride('cancellation', $s->current_period_end, $reason);
+
+            return;
+        }
+
+        $s->status = 'canceled';
+        $s->cancel_at_period_end = false;
+        $s->applyOverride('cancellation', null, $reason);
+    }
+
+    // ---- Row 9 · Expiry ----------------------------------------------
+
+    private function doForceExpire(Subscription $s, string $reason): void
+    {
+        $s->status = 'canceled';
+        $s->current_period_end = now()->subDay()->toDateString();
+        $s->cancel_at_period_end = false;
+        $s->applyOverride('cancellation', null, $reason);
+    }
+
+    // ---- Row 13 · Interval switch ------------------------------------
+
+    private function doSwitchInterval(Subscription $s, string $interval): void
+    {
+        if (! in_array($interval, ['monthly', 'yearly'], true)) {
+            throw new InvalidArgumentException('Interval must be monthly or yearly.');
+        }
+
+        $s->interval = $interval;
+        $s->pending_interval = null;
+    }
+
+    // ---- Row 8 · Failed payment --------------------------------------
+
+    private function doMarkPaid(Subscription $s, array $input, string $reason): void
+    {
+        $amount = $input['amount'] !== null && $input['amount'] !== ''
+            ? (float) $input['amount']
+            : $this->prices->effectivePrice($s);
+
+        $this->payments->record($s, $amount, (string) ($input['method'] ?? 'cash'), [
+            'reference' => $input['reference'] ?? null,
+            'reason' => $reason,
+        ]);
+
+        $s->status = 'active';
+
+        // Manual wins and cancels conflicting automation: the override stops
+        // dunning from re-marking this past_due behind the operator's back.
+        $s->applyOverride('manual_renewal', $s->current_period_end, $reason);
+    }
+
+    private function doWaive(Subscription $s, string $reason): void
+    {
+        $s->status = 'active';
+        $s->applyOverride('comp', $s->current_period_end, $reason);
+        $this->payments->recordComp($s, "Waived: {$reason}");
+    }
+
+    // ---------------------------------------------------------------
+    // Gateway lane (P0) — unchanged contract
+    // ---------------------------------------------------------------
+
     /**
      * Apply a gateway event's entitlement changes — unless an operator override
      * is in force, in which case the subscription is left exactly as the human
      * left it.
      *
-     * ⚠ This deliberately governs ENTITLEMENT ONLY. The caller records the
-     * payment in the ledger BEFORE calling this, and must keep doing so: money
-     * that actually changed hands is always recorded, whatever the operator has
-     * decided about access. Dropping the payment record would trade one bug for
-     * a worse one.
+     * ⚠ ENTITLEMENT ONLY. The caller records the payment in the ledger BEFORE
+     * calling this and must keep doing so: money that actually changed hands is
+     * always recorded, whatever the operator decided about access.
      *
      * @return bool true if the gateway's values were applied, false if suppressed.
      */
@@ -47,7 +368,7 @@ class SubscriptionLifecycle
             $subscription->status = $status;
 
             if ($status === 'canceled') {
-                $subscription->cancel_at_period_end = false; // the cancel has taken effect
+                $subscription->cancel_at_period_end = false;
             }
         }
 
@@ -68,21 +389,75 @@ class SubscriptionLifecycle
         return true;
     }
 
-    /**
-     * Leave a trail when automation is overruled.
-     *
-     * Without this the suppression is invisible: the operator sees their comp
-     * survive but has no way to know the gateway tried to change it, which is
-     * exactly the sort of silent divergence that erodes trust in the panel.
-     *
-     * Runs unauthenticated (webhook context), so AdminAuditLog records a null
-     * actor — correct, because this was a system decision, not a person's.
-     */
-    private function auditSuppression(
-        Subscription $subscription,
-        ?string $status,
-        ?Carbon $periodEnd,
-    ): void {
+    // ---------------------------------------------------------------
+    // Helpers
+    // ---------------------------------------------------------------
+
+    /** Never shorten coverage by accident: extend from today or the end, whichever is later. */
+    private function clockBase(Subscription $s): Carbon
+    {
+        $tz = config('billing.timezone', 'Asia/Kolkata');
+        $today = Carbon::today($tz);
+
+        $end = $s->current_period_end
+            ? Carbon::parse($s->current_period_end->toDateString(), $tz)
+            : $today;
+
+        return $end->max($today);
+    }
+
+    private function snapshot(Subscription $s): array
+    {
+        return [
+            'status' => $s->status,
+            'access' => $s->accessState(),
+            'interval' => $s->interval,
+            'current_period_end' => $s->current_period_end?->toDateString(),
+            'cancel_at_period_end' => (bool) $s->cancel_at_period_end,
+            'negotiated_price' => $s->negotiated_price !== null ? (float) $s->negotiated_price : null,
+            'effective_price' => $this->prices->effectivePrice($s),
+            'override_kind' => $s->override_kind,
+            'override_until' => $s->override_until?->toDateString(),
+        ];
+    }
+
+    /** Only the fields that actually moved — what the confirm dialog shows. */
+    private function diff(array $before, array $after): array
+    {
+        $out = [];
+
+        foreach ($after as $key => $value) {
+            if (($before[$key] ?? null) !== $value) {
+                $out[$key] = ['from' => $before[$key] ?? null, 'to' => $value];
+            }
+        }
+
+        return $out;
+    }
+
+    private function describe(string $action, Subscription $s, array $input): string
+    {
+        $who = $s->account?->displayName() ?? 'account';
+
+        return match ($action) {
+            'extend' => "Extended {$who} by {$input['days']} days",
+            'comp' => "Granted {$who} {$input['months']} months of free access",
+            'renew' => "Renewed {$who} manually",
+            'set_price' => "Set {$who} to a negotiated price of ₹{$input['price']}",
+            'clear_price' => "Cleared {$who}'s negotiated price — back to list",
+            'suspend' => "Suspended {$who}",
+            'reactivate' => "Reactivated {$who}",
+            'cancel' => "Cancelled {$who}",
+            'force_expire' => "Force-expired {$who}",
+            'switch_interval' => "Switched {$who} to {$input['interval']} billing",
+            'mark_paid' => "Marked {$who}'s payment as received",
+            'waive' => "Waived {$who}'s outstanding payment",
+            default => "{$action} on {$who}",
+        };
+    }
+
+    private function auditSuppression(Subscription $subscription, ?string $status, ?Carbon $periodEnd): void
+    {
         AdminAuditLog::record(
             'subscription.webhook_suppressed',
             "Razorpay update ignored — {$subscription->override_kind} override is in force",
