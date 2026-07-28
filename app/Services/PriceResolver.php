@@ -33,6 +33,8 @@ class PriceResolver
      *   list_price: float,
      *   list_source: string,
      *   negotiated_price: float|null,
+     *   negotiated_interval: string|null,
+     *   negotiated_mismatch: bool,
      *   effective: float,
      *   source: string,
      *   steps: list<array{label: string, amount: float}>,
@@ -46,12 +48,27 @@ class PriceResolver
 
         $steps = [['label' => "List price ({$interval})", 'amount' => $list]];
 
-        $negotiated = $subscription->negotiated_price !== null
-            ? (float) $subscription->negotiated_price
-            : null;
+        // AUD-04 — a bespoke price only applies at the interval it was agreed
+        // FOR. ₹3,500 is a bargain per year and a 12x overcharge per month, and
+        // before this the same number was used for both: switching a customer's
+        // billing period silently re-priced them. When the intervals disagree we
+        // fall back to the list price and SAY SO, rather than quietly charging
+        // a number nobody agreed.
+        $negotiated = null;
+        $negotiatedMismatch = false;
 
-        if ($negotiated !== null) {
-            $steps[] = ['label' => 'Negotiated price', 'amount' => $negotiated];
+        if ($subscription->hasNegotiatedPrice()) {
+            if ($subscription->negotiatedPriceApplies($interval)) {
+                $negotiated = (float) $subscription->negotiated_price;
+                $steps[] = ['label' => 'Negotiated price', 'amount' => $negotiated];
+            } else {
+                $negotiatedMismatch = true;
+                $steps[] = [
+                    'label' => 'Negotiated price ignored — agreed per '
+                        . $subscription->negotiatedInterval(),
+                    'amount' => (float) $subscription->negotiated_price,
+                ];
+            }
         }
 
         $effective = $negotiated ?? $list;
@@ -61,6 +78,8 @@ class PriceResolver
             'list_price' => $list,
             'list_source' => $listSource,
             'negotiated_price' => $negotiated,
+            'negotiated_interval' => $subscription->negotiatedInterval(),
+            'negotiated_mismatch' => $negotiatedMismatch,
             'effective' => round(max(0.0, $effective), 2), // floor at zero, round once
             'source' => $negotiated !== null ? 'negotiated' : $listSource,
             'steps' => $steps,

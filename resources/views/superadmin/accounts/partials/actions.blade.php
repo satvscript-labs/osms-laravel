@@ -145,7 +145,7 @@
 
 @if ($subscription?->hasNegotiatedPrice())
 <x-operator-modal id="m-clear-price" title="Back to list price" :action="$act" preview="clear_price" :account="$account"
-    label="Clear negotiated price" icon="bi-tag" tone="danger"
+    label="Clear negotiated price" dismiss="Never mind" icon="bi-tag" tone="danger"
     intro="Removes the bespoke price. They will pay the plan's list price from the next renewal.">
     <label class="form-label" for="cpz-reason">Why <span style="color:var(--tone-red);">*</span></label>
     <input id="cpz-reason" name="reason" type="text" required maxlength="500" class="form-control">
@@ -193,7 +193,7 @@
 </x-operator-modal>
 
 <x-operator-modal id="m-waive" title="Waive what is owed" :action="$act" preview="waive" :account="$account"
-    label="Waive" icon="bi-hand-thumbs-up" tone="danger"
+    label="Waive it" dismiss="Never mind" icon="bi-hand-thumbs-up" tone="danger"
     intro="Write off this period. Recorded as a ₹0 entry, so it is visible rather than invisible.">
     <label class="form-label" for="wv-reason">Why <span style="color:var(--tone-red);">*</span></label>
     <input id="wv-reason" name="reason" type="text" required maxlength="500" class="form-control">
@@ -210,7 +210,7 @@
 </x-operator-modal>
 @else
 <x-operator-modal id="m-suspend" title="Suspend access" :action="$act" preview="suspend" :account="$account"
-    label="Suspend" icon="bi-pause-circle" tone="danger"
+    label="Suspend access" dismiss="Never mind" icon="bi-pause-circle" tone="danger"
     intro="Cuts access immediately. Their paid-through date is PRESERVED, so reactivating loses nothing.">
     <label class="form-label" for="sp-reason">Why <span style="color:var(--tone-red);">*</span></label>
     <input id="sp-reason" name="reason" type="text" required maxlength="500" class="form-control"
@@ -220,7 +220,7 @@
 
 {{-- ── Row 12 · Cancel ──────────────────────────────────────────── --}}
 <x-operator-modal id="m-cancel" title="Cancel this customer" :action="$act" preview="cancel" :account="$account"
-    label="Cancel" icon="bi-x-octagon" tone="danger"
+    label="Cancel this customer" dismiss="Never mind" icon="bi-x-octagon" tone="danger"
     intro="Ends the relationship. There are no refunds, so by default they keep what they have paid for.">
     <div class="form-check mb-3">
         <input class="form-check-input" type="checkbox" name="at_period_end" value="1" id="cn-atend" checked>
@@ -234,7 +234,7 @@
 
 {{-- ── Row 9 · Force expire ─────────────────────────────────────── --}}
 <x-operator-modal id="m-expire" title="End access now" :action="$act" preview="force_expire" :account="$account"
-    label="End access" icon="bi-exclamation-octagon" tone="danger"
+    label="End access now" dismiss="Never mind" icon="bi-exclamation-octagon" tone="danger"
     intro="Immediately ends access, ignoring any remaining paid period. Rarely the right lever — prefer Suspend.">
     <label class="form-label" for="fe-reason">Why <span style="color:var(--tone-red);">*</span></label>
     <input id="fe-reason" name="reason" type="text" required maxlength="500" class="form-control">
@@ -276,7 +276,7 @@
 @foreach ($ledger->where('reversed_at', null) as $row)
     <x-operator-modal :id="'m-rev-' . $row->id" title="Reverse this payment"
         :action="route('superadmin.accounts.payment.reverse', [$account, $row])"
-        label="Reverse" icon="bi-arrow-counterclockwise" tone="danger"
+        label="Reverse payment" dismiss="Never mind" icon="bi-arrow-counterclockwise" tone="danger"
         intro="₹{{ number_format($row->amount, 2) }} · {{ $row->methodLabel() }}{{ $row->receipt_no ? ' · ' . $row->receipt_no : '' }}. The entry stays on the ledger, struck through — it never disappears.">
         <label class="form-label" for="rv-{{ $row->id }}">Why <span style="color:var(--tone-red);">*</span></label>
         <input id="rv-{{ $row->id }}" name="reason" type="text" required maxlength="500"

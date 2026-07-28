@@ -25,6 +25,13 @@ class ReconcileSubscriptions extends Command
     /** Days-left thresholds that trigger a "trial ending soon" reminder. */
     private const REMINDER_DAYS = [3, 1];
 
+    /**
+     * AUD-01 — how long a locked, unpaid subscription sits at `past_due` before
+     * it is treated as churn and cancelled. Measured from the END of the grace
+     * window, so the full silence is grace + this. Owner decision: 30 days.
+     */
+    private const GRACE_TO_CANCEL_DAYS = 30;
+
     public function handle(): int
     {
         // Runs unauthenticated → bypass the tenant scope to see every store.
@@ -52,9 +59,74 @@ class ReconcileSubscriptions extends Command
             }
         }
 
-        $this->info("Reconciled {$expired} expired trial(s); sent {$reminded} reminder(s).");
+        $lapsed = $this->lapsePaidSubscriptions();
+
+        $this->info("Reconciled {$expired} expired trial(s); sent {$reminded} reminder(s); lapsed {$lapsed} paid subscription(s).");
 
         return self::SUCCESS;
+    }
+
+    /**
+     * AUD-01 — move PAID subscriptions that nobody renewed to a terminal state.
+     *
+     * Previously this command only handled trials, so a paying customer who
+     * simply stopped paying stayed `active` forever: access was correctly cut
+     * by `accessState()`, but they counted toward MRR and the "Paying" figure
+     * indefinitely. That made the headline revenue number overstate by every
+     * churned-but-not-cancelled customer.
+     *
+     *   active   + past the grace window        → past_due
+     *   past_due + GRACE_TO_CANCEL days beyond  → canceled
+     *
+     * ⚠ An operator override is NEVER touched. A comped, extended, suspended or
+     * manually-renewed subscription is a human decision, and this job
+     * reconciles — it does not overrule people (playbook §5.2 rule 2).
+     */
+    private function lapsePaidSubscriptions(): int
+    {
+        $changed = 0;
+
+        $candidates = Subscription::withoutGlobalScopes()
+            ->whereIn('status', ['active', 'past_due'])
+            ->whereNotNull('current_period_end')
+            ->get();
+
+        foreach ($candidates as $sub) {
+            if ($sub->hasActiveOverride()) {
+                continue; // a human decided this; leave it alone
+            }
+
+            if ($sub->accessState() !== 'locked') {
+                continue; // still inside its period or its grace window
+            }
+
+            if ($sub->status === 'active') {
+                $sub->status = 'past_due';
+                $sub->save();
+                $changed++;
+
+                continue;
+            }
+
+            // Already past_due and locked — cancel once it has been unpaid long
+            // enough that this is churn rather than a late payment.
+            $deadline = $sub->current_period_end
+                ->copy()
+                ->addDays($this->graceDays() + self::GRACE_TO_CANCEL_DAYS);
+
+            if (now()->greaterThan($deadline->endOfDay())) {
+                $sub->status = 'canceled';
+                $sub->save();
+                $changed++;
+            }
+        }
+
+        return $changed;
+    }
+
+    private function graceDays(): int
+    {
+        return (int) config('billing.grace_days', 7);
     }
 
     /** Queue a trial-status email to the store's admin(s). */

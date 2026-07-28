@@ -56,6 +56,7 @@ class SubscriptionLifecycle
     public function preview(Subscription $subscription, string $action, array $input = []): array
     {
         $before = $this->snapshot($subscription);
+        $warnings = $this->warningsFor($subscription, $action);
         $ledgerBefore = SubscriptionInvoice::withoutGlobalScopes()
             ->where('account_id', $subscription->account_id)->count();
 
@@ -75,9 +76,15 @@ class SubscriptionLifecycle
                 throw new PreviewRollback();
             });
         } catch (PreviewRollback) {
-            // expected
+            // expected - this is how the dry run unwinds
         } catch (InvalidArgumentException $e) {
             $error = $e->getMessage();
+        } catch (\Throwable $e) {
+            // AUD-09 - previews run on every keystroke; one must never 500 the
+            // endpoint or vanish without trace. Give the operator something
+            // actionable and log the detail for us.
+            report($e);
+            $error = 'Could not work out what this would do. Nothing has changed.';
         }
 
         // The in-memory model was mutated during the rolled-back attempt;
@@ -87,6 +94,7 @@ class SubscriptionLifecycle
         return [
             'action' => $action,
             'error' => $error,
+            'warnings' => $warnings,
             'before' => $before,
             'after' => $after,
             'changes' => $this->diff($before, $after),
@@ -118,9 +126,9 @@ class SubscriptionLifecycle
 
         match ($action) {
             'extend' => $this->doExtend($s, (int) ($input['days'] ?? 0), $reason),
-            'comp' => $this->doComp($s, (int) ($input['months'] ?? 0), $reason),
+            'comp' => $this->doComp($s, (int) ($input['months'] ?? 0), $reason, $input['interval'] ?? null),
             'renew' => $this->doRenew($s, $input),
-            'set_price' => $this->doSetPrice($s, $input['price'] ?? null, $reason),
+            'set_price' => $this->doSetPrice($s, $input['price'] ?? null, $reason, $input['interval'] ?? null),
             'clear_price' => $this->doClearPrice($s, $reason),
             'suspend' => $this->doSuspend($s, $reason),
             'reactivate' => $this->doReactivate($s, $reason),
@@ -131,6 +139,10 @@ class SubscriptionLifecycle
             'waive' => $this->doWaive($s, $reason),
             default => throw new InvalidArgumentException("Unknown lifecycle action [{$action}]."),
         };
+
+        // Legacy flag, superseded by override_* but still read by the legacy
+        // store screens. Kept in step so those views do not silently change.
+        $s->manual = true;
 
         $s->save();
 
@@ -175,7 +187,7 @@ class SubscriptionLifecycle
 
     // ---- Row 6 · Comp / favour --------------------------------------
 
-    private function doComp(Subscription $s, int $months, string $reason): void
+    private function doComp(Subscription $s, int $months, string $reason, ?string $interval = null): void
     {
         if ($months < 1 || $months > 60) {
             throw new InvalidArgumentException('Comp for between 1 and 60 months.');
@@ -183,6 +195,13 @@ class SubscriptionLifecycle
 
         $base = $this->clockBase($s);
         $s->status = 'active';
+
+        // An operator may state the cadence the comp represents; otherwise the
+        // existing one stands.
+        if (in_array($interval, ['monthly', 'yearly'], true)) {
+            $s->interval = $interval;
+        }
+
         $s->current_period_end = $base->copy()->addMonths($months);
         $s->cancel_at_period_end = false;
         $s->applyOverride('comp', $s->current_period_end, $reason);
@@ -198,9 +217,17 @@ class SubscriptionLifecycle
     {
         $method = (string) ($input['method'] ?? 'cash');
         $interval = (string) ($input['interval'] ?? $s->interval ?? 'monthly');
-        $amount = $input['amount'] !== null && $input['amount'] !== ''
+        $amount = ($input['amount'] ?? null) !== null && $input['amount'] !== ''
             ? (float) $input['amount']
             : $this->prices->effectivePrice($s, $interval);
+
+        // AUD-05 - a zero-rupee "cash payment" is a lie in the ledger: no money
+        // moved. Giving time away for free is what a comp is for, and a comp
+        // carries a reason. Refuse rather than silently record a payment that
+        // never happened. (A blank amount still falls back to the list price.)
+        if ($amount <= 0.0) {
+            throw new InvalidArgumentException('A renewal needs an amount. To give them time for free, use Grant free access instead - it records a zero-value entry with your reason.');
+        }
 
         $base = $this->clockBase($s);
         $end = $interval === 'yearly' ? $base->copy()->addYear() : $base->copy()->addMonth();
@@ -224,13 +251,16 @@ class SubscriptionLifecycle
 
     // ---- Row 7 · Price change ---------------------------------------
 
-    private function doSetPrice(Subscription $s, mixed $price, string $reason): void
+    private function doSetPrice(Subscription $s, mixed $price, string $reason, ?string $interval = null): void
     {
         if (! is_numeric($price) || (float) $price < 0) {
             throw new InvalidArgumentException('A negotiated price must be zero or more.');
         }
 
         $s->negotiated_price = round((float) $price, 2);
+        // AUD-04 - pin the interval it was agreed FOR, so switching billing
+        // period cannot silently re-price them by 12x in either direction.
+        $s->negotiated_interval = $interval ?: ($s->interval ?: 'monthly');
         $s->negotiated_reason = $reason;
         $s->negotiated_by = auth()->id();
         $s->negotiated_at = now();
@@ -239,6 +269,7 @@ class SubscriptionLifecycle
     private function doClearPrice(Subscription $s, string $reason): void
     {
         $s->negotiated_price = null;
+        $s->negotiated_interval = null;
         $s->negotiated_reason = null;
         $s->negotiated_by = auth()->id();
         $s->negotiated_at = now();
@@ -259,15 +290,22 @@ class SubscriptionLifecycle
     {
         $s->clearOverride();
 
+        // AUD-03 - reactivate must undo a SCHEDULED cancellation too. It used
+        // to clear the override and restore status but leave
+        // `cancel_at_period_end` set, so the operator believed they had undone
+        // the cancellation while the store was still queued to lapse - and the
+        // Razorpay webhook would act on that flag.
+        $s->cancel_at_period_end = false;
+
         // Their paid period may still be running; if so they are simply active
         // again, and nothing was lost by the suspension.
         $s->status = $s->current_period_end && $s->current_period_end->gte(now()->startOfDay())
             ? 'active'
             : 'past_due';
 
-        AdminAuditLog::record('subscription.override_cleared', 'Operator override cleared on reactivate', $s->tenant_id, [
-            'reason' => $reason,
-        ]);
+        // AUD-08 - no separate audit row here. apply() already writes one for
+        // every action with before -> after and the reason; a second row made
+        // the trail's row count meaningless as a measure of operator activity.
     }
 
     // ---- Row 12 · Cancellation --------------------------------------
@@ -393,6 +431,37 @@ class SubscriptionLifecycle
     // Helpers
     // ---------------------------------------------------------------
 
+    /**
+     * AUD-06 / AUD-04 - things the operator should be told BEFORE committing,
+     * which are not errors and do not block the action.
+     *
+     * The panel must never let one deliberate decision quietly erase another:
+     * granting a comp over a live suspension is probably intended, but the
+     * suspension's reason vanishes from the record and nothing said so.
+     *
+     * @return list<string>
+     */
+    private function warningsFor(Subscription $s, string $action): array
+    {
+        $out = [];
+
+        if (in_array($action, ['comp', 'extend', 'renew', 'mark_paid', 'waive'], true)
+            && $s->override_kind === 'suspension'
+            && $s->hasActiveOverride()) {
+            $out[] = 'This replaces the suspension in force'
+                . ($s->override_reason ? ' (' . $s->override_reason . ')' : '')
+                . ' and restores their access.';
+        }
+
+        if ($action === 'switch_interval' && $s->hasNegotiatedPrice()) {
+            $out[] = 'Their negotiated price of Rs ' . number_format((float) $s->negotiated_price, 2)
+                . ' was agreed per ' . $s->negotiatedInterval()
+                . '. On a different billing period they revert to the list price until you agree a new one.';
+        }
+
+        return $out;
+    }
+
     /** Never shorten coverage by accident: extend from today or the end, whichever is later. */
     private function clockBase(Subscription $s): Carbon
     {
@@ -415,6 +484,7 @@ class SubscriptionLifecycle
             'current_period_end' => $s->current_period_end?->toDateString(),
             'cancel_at_period_end' => (bool) $s->cancel_at_period_end,
             'negotiated_price' => $s->negotiated_price !== null ? (float) $s->negotiated_price : null,
+            'negotiated_interval' => $s->negotiatedInterval(),
             'effective_price' => $this->prices->effectivePrice($s),
             'override_kind' => $s->override_kind,
             'override_until' => $s->override_until?->toDateString(),

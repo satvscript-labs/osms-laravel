@@ -88,7 +88,7 @@ class Phase68OperatorOverrideTest extends TestCase
     public function test_a_comp_survives_the_next_charge_webhook(): void
     {
         $this->asAdmin()->post(route('superadmin.subscription.activate', $this->tenant), [
-            'months' => 12, 'interval' => 'yearly',
+            'months' => 12, 'interval' => 'yearly', 'reason' => 'audit: legacy path test',
         ])->assertRedirect();
 
         $granted = $this->sub()->current_period_end->toDateString();
@@ -106,7 +106,7 @@ class Phase68OperatorOverrideTest extends TestCase
     public function test_a_trial_extension_survives_the_webhook(): void
     {
         $this->asAdmin()->post(route('superadmin.subscription.extend-trial', $this->tenant), [
-            'days' => 60,
+            'days' => 60, 'reason' => 'audit: legacy path test',
         ])->assertRedirect();
 
         $granted = $this->sub()->current_period_end->toDateString();
@@ -114,12 +114,31 @@ class Phase68OperatorOverrideTest extends TestCase
         $this->webhook('subscription.charged')->assertOk();
 
         $this->assertSame($granted, $this->sub()->current_period_end->toDateString());
-        $this->assertSame('trialing', $this->sub()->status, 'The webhook flipped a granted trial to active.');
+
+        // This store was `active` before the extension (see setUp), and it stays
+        // `active`. The legacy screen used to force `trialing` on every extend —
+        // which silently reclassified a PAYING customer as a trial and, because
+        // MRR only counts `active`, erased them from revenue. Extending time
+        // must not change what someone is. (AUD-07 routed this through the
+        // lifecycle service, which fixed it.)
+        $this->assertSame('active', $this->sub()->status, 'The webhook overrode the operator’s extension.');
+    }
+
+    public function test_extending_a_genuine_trial_leaves_it_a_trial(): void
+    {
+        $this->tenant->subscription->update(['status' => 'trialing']);
+
+        $this->asAdmin()->post(route('superadmin.subscription.extend-trial', $this->tenant), [
+            'days' => 30, 'reason' => 'setup help',
+        ])->assertRedirect();
+
+        $this->assertSame('trialing', $this->sub()->status);
+        $this->assertTrue($this->sub()->current_period_end->gt(now()->addDays(20)));
     }
 
     public function test_an_operator_cancellation_is_indefinite_and_cannot_be_undone_by_a_webhook(): void
     {
-        $this->asAdmin()->post(route('superadmin.subscription.cancel', $this->tenant))->assertRedirect();
+        $this->asAdmin()->post(route('superadmin.subscription.cancel', $this->tenant), ['reason' => 'audit: legacy path test'])->assertRedirect();
 
         $this->assertSame('canceled', $this->sub()->status);
         $this->assertNull($this->sub()->override_until, 'A cancellation override must be indefinite.');
@@ -139,7 +158,7 @@ class Phase68OperatorOverrideTest extends TestCase
     public function test_a_suppressed_webhook_still_records_the_payment(): void
     {
         $this->asAdmin()->post(route('superadmin.subscription.activate', $this->tenant), [
-            'months' => 12, 'interval' => 'yearly',
+            'months' => 12, 'interval' => 'yearly', 'reason' => 'audit: legacy path test',
         ])->assertRedirect();
 
         $this->webhook('subscription.charged', [
@@ -161,7 +180,7 @@ class Phase68OperatorOverrideTest extends TestCase
     public function test_a_suppressed_webhook_leaves_an_audit_trail(): void
     {
         $this->asAdmin()->post(route('superadmin.subscription.activate', $this->tenant), [
-            'months' => 6, 'interval' => 'monthly',
+            'months' => 6, 'interval' => 'monthly', 'reason' => 'audit: legacy path test',
         ])->assertRedirect();
 
         $this->webhook('subscription.charged')->assertOk();
@@ -189,7 +208,7 @@ class Phase68OperatorOverrideTest extends TestCase
     public function test_the_webhook_governs_again_once_the_override_window_passes(): void
     {
         $this->asAdmin()->post(route('superadmin.subscription.extend-trial', $this->tenant), [
-            'days' => 5,
+            'days' => 5, 'reason' => 'audit: legacy path test',
         ])->assertRedirect();
 
         // NB: extendTrial extends from the LATER of today or the existing period end,

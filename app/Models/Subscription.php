@@ -15,7 +15,7 @@ class Subscription extends Model
         'tenant_id', 'account_id', 'razorpay_subscription_id', 'razorpay_customer_id',
         'status', 'tier', 'plan_id', 'interval', 'pending_interval', 'quantity',
         'current_period_end', 'cancel_at_period_end', 'manual',
-        'negotiated_price', 'negotiated_reason', 'negotiated_by', 'negotiated_at',
+        'negotiated_price', 'negotiated_interval', 'negotiated_reason', 'negotiated_by', 'negotiated_at',
         'override_kind', 'override_until', 'override_reason', 'override_by', 'override_at',
     ];
 
@@ -46,6 +46,30 @@ class Subscription extends Model
     public function hasNegotiatedPrice(): bool
     {
         return $this->negotiated_price !== null;
+    }
+
+    /**
+     * AUD-04 — the interval the bespoke price was agreed FOR.
+     *
+     * A negotiated price only means something paired with its interval:
+     * ₹3,500 is a bargain per year and an overcharge per month. Falls back to
+     * the subscription's own interval for rows agreed before this was stored.
+     */
+    public function negotiatedInterval(): ?string
+    {
+        return $this->hasNegotiatedPrice()
+            ? ($this->negotiated_interval ?: ($this->interval ?: 'monthly'))
+            : null;
+    }
+
+    /** Does the bespoke price still apply at the interval they are billed on? */
+    public function negotiatedPriceApplies(?string $interval = null): bool
+    {
+        if (! $this->hasNegotiatedPrice()) {
+            return false;
+        }
+
+        return $this->negotiatedInterval() === ($interval ?: ($this->interval ?: 'monthly'));
     }
 
     /** Who agreed the bespoke price — shown beside the ⚑ badge. */

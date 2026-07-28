@@ -6,45 +6,60 @@ use App\Http\Controllers\Controller;
 use App\Models\AdminAuditLog;
 use App\Models\Tenant;
 use App\Services\BillingService;
-use App\Services\PaymentRecorder;
+use App\Services\SubscriptionLifecycle;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Carbon;
+use InvalidArgumentException;
 
 /**
- * ST-Admin (S11) — manual subscription control, bypassing Razorpay entirely.
+ * LEGACY store-scoped subscription control (ST-Admin / S11).
  *
- * Every method here mutates money-affecting state, so the routes are gated by
- * `password.confirm` (recent re-auth) on top of the superadmin guard, and each
- * action writes an immutable audit record with the before/after snapshot.
+ * Superseded by the account-first panel: the Customer 360's action set
+ * (`Superadmin\AccountActionController`) does everything here and more. These
+ * screens stay reachable at `/superadmin/legacy/stores/*` per decision E3 —
+ * out of the nav, deleted only once nothing depends on them.
+ *
+ * AUD-07 — every mutation now DELEGATES to `SubscriptionLifecycle` rather than
+ * mutating the model itself, and every one requires a reason. Previously this
+ * was a second, weaker path: it could write an override with a null reason,
+ * because the reason gate lived in the new controller instead of in the service.
+ *
+ * Playbook §3.4: one service, every door. Two code paths that both move money
+ * WILL diverge; the only question is when, and how expensively.
  */
 class SubscriptionController extends Controller
 {
-    private function tz(): string
+    public function __construct(private readonly SubscriptionLifecycle $lifecycle) {}
+
+    /**
+     * The subscription governing this store — resolved via its ACCOUNT.
+     *
+     * AUD-02 — a second branch has no subscription row of its own.
+     */
+    private function subscriptionFor(Tenant $tenant)
     {
-        return config('billing.timezone', 'Asia/Kolkata');
+        return $tenant->governingSubscription();
     }
 
-    /** Snapshot the fields we audit, for a clean before/after diff. */
-    private function snapshot(Tenant $tenant): array
+    /** Run a lifecycle action, turning a rejection into a flash message. */
+    private function run(Tenant $tenant, string $action, array $input, string $ok): RedirectResponse
     {
-        $s = $tenant->subscription;
+        $subscription = $this->subscriptionFor($tenant);
 
-        return [
-            'status' => $s?->status,
-            'tier' => $s?->tier,
-            'interval' => $s?->interval,
-            'current_period_end' => $s?->current_period_end?->toDateString(),
-            'cancel_at_period_end' => (bool) $s?->cancel_at_period_end,
-            'manual' => (bool) $s?->manual,
-            // BUG-P01 — the override is now part of the commercial state, so a
-            // before/after diff that omitted it would hide why a webhook was ignored.
-            'override_kind' => $s?->override_kind,
-            'override_until' => $s?->override_until?->toDateString(),
-        ];
+        if (! $subscription) {
+            return back()->with('error', 'This store has no subscription.');
+        }
+
+        try {
+            $this->lifecycle->commit($subscription, $action, $input);
+        } catch (InvalidArgumentException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return back()->with('status', $ok);
     }
 
-    /** Directly edit the subscription record. */
+    /** Directly edit status / tier / interval / period end — the escape hatch. */
     public function update(Request $request, Tenant $tenant): RedirectResponse
     {
         $validated = $request->validate([
@@ -53,44 +68,53 @@ class SubscriptionController extends Controller
             'interval' => ['nullable', 'in:monthly,yearly'],
             'current_period_end' => ['nullable', 'date'],
             'cancel_at_period_end' => ['nullable', 'boolean'],
+            'reason' => ['required', 'string', 'max:500'],
         ]);
 
-        $subscription = $tenant->subscription;
-        $before = $this->snapshot($tenant);
+        $subscription = $this->subscriptionFor($tenant);
 
-        // DATA-06 — PRESERVE the existing value when a field is absent from the post.
-        // Previously these fell back to null, so submitting the form without them
-        // silently cleared the billing period: status=active + current_period_end=null
-        // means accessState() has no boundary to check, i.e. access forever.
-        $subscription->fill([
+        if (! $subscription) {
+            return back()->with('error', 'This store has no subscription.');
+        }
+
+        $before = $subscription->only([
+            'status', 'tier', 'interval', 'current_period_end', 'cancel_at_period_end',
+        ]);
+
+        // A raw edit has no lifecycle equivalent — it IS the escape hatch — but
+        // it must still be sticky and audited like every other decision.
+        //
+        // DATA-06 — PRESERVE any field absent from the post. These previously
+        // fell back to null, so submitting without them silently cleared the
+        // billing period: status=active + current_period_end=null means
+        // accessState() has no boundary to check, i.e. access forever.
+        $subscription->update([
             'status' => $validated['status'],
             'tier' => $validated['tier'],
             'interval' => $validated['interval'] ?? $subscription->interval,
             'current_period_end' => $validated['current_period_end'] ?? $subscription->current_period_end,
-            'cancel_at_period_end' => (bool) ($request->boolean('cancel_at_period_end')),
+            'cancel_at_period_end' => $request->boolean('cancel_at_period_end'),
             'manual' => true,
         ]);
 
-        // BUG-P01 — a hand-edited subscription must survive the next webhook. A
-        // cancellation is indefinite (null `until`); anything else holds until the
-        // period the operator set.
         $subscription->applyOverride(
             kind: $validated['status'] === 'canceled' ? 'cancellation' : 'manual_edit',
-            until: $validated['status'] === 'canceled'
-                ? null
-                : ($subscription->current_period_end
-                    ? Carbon::parse($subscription->current_period_end->toDateString(), $this->tz())
-                    : null),
-            reason: $request->input('reason'),
+            until: $validated['status'] === 'canceled' ? null : $subscription->current_period_end,
+            reason: $validated['reason'],
         );
-
         $subscription->save();
 
         AdminAuditLog::record(
             'subscription.updated',
             "Manually edited {$tenant->store_name}'s subscription",
             $tenant->id,
-            ['before' => $before, 'after' => $this->snapshot($tenant->refresh())],
+            [
+                'reason' => $validated['reason'],
+                'before' => $before,
+                'after' => $subscription->refresh()->only([
+                    'status', 'tier', 'interval', 'current_period_end', 'cancel_at_period_end',
+                ]),
+            ],
         );
 
         return back()->with('status', 'Subscription updated.');
@@ -101,108 +125,38 @@ class SubscriptionController extends Controller
     {
         $validated = $request->validate([
             'days' => ['required', 'integer', 'min:1', 'max:365'],
+            'reason' => ['required', 'string', 'max:500'],
         ]);
 
-        $subscription = $tenant->subscription;
-        $before = $this->snapshot($tenant);
-
-        // Extend from the later of today or the existing end, so an already-active
-        // trial is lengthened rather than shortened.
-        $base = $subscription->current_period_end
-            ? Carbon::parse($subscription->current_period_end->toDateString(), $this->tz())
-            : Carbon::today($this->tz());
-        $base = $base->max(Carbon::today($this->tz()));
-
-        $newEnd = $base->copy()->addDays((int) $validated['days']);
-
-        $subscription->fill([
-            'status' => 'trialing',
-            'current_period_end' => $newEnd,
-            'cancel_at_period_end' => false,
-            'manual' => true,
-        ]);
-
-        // BUG-P01 — hold the granted window against any incoming webhook.
-        $subscription->applyOverride(
-            kind: 'extension',
-            until: $newEnd,
-            reason: $request->input('reason'),
-        );
-
-        $subscription->save();
-
-        AdminAuditLog::record(
-            'subscription.trial_extended',
-            "Extended {$tenant->store_name}'s trial by {$validated['days']} days",
-            $tenant->id,
-            ['days' => (int) $validated['days'], 'before' => $before, 'after' => $this->snapshot($tenant->refresh())],
-        );
-
-        return back()->with('status', "Trial extended by {$validated['days']} days.");
+        return $this->run($tenant, 'extend', $validated, "Trial extended by {$validated['days']} days.");
     }
 
-    /** Comp a paid subscription for N months without any payment. */
-    public function activate(Request $request, Tenant $tenant, PaymentRecorder $ledger): RedirectResponse
+    /** Comp N months of paid access without any payment. */
+    public function activate(Request $request, Tenant $tenant): RedirectResponse
     {
         $validated = $request->validate([
             'months' => ['required', 'integer', 'min:1', 'max:60'],
             'interval' => ['required', 'in:monthly,yearly'],
+            'reason' => ['required', 'string', 'max:500'],
         ]);
 
-        $subscription = $tenant->subscription;
-        $before = $this->snapshot($tenant);
-
-        $newEnd = Carbon::today($this->tz())->addMonths((int) $validated['months']);
-
-        $subscription->fill([
-            'status' => 'active',
-            'interval' => $validated['interval'],
-            'current_period_end' => $newEnd,
-            'cancel_at_period_end' => false,
-            'manual' => true,
-        ]);
-
-        // BUG-P01 — this is the exact case that was silently destroyed: a comp on a
-        // store with a live Razorpay mandate. The grant now outlives the next charge.
-        $subscription->applyOverride(
-            kind: 'comp',
-            until: $newEnd,
-            reason: $request->input('reason'),
-        );
-
-        $subscription->save();
-
-        // BUG-P04 — a complimentary grant is still a LEDGER RECORD: a ₹0 row with
-        // method='comp' and a reason, never an absent one. Lifetime value and
-        // "what have we given away?" stay answerable from one query.
-        $ledger->recordComp(
-            $subscription->refresh(),
-            reason: $request->input('reason')
-                ?: "Granted {$validated['months']} month(s) free by operator",
-            periodStart: Carbon::today($this->tz()),
-            periodEnd: $newEnd,
-        );
-
-        AdminAuditLog::record(
-            'subscription.comped',
-            "Granted {$tenant->store_name} {$validated['months']} months of free access",
-            $tenant->id,
-            ['months' => (int) $validated['months'], 'before' => $before, 'after' => $this->snapshot($tenant->refresh())],
-        );
-
-        return back()->with('status', "Granted {$validated['months']} months of access.");
+        return $this->run($tenant, 'comp', $validated, "Granted {$validated['months']} months of access.");
     }
 
-    /** Cancel access immediately. Also best-effort cancels the live Razorpay sub. */
+    /** Cancel access. Also best-effort cancels the live Razorpay subscription. */
     public function cancel(Request $request, Tenant $tenant, BillingService $billing): RedirectResponse
     {
-        $subscription = $tenant->subscription;
-        $before = $this->snapshot($tenant);
+        $validated = $request->validate([
+            'reason' => ['required', 'string', 'max:500'],
+        ]);
+
+        $subscription = $this->subscriptionFor($tenant);
         $razorpayNote = null;
 
-        // Prevent the double-charge loophole: if a live Razorpay sub exists, cancel
-        // it too so we don't keep billing a store we've locally canceled.
-        if ($subscription->razorpay_subscription_id && $billing->isConfigured()) {
+        // Prevent the double-charge loophole: if a live Razorpay subscription
+        // exists, cancel it too, so we don't keep billing a store we have
+        // cancelled locally.
+        if ($subscription?->razorpay_subscription_id && $billing->isConfigured()) {
             try {
                 $billing->cancelSubscription($subscription->razorpay_subscription_id);
                 $razorpayNote = 'Razorpay subscription canceled at cycle end.';
@@ -211,30 +165,19 @@ class SubscriptionController extends Controller
             }
         }
 
-        $subscription->fill([
-            'status' => 'canceled',
-            'cancel_at_period_end' => false,
-            'manual' => true,
-        ]);
-
-        // BUG-P01 — a cancellation is INDEFINITE (null `until`). Without this, a
-        // `subscription.charged` webhook from the still-settling mandate would flip
-        // the store straight back to active.
-        $subscription->applyOverride(
-            kind: 'cancellation',
-            until: null,
-            reason: $request->input('reason'),
+        $result = $this->run(
+            $tenant,
+            'cancel',
+            $validated,
+            'Subscription canceled.' . ($razorpayNote ? " ($razorpayNote)" : ''),
         );
 
-        $subscription->save();
+        if ($razorpayNote) {
+            AdminAuditLog::record('subscription.razorpay_cancel', $razorpayNote, $tenant->id, [
+                'reason' => $validated['reason'],
+            ]);
+        }
 
-        AdminAuditLog::record(
-            'subscription.canceled',
-            "Manually canceled {$tenant->store_name}'s subscription",
-            $tenant->id,
-            ['before' => $before, 'after' => $this->snapshot($tenant->refresh()), 'razorpay' => $razorpayNote],
-        );
-
-        return back()->with('status', 'Subscription canceled.' . ($razorpayNote ? " ($razorpayNote)" : ''));
+        return $result;
     }
 }

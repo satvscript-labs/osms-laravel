@@ -149,44 +149,86 @@
 
     <div class="tab-content">
 
-        {{-- ===== Stores — the "units panel" (06 §9) ===== --}}
+        {{-- ===== Stores — the "units panel" (06 §9) =====
+             One card per store. Deliberately NOT a full-row anchor with
+             buttons hanging off it: nesting actions inside a link is
+             ambiguous to click and reads as unfinished. The name is the
+             link; the levers are their own controls, on their own line,
+             separated by a hairline so the card has a real rhythm. --}}
         <div class="tab-pane fade show active" id="tab-stores" role="tabpanel">
-            <div class="card border-0 shadow-sm rounded-4 overflow-hidden stagger">
+            <div class="row g-3 stagger">
                 @forelse ($account->stores as $store)
-                    <a href="{{ route('superadmin.stores.show', $store) }}" class="person-row">
-                        <span class="person-avatar"><i class="bi bi-shop"></i></span>
-                        <div class="flex-grow-1 min-w-0">
-                            <div class="d-flex align-items-center gap-2 flex-wrap">
-                                <span class="fw-semibold text-truncate">{{ $store->store_name }}</span>
-                                @if ($store->store_status !== 'active')
-                                    <span class="osms-badge osms-badge-red"><span class="osms-badge-dot"></span>Suspended</span>
-                                @endif
-                                @unless ($store->is_billable)
-                                    <span class="meta-chip" title="Excluded from billing">not billed</span>
-                                @endunless
+                    <div class="col-12 col-xl-6">
+                        <div class="card card-lift border-0 shadow-sm rounded-4 h-100">
+                            <div class="card-body p-4">
+                                <div class="d-flex align-items-start gap-3">
+                                    <span class="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
+                                          style="width:2.5rem;height:2.5rem;background:var(--osms-primary-soft);color:var(--osms-primary);">
+                                        <i class="bi bi-shop"></i>
+                                    </span>
+                                    <div class="min-w-0 flex-grow-1">
+                                        <a href="{{ route('superadmin.stores.show', $store) }}"
+                                           class="d-inline-flex align-items-center gap-1 text-decoration-none fw-semibold text-truncate">
+                                            {{ $store->store_name }}
+                                            <i class="bi bi-arrow-right-short"></i>
+                                        </a>
+                                        <div class="chip-rail mt-1">
+                                            @if ($store->store_status !== 'active')
+                                                <span class="osms-badge osms-badge-red"><span class="osms-badge-dot"></span>Suspended</span>
+                                            @else
+                                                <span class="osms-badge osms-badge-green"><span class="osms-badge-dot"></span>Active</span>
+                                            @endif
+                                            @if ($store->is_billable)
+                                                <span class="meta-chip" title="Counts toward what this customer is charged">Billed</span>
+                                            @else
+                                                <span class="meta-chip" title="Excluded from billing">Not billed</span>
+                                            @endif
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {{-- Facts, labelled. Bare icon+number was ambiguous —
+                                     3,088 of what? --}}
+                                <div class="row g-2 mt-3 text-center">
+                                    @foreach ([
+                                        ['Customers', number_format($store->customers_count)],
+                                        ['Orders', number_format($store->orders_count)],
+                                        ['Team', $store->users_count . '/' . $store->seatLimit()],
+                                    ] as [$label, $value])
+                                        <div class="col-4">
+                                            <div class="rounded-3 py-2" style="background:var(--surface-sunken);">
+                                                <div class="fw-semibold font-display">{{ $value }}</div>
+                                                <div class="text-3xs text-faint text-uppercase" style="letter-spacing:.05em;">{{ $label }}</div>
+                                            </div>
+                                        </div>
+                                    @endforeach
+                                </div>
                             </div>
-                            <div class="text-muted-foreground text-sm mt-1 d-flex align-items-center gap-2 flex-wrap">
-                                <span class="meta-chip"><i class="bi bi-people"></i> {{ number_format($store->customers_count) }}</span>
-                                <span class="meta-chip"><i class="bi bi-cart3"></i> {{ number_format($store->orders_count) }}</span>
-                                <span class="meta-chip"><i class="bi bi-person-badge"></i> {{ $store->users_count }}</span>
+
+                            <div class="px-4 py-3 d-flex flex-wrap gap-2"
+                                 style="border-top:1px solid var(--osms-border);">
+                                <button type="button" class="btn btn-light btn-sm"
+                                        data-bs-toggle="modal" data-bs-target="#m-store-{{ $store->id }}">
+                                    <i class="bi {{ $store->store_status === 'suspended' ? 'bi-play-circle' : 'bi-pause-circle' }} me-1"></i>
+                                    {{ $store->store_status === 'suspended' ? 'Reactivate' : 'Suspend' }}
+                                </button>
+                                <button type="button" class="btn btn-light btn-sm"
+                                        data-bs-toggle="modal" data-bs-target="#m-bill-{{ $store->id }}">
+                                    <i class="bi bi-receipt-cutoff me-1"></i>
+                                    {{ $store->is_billable ? 'Exclude from billing' : 'Include in billing' }}
+                                </button>
                             </div>
                         </div>
-                        <i class="bi bi-chevron-right person-chevron"></i>
-                    </a>
-                    <div class="d-flex gap-2 px-3 pb-3" style="margin-top:-.5rem;">
-                        <button type="button" class="btn btn-light btn-sm"
-                                data-bs-toggle="modal" data-bs-target="#m-store-{{ $store->id }}">
-                            <i class="bi {{ $store->store_status === 'suspended' ? 'bi-play-circle' : 'bi-pause-circle' }} me-1"></i>
-                            {{ $store->store_status === 'suspended' ? 'Reactivate' : 'Suspend' }}
-                        </button>
-                        <button type="button" class="btn btn-light btn-sm"
-                                data-bs-toggle="modal" data-bs-target="#m-bill-{{ $store->id }}">
-                            <i class="bi bi-receipt-cutoff me-1"></i>
-                            {{ $store->is_billable ? 'Exclude from billing' : 'Include in billing' }}
-                        </button>
                     </div>
                 @empty
-                    <p class="text-muted-foreground text-center py-4 mb-0 text-sm">No stores under this customer.</p>
+                    <div class="col-12">
+                        <div class="glass card-lift rounded-4 text-center p-5 animate-fade-up">
+                            <span class="d-inline-flex align-items-center justify-content-center rounded-circle person-avatar mx-auto mb-3"
+                                  style="width:3.25rem;height:3.25rem;font-size:1.2rem;"><i class="bi bi-shop"></i></span>
+                            <h2 class="h6 fw-semibold font-display mb-1">No stores under this customer</h2>
+                            <p class="text-muted-foreground text-sm mb-0">They are paying, but nothing is provisioned yet.</p>
+                        </div>
+                    </div>
                 @endforelse
             </div>
         </div>

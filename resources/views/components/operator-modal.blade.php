@@ -4,6 +4,9 @@
     'action',                   // form post target
     'method' => 'POST',
     'label' => 'Confirm',       // primary button text
+    'dismiss' => 'Cancel',      // secondary button text — override when the ACTION is
+                                // itself called "Cancel", or you get two buttons
+                                // labelled Cancel meaning opposite things
     'tone' => 'primary',        // primary | danger
     'icon' => 'bi-sliders',
     'preview' => null,          // lifecycle action name to live-preview, or null
@@ -62,54 +65,77 @@
 
                 {{ $slot }}
 
-                {{-- ---- Live "this will…" panel ---- --}}
+                {{-- ---- Live "this will…" panel ----
+                     Motion contract (CLAUDE.md): nothing toggles on/off. Once
+                     this panel has appeared it STAYS — it never unmounts and
+                     re-mounts per keystroke. While a new quote is in flight the
+                     previous answer stays on screen, dimmed, rather than being
+                     replaced by a skeleton; only the very first quote shows one.
+                     Getting this wrong is what made it flicker on every key. --}}
                 @if ($preview)
                     <div class="mt-3 p-3 rounded-3" style="background:var(--surface-sunken);"
-                         x-show="dirty || loading || rows.length || error" x-cloak
-                         x-transition.opacity>
-                        <p class="section-label mb-2">This will</p>
+                         x-show="settled || loading" x-cloak x-transition.opacity>
+                        <div class="d-flex align-items-center justify-content-between mb-2">
+                            <p class="section-label mb-0">This will</p>
+                            {{-- A quiet re-quoting hint: no layout shift, no content swap. --}}
+                            <span class="spinner-border spinner-border-sm text-primary" role="status"
+                                  aria-hidden="true" x-show="loading && settled" x-cloak
+                                  style="width:.7rem;height:.7rem;border-width:.12em;"></span>
+                        </div>
 
-                        <template x-if="loading">
-                            <div>
-                                <div class="skeleton mb-2" style="height:.7rem;width:70%;"></div>
-                                <div class="skeleton" style="height:.7rem;width:45%;"></div>
-                            </div>
-                        </template>
+                        {{-- First quote only: a skeleton, because there is nothing to keep. --}}
+                        <div x-show="loading && !settled" x-cloak>
+                            <div class="skeleton mb-2" style="height:.7rem;width:70%;"></div>
+                            <div class="skeleton" style="height:.7rem;width:45%;"></div>
+                        </div>
 
-                        <template x-if="!loading && error">
-                            <p class="mb-0 text-sm" style="color:var(--tone-red);" x-text="error"></p>
-                        </template>
+                        {{-- The answer. Dims while a newer one is being fetched. --}}
+                        <div x-show="settled" x-cloak
+                             :style="loading ? 'opacity:.55;transition:opacity var(--duration-base) var(--ease-out);' : 'opacity:1;transition:opacity var(--duration-base) var(--ease-out);'">
+                            <p class="mb-0 text-sm" style="color:var(--tone-red);" x-show="error" x-cloak x-text="error"></p>
 
-                        <template x-if="!loading && !error && rows.length">
-                            <div>
-                                <template x-for="r in rows" :key="r.label">
-                                    <div class="d-flex justify-content-between align-items-baseline gap-3 py-1 text-sm">
-                                        <span class="text-muted-foreground" x-text="r.label"></span>
-                                        <span class="text-end">
-                                            <span class="text-faint text-decoration-line-through" x-show="r.from !== null && r.from !== ''" x-text="r.from"></span>
-                                            <span class="fw-semibold ms-1" x-text="r.to"></span>
-                                        </span>
-                                    </div>
-                                </template>
-                                <p class="mb-0 mt-2 text-xs text-muted-foreground" x-show="ledger > 0" x-cloak>
-                                    <i class="bi bi-receipt me-1"></i>
-                                    <span x-text="ledger"></span> ledger entry will be added.
+                            {{-- AUD-06 — one deliberate decision must never quietly
+                                 erase another. Not an error; it does not block. --}}
+                            <template x-for="w in warnings" :key="w">
+                                <p class="mb-2 text-sm d-flex align-items-start gap-2" style="color:var(--tone-amber);">
+                                    <i class="bi bi-exclamation-triangle flex-shrink-0" style="margin-top:.15rem;"></i>
+                                    <span x-text="w"></span>
                                 </p>
-                            </div>
-                        </template>
+                            </template>
 
-                        <template x-if="!loading && !error && !rows.length && dirty">
-                            <p class="mb-0 text-sm text-muted-foreground">Nothing would change.</p>
-                        </template>
+                            <template x-if="!error">
+                                <div>
+                                    <template x-for="r in rows" :key="r.label">
+                                        <div class="d-flex justify-content-between align-items-baseline gap-3 py-1 text-sm">
+                                            <span class="text-muted-foreground" x-text="r.label"></span>
+                                            <span class="text-end">
+                                                <span class="text-faint text-decoration-line-through"
+                                                      x-show="r.from !== null && r.from !== ''" x-text="r.from"></span>
+                                                <span class="fw-semibold ms-1" x-text="r.to"></span>
+                                            </span>
+                                        </div>
+                                    </template>
+
+                                    <p class="mb-0 mt-2 text-xs text-muted-foreground" x-show="ledger > 0" x-cloak>
+                                        <i class="bi bi-receipt me-1"></i>
+                                        <span x-text="ledger"></span> ledger entry will be added.
+                                    </p>
+
+                                    <p class="mb-0 text-sm text-muted-foreground" x-show="!rows.length" x-cloak>
+                                        Nothing would change.
+                                    </p>
+                                </div>
+                            </template>
+                        </div>
                     </div>
                 @endif
             </div>
 
             <div class="modal-footer border-0 px-4 pb-4 pt-2 d-flex gap-2">
-                <button type="button" class="btn btn-light flex-grow-1 flex-sm-grow-0" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-light flex-grow-1 flex-sm-grow-0" data-bs-dismiss="modal">{{ $dismiss }}</button>
                 <button type="submit"
                         class="btn {{ $tone === 'danger' ? 'btn-danger' : 'btn-primary' }} flex-grow-1 flex-sm-grow-0"
-                        :disabled="submitting || (previewAction && error)">
+                        :disabled="submitting || (previewAction && settled && !!error)">
                     <span x-show="!submitting">{{ $label }}</span>
                     <span x-show="submitting" x-cloak>
                         <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Working…
@@ -132,10 +158,15 @@ function operatorModal(config) {
         previewAction: config.previewAction,
         previewUrl: config.previewUrl,
         rows: [],
+        warnings: [],
         ledger: 0,
         error: null,
         loading: false,
-        dirty: false,
+        // `settled` = at least one quote has come back, so there is something
+        // real to show. Until then the panel must never claim "nothing would
+        // change" — it simply does not know yet. Once true it stays true for
+        // the life of the open modal, which is what stops the flicker.
+        settled: false,
         submitting: false,
         seq: 0,
 
@@ -153,12 +184,19 @@ function operatorModal(config) {
             // anything (many actions need no input at all).
             root.addEventListener('shown.bs.modal', () => this.refresh());
             root.addEventListener('hidden.bs.modal', () => {
-                this.rows = []; this.error = null; this.dirty = false; this.submitting = false;
+                // Full reset on close so the next open re-quotes from scratch
+                // rather than showing a stale answer for the old inputs.
+                clearTimeout(this._t);
+                this.seq++;                 // orphan any in-flight response
+                this.rows = []; this.warnings = []; this.ledger = 0; this.error = null;
+                this.settled = false; this.loading = false; this.submitting = false;
             });
         },
 
         schedule() {
-            this.dirty = true;
+            // Deliberately does NOT reveal the panel or clear the current
+            // answer — the previous quote stays readable until the new one
+            // lands. Only `refresh()` ever changes what is displayed.
             clearTimeout(this._t);
             this._t = setTimeout(() => this.refresh(), 220);
         },
@@ -180,14 +218,19 @@ function operatorModal(config) {
                 if (mine !== this.seq) return; // a newer keystroke already won
 
                 this.error = data.error || null;
+                this.warnings = data.warnings || [];
                 this.ledger = data.ledger_rows_added || 0;
                 this.rows = Object.entries(data.changes || {}).map(([key, v]) => ({
                     label: this.humanise(key),
                     from: this.format(key, v.from),
                     to: this.format(key, v.to),
                 }));
+                this.settled = true;
             } catch (e) {
-                if (mine === this.seq) this.error = 'Could not calculate the outcome.';
+                if (mine === this.seq) {
+                    this.error = 'Could not calculate the outcome.';
+                    this.settled = true;
+                }
             } finally {
                 if (mine === this.seq) this.loading = false;
             }

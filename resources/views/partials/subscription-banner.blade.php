@@ -1,7 +1,8 @@
 {{-- ST-Enforce (S1): trial countdown + grace-period warning. Tenant users only. --}}
 @php
     $osmsSub = auth()->check() && ! auth()->user()->isSuperadmin()
-        ? auth()->user()->tenant?->subscription
+        // AUD-02 — via the ACCOUNT, so a second branch still sees its banner.
+        ? auth()->user()->tenant?->governingSubscription()
         : null;
     $osmsState = $osmsSub?->accessState();
 @endphp

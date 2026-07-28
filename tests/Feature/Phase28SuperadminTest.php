@@ -65,7 +65,7 @@ class Phase28SuperadminTest extends TestCase
     {
         $this->actingAs($this->storeAdmin)
             ->withSession(['auth.password_confirmed_at' => time()])
-            ->post(route('superadmin.subscription.extend-trial', $this->tenant), ['days' => 30])
+            ->post(route('superadmin.subscription.extend-trial', $this->tenant), ['days' => 30, 'reason' => 'audit: legacy path test'])
             ->assertForbidden();
 
         // Nothing was recorded.
@@ -76,7 +76,7 @@ class Phase28SuperadminTest extends TestCase
     {
         // Superadmin, but WITHOUT a confirmed-password session.
         $this->actingAs($this->superadmin)
-            ->post(route('superadmin.subscription.extend-trial', $this->tenant), ['days' => 30])
+            ->post(route('superadmin.subscription.extend-trial', $this->tenant), ['days' => 30, 'reason' => 'audit: legacy path test'])
             ->assertRedirect(route('password.confirm'));
     }
 
@@ -107,7 +107,7 @@ class Phase28SuperadminTest extends TestCase
 
     public function test_extend_trial_lengthens_and_logs(): void
     {
-        $this->asAdmin()->post(route('superadmin.subscription.extend-trial', $this->tenant), ['days' => 30])
+        $this->asAdmin()->post(route('superadmin.subscription.extend-trial', $this->tenant), ['days' => 30, 'reason' => 'audit: legacy path test'])
             ->assertRedirect()->assertSessionHas('status');
 
         $sub = $this->tenant->subscription->fresh();
@@ -116,7 +116,7 @@ class Phase28SuperadminTest extends TestCase
         $this->assertTrue($sub->current_period_end->gt(now()->addDays(40)));
 
         $this->assertDatabaseHas('admin_audit_logs', [
-            'action' => 'subscription.trial_extended',
+            'action' => 'subscription.extend',
             'tenant_id' => $this->tenant->id,
             'admin_email' => $this->superadmin->email,
         ]);
@@ -124,7 +124,7 @@ class Phase28SuperadminTest extends TestCase
 
     public function test_grant_free_access_activates_and_logs(): void
     {
-        $this->asAdmin()->post(route('superadmin.subscription.activate', $this->tenant), ['months' => 3, 'interval' => 'yearly'])
+        $this->asAdmin()->post(route('superadmin.subscription.activate', $this->tenant), ['months' => 3, 'interval' => 'yearly', 'reason' => 'audit: legacy path test'])
             ->assertRedirect()->assertSessionHas('status');
 
         $sub = $this->tenant->subscription->fresh();
@@ -133,7 +133,7 @@ class Phase28SuperadminTest extends TestCase
         $this->assertTrue($sub->manual);
         $this->assertTrue($sub->hasAccess());
 
-        $this->assertDatabaseHas('admin_audit_logs', ['action' => 'subscription.comped', 'tenant_id' => $this->tenant->id]);
+        $this->assertDatabaseHas('admin_audit_logs', ['action' => 'subscription.comp', 'tenant_id' => $this->tenant->id]);
     }
 
     public function test_raw_update_persists_with_before_after_audit(): void
@@ -141,6 +141,7 @@ class Phase28SuperadminTest extends TestCase
         $this->asAdmin()->patch(route('superadmin.subscription.update', $this->tenant), [
             'status' => 'past_due', 'tier' => 'basic', 'interval' => 'monthly',
             'current_period_end' => now()->addDays(5)->format('Y-m-d'),
+            'reason' => 'audit: legacy path test',
         ])->assertRedirect()->assertSessionHas('status');
 
         $sub = $this->tenant->subscription->fresh();
@@ -155,14 +156,14 @@ class Phase28SuperadminTest extends TestCase
 
     public function test_cancel_sets_canceled_and_logs(): void
     {
-        $this->asAdmin()->post(route('superadmin.subscription.cancel', $this->tenant))
+        $this->asAdmin()->post(route('superadmin.subscription.cancel', $this->tenant), ['reason' => 'audit: legacy path test'])
             ->assertRedirect()->assertSessionHas('status');
 
         $sub = $this->tenant->subscription->fresh();
         $this->assertSame('canceled', $sub->status);
         $this->assertFalse($sub->hasAccess());
 
-        $this->assertDatabaseHas('admin_audit_logs', ['action' => 'subscription.canceled', 'tenant_id' => $this->tenant->id]);
+        $this->assertDatabaseHas('admin_audit_logs', ['action' => 'subscription.cancel', 'tenant_id' => $this->tenant->id]);
     }
 
     public function test_internal_notes_save_and_log(): void
@@ -176,7 +177,7 @@ class Phase28SuperadminTest extends TestCase
 
     public function test_audit_records_capture_actor_and_ip(): void
     {
-        $this->asAdmin()->post(route('superadmin.subscription.extend-trial', $this->tenant), ['days' => 7]);
+        $this->asAdmin()->post(route('superadmin.subscription.extend-trial', $this->tenant), ['days' => 7, 'reason' => 'audit: legacy path test']);
 
         $log = AdminAuditLog::latest()->first();
         $this->assertSame($this->superadmin->id, $log->admin_user_id);

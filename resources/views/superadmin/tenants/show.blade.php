@@ -88,6 +88,7 @@
                                 <form method="POST" action="{{ route('superadmin.subscription.extend-trial', $tenant) }}" class="d-flex gap-2">
                                     @csrf
                                     <input type="number" name="days" min="1" max="365" value="14" class="form-control" required style="max-width:100px;">
+                                    <input type="text" name="reason" class="form-control" required maxlength="500" placeholder="Why?">
                                     <button class="btn btn-light flex-grow-1">Add days</button>
                                 </form>
                             </div>
@@ -102,6 +103,7 @@
                                         <option value="monthly">monthly</option>
                                         <option value="yearly">yearly</option>
                                     </select>
+                                    <input type="text" name="reason" class="form-control" required maxlength="500" placeholder="Why?">
                                     <button class="btn btn-primary flex-grow-1">Grant</button>
                                 </form>
                             </div>
@@ -147,6 +149,10 @@
                                     <label class="form-check-label small" for="cape">Cancel at period end</label>
                                 </div>
                             </div>
+                            <div class="col-md-8">
+                                <label class="form-label small fw-medium">Why <span style="color:var(--tone-red);">*</span></label>
+                                <input type="text" name="reason" class="form-control" required maxlength="500">
+                            </div>
                             <div class="col-12">
                                 <button class="btn btn-secondary">Save changes</button>
                             </div>
@@ -157,6 +163,8 @@
 
                     <form method="POST" action="{{ route('superadmin.subscription.cancel', $tenant) }}">
                         @csrf
+                        <input type="text" name="reason" class="form-control mb-2" required maxlength="500"
+                               placeholder="Why are you cancelling?" style="max-width:24rem;">
                         <button type="button" class="btn btn-light text-danger"
                                 data-confirm="This cancels the store's access immediately. If a live Razorpay subscription exists, it will also be canceled at cycle end."
                                 data-confirm-title="Cancel this subscription?"

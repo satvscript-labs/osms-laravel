@@ -21,7 +21,8 @@ class SubscriptionLockController extends Controller
     {
         $user = $request->user();
         $tenant = $user->tenant;
-        $subscription = $tenant?->subscription;
+        // AUD-02 — resolve via the ACCOUNT; a second branch has no row of its own.
+        $subscription = $tenant?->governingSubscription();
 
         // If access is fine again (or they're an admin who can actually pay), don't
         // strand them here.

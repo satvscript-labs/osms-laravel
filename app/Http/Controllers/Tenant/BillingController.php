@@ -15,9 +15,24 @@ use Illuminate\View\View;
 
 class BillingController extends Controller
 {
+    /**
+     * AUD-02 — the subscription that governs THIS store.
+     *
+     * Money lives on the ACCOUNT (REQ-12), so a store is covered by its payer's
+     * subscription. `Subscription::first()` was tenant-scoped, which silently
+     * returned NULL for any store that is not its account's original one — a
+     * second branch would have seen a billing page with no plan, no renewal
+     * date and no invoices. Falls back to the store's own row for the
+     * pre-backfill transition, so behaviour is identical before and after.
+     */
+    private function subscription(Request $request): ?Subscription
+    {
+        return $request->user()?->tenant?->governingSubscription();
+    }
+
     public function index(Request $request, BillingService $billing): View
     {
-        $subscription = Subscription::first();
+        $subscription = $this->subscription($request);
 
         // Single-plan launch: only the Basic plan is offered.
         $plans = ['basic' => config('billing.plans.basic')];
@@ -45,7 +60,7 @@ class BillingController extends Controller
 
         // Block only a genuinely paid (active) subscription — a trialing store
         // must be able to convert to paid.
-        $existing = Subscription::first();
+        $existing = $this->subscription($request);
         if ($existing && $existing->status === 'active') {
             return back()->with('error', 'You already have an active subscription. Manage it from billing.');
         }
@@ -104,7 +119,7 @@ class BillingController extends Controller
     {
         $validated = $request->validate(['interval' => ['required', 'in:monthly,yearly']]);
 
-        $subscription = Subscription::first();
+        $subscription = $this->subscription($request);
 
         if (! $subscription || $subscription->status !== 'active') {
             return back()->with('error', 'You can change your billing cycle once your subscription is active.');
@@ -142,7 +157,7 @@ class BillingController extends Controller
     /** Cancel at the end of the current billing period (access continues until then). */
     public function cancel(Request $request, BillingService $billing): RedirectResponse
     {
-        $subscription = Subscription::first();
+        $subscription = $this->subscription($request);
 
         if (! $subscription || $subscription->status !== 'active') {
             return back()->with('error', 'There is no active subscription to cancel.');

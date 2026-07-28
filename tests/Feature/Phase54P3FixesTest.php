@@ -181,7 +181,8 @@ class Phase54P3FixesTest extends TestCase
             ->patch(route('superadmin.subscription.update', $this->tenant), [
                 'status' => 'active',
                 'tier' => 'basic',
-            ])->assertRedirect();
+            'reason' => 'audit: legacy path test',
+        ])->assertRedirect();
 
         $fresh = $sub->fresh();
         $this->assertSame('yearly', $fresh->interval, 'interval must not be silently cleared');

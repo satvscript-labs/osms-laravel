@@ -28,6 +28,23 @@ class Mrr
             return 0.0;
         }
 
+        // AUD-01 — a subscription past its period end is NOT revenue, whatever
+        // its status says.
+        //
+        // Nothing used to move a paid subscription off `active` when its period
+        // lapsed (the daily reconcile only handled trials), so a customer who
+        // simply stopped paying counted toward MRR and "Paying" forever. This
+        // check makes the figure right *immediately*, independently of whether
+        // the reconcile job has run — belt and braces, because MRR is the first
+        // number on the operator's home screen.
+        //
+        // Deliberately measured from the period END, not from the end of the
+        // grace window: during grace they have not yet paid for the new period,
+        // so counting them would be claiming money nobody has sent.
+        if ($sub->current_period_end && $sub->current_period_end->endOfDay()->isPast()) {
+            return 0.0;
+        }
+
         // A comped store pays nothing while the grant is in force. It stays
         // visible — the superadmin dashboard counts comps separately — it just
         // isn't revenue.

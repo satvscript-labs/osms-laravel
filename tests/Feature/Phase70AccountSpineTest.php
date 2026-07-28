@@ -123,7 +123,14 @@ class Phase70AccountSpineTest extends TestCase
         $this->assertSame(5999.0, app(PriceResolver::class)->effectivePrice($sub->fresh(), 'yearly'));
 
         // A negotiated deal beats the list price, and the breakdown names it.
-        $sub->update(['negotiated_price' => 3500, 'negotiated_reason' => 'first customer rate']);
+        // AUD-04 — a bespoke price is agreed FOR an interval; state it, or it
+        // does not apply. Without this the yearly quote correctly falls back to
+        // the list price.
+        $sub->update([
+            'negotiated_price' => 3500,
+            'negotiated_interval' => 'yearly',
+            'negotiated_reason' => 'first customer rate',
+        ]);
         $breakdown = app(PriceResolver::class)->breakdown($sub->fresh(), 'yearly');
 
         $this->assertSame(3500.0, $breakdown['effective']);
@@ -171,8 +178,11 @@ class Phase70AccountSpineTest extends TestCase
 
         $this->assertSame(0.0, Mrr::monthlyValue($sub->fresh()), 'A comp in force is not revenue.');
 
-        // Once the grant lapses, whatever they then pay counts again.
+        // Once the grant lapses, whatever they then pay counts again — provided
+        // their period is still live. AUD-01: a subscription past its period end
+        // contributes nothing regardless of status, so give them live coverage.
         $this->travel(4)->months();
+        $sub->fresh()->update(['current_period_end' => now()->addYear()]);
         $this->assertGreaterThan(0.0, Mrr::monthlyValue($sub->fresh()));
     }
 
