@@ -60,6 +60,18 @@ class Tenant extends Model
     protected static function booted(): void
     {
         static::created(function (Tenant $tenant) {
+            // P1 / REQ-12 — ONE subscription per ACCOUNT, not per store.
+            //
+            // A second branch joins the payer's EXISTING clock; it does not start
+            // its own. Minting one per store would give a single customer several
+            // drifting renewal dates — exactly what the account layer exists to
+            // prevent, and what PR-13 (co-termination) would then have to undo.
+            // Adding a branch mid-cycle bills from the next renewal (decision A3).
+            if ($tenant->account_id
+                && Subscription::withoutGlobalScopes()->where('account_id', $tenant->account_id)->exists()) {
+                return;
+            }
+
             // Trial end is a calendar date measured in the billing timezone, so
             // create it there too (avoids a UTC/IST off-by-one at day boundaries).
             $tz = config('billing.timezone', 'Asia/Kolkata');
@@ -96,10 +108,30 @@ class Tenant extends Model
         return $this->hasOne(WhatsAppConfig::class);
     }
 
-    /** True when this store has a live subscription (trial in-window, paid, or in grace). */
+    /**
+     * The subscription that governs this store's access.
+     *
+     * P1 / REQ-12 — money lives on the ACCOUNT, so a store is covered by its
+     * payer's subscription. Falls back to its own row for stores not yet
+     * backfilled (transition period, decision E6) — so behaviour is identical
+     * before and after `osms:backfill-accounts` runs.
+     */
+    public function governingSubscription(): ?Subscription
+    {
+        return $this->account?->subscription ?? $this->subscription;
+    }
+
+    /**
+     * True when this store may be used: the money is live AND the store itself
+     * has not been individually suspended (06 §5 — two independent levers).
+     */
     public function hasActiveAccess(): bool
     {
-        return (bool) $this->subscription?->hasAccess();
+        if ($this->store_status === 'suspended') {
+            return false;
+        }
+
+        return (bool) $this->governingSubscription()?->hasAccess();
     }
 
     public function customers(): HasMany

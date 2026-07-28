@@ -30,13 +30,28 @@ class Phase71SuperadminBoundaryTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->tenant = Tenant::create(['store_name' => 'Boundary Optical']);
+
+        $owner = User::factory()->create(['tenant_id' => null, 'role' => 'store_admin']);
+        $this->tenant = app(\App\Services\StoreProvisioner::class)
+            ->provision($owner, ['store_name' => 'Boundary Optical']);
     }
 
-    /** Every registered superadmin route, with {params} resolved to real ids. */
+    /**
+     * Every registered superadmin route, with {params} resolved to REAL ids.
+     *
+     * Resolving to real records matters: a bogus id would 404 during route-model
+     * binding (which runs in the `web` group, before route middleware) and the
+     * role gate would never be reached — so the sweep would be asserting nothing.
+     * Every parameter must therefore map to a record that genuinely exists.
+     */
     private function superadminRoutes(): array
     {
         $routes = [];
+        $ids = [
+            'tenant' => $this->tenant->id,
+            'account' => $this->tenant->account_id,
+            'store' => $this->tenant->id,
+        ];
 
         foreach (Route::getRoutes() as $route) {
             $name = $route->getName();
@@ -44,11 +59,16 @@ class Phase71SuperadminBoundaryTest extends TestCase
                 continue;
             }
 
-            // Substitute every path parameter with the test tenant's id. Today the
-            // only parameter is {tenant}; anything added later still resolves to a
-            // syntactically valid uuid, which is enough — the gate must refuse
-            // BEFORE binding ever looks the value up.
-            $uri = preg_replace('/\{[^}]+\}/', $this->tenant->id, $route->uri());
+            $uri = preg_replace_callback('/\{(\w+)\??\}/', function ($m) use ($ids, $name) {
+                $this->assertArrayHasKey(
+                    $m[1],
+                    $ids,
+                    "[{$name}] has an unmapped route parameter {{$m[1]}} — add a real id for it, "
+                    . 'or the sweep will 404 before reaching the authorization gate.',
+                );
+
+                return $ids[$m[1]];
+            }, $route->uri());
 
             foreach ($route->methods() as $method) {
                 if (in_array($method, ['HEAD', 'OPTIONS'], true)) {

@@ -44,6 +44,33 @@ class SubscriptionInvoice extends Model
         return $this->reversed_at !== null;
     }
 
+    /** The store this line related to (null for an account-level charge). */
+    public function tenant(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(Tenant::class);
+    }
+
+    /** The operator who entered this row by hand (null for webhook rows). */
+    public function recordedBy(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(User::class, 'recorded_by');
+    }
+
+    /** Human label for the payment channel. */
+    public function methodLabel(): string
+    {
+        return match ($this->method) {
+            'razorpay' => 'Razorpay',
+            'cash' => 'Cash',
+            'upi' => 'UPI',
+            'bank_transfer' => 'Bank transfer',
+            'cheque' => 'Cheque',
+            'comp' => 'Complimentary',
+            'adjustment' => 'Adjustment',
+            default => ucfirst((string) $this->method),
+        };
+    }
+
     /** GST split for the invoice PDF (India, 18% assumed inclusive). */
     public function taxBreakdown(): array
     {

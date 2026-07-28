@@ -4,8 +4,12 @@ use App\Http\Controllers\InvitationController;
 use App\Http\Controllers\OnboardingController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\RazorpayWebhookController;
+use App\Http\Controllers\Superadmin\AccountController as SuperadminAccount;
 use App\Http\Controllers\Superadmin\AuditLogController as SuperadminAuditLog;
+use App\Http\Controllers\Superadmin\BillingController as SuperadminBilling;
 use App\Http\Controllers\Superadmin\DashboardController as SuperadminDashboard;
+use App\Http\Controllers\Superadmin\PlanController as SuperadminPlan;
+use App\Http\Controllers\Superadmin\StoreController as SuperadminStore;
 use App\Http\Controllers\Superadmin\SubscriptionController as SuperadminSubscription;
 use App\Http\Controllers\Superadmin\TenantController as SuperadminTenant;
 use App\Http\Controllers\Tenant\DashboardController as TenantDashboard;
@@ -93,14 +97,44 @@ Route::middleware(['auth', 'superadmin', 'throttle:120,1'])
     ->prefix('superadmin')
     ->name('superadmin.')
     ->group(function () {
+        // P2 — "Today": money, base health, and what needs me today.
         Route::get('/', [SuperadminDashboard::class, 'index'])->name('dashboard');
 
-        // Store directory + read-only detail
-        Route::get('/stores', [SuperadminTenant::class, 'index'])->name('tenants.index');
-        Route::get('/stores/{tenant}', [SuperadminTenant::class, 'show'])->name('tenants.show');
+        /*
+        | P2 / REQ-12 — the account-first surfaces.
+        |
+        | Routes say `accounts` (the code name); the UI says "Customers" (the
+        | owner's word). `Customer` is already the patient model, so colliding
+        | the two in code would be a permanent tax — decision A1.
+        |
+        | Customers and Stores are deliberately SEPARATE surfaces answering
+        | different questions: "who pays me?" vs "which shops are live?".
+        */
+        Route::get('/customers', [SuperadminAccount::class, 'index'])->name('accounts.index');
+        Route::get('/customers/{account}', [SuperadminAccount::class, 'show'])->name('accounts.show');
+
+        // Cross-account operational sweep of every store.
+        Route::get('/stores', [SuperadminStore::class, 'index'])->name('stores.index');
+        Route::get('/stores/{tenant}', [SuperadminStore::class, 'show'])->name('stores.show');
+
+        // The one ledger, across every account.
+        Route::get('/billing', [SuperadminBilling::class, 'index'])->name('billing.index');
+
+        // List prices (read-only in P2; editable in P3).
+        Route::get('/plans', [SuperadminPlan::class, 'index'])->name('plans.index');
 
         // Audit trail (read-only)
         Route::get('/audit', [SuperadminAuditLog::class, 'index'])->name('audit.index');
+
+        /*
+        | LEGACY store screens — superseded by the surfaces above.
+        |
+        | Playbook §4 / decision E3: removed from the nav but left reachable by
+        | URL, and deleted only once the new surfaces cover every job they did.
+        | Never two competing entry points in the nav for the same job.
+        */
+        Route::get('/legacy/stores', [SuperadminTenant::class, 'index'])->name('tenants.index');
+        Route::get('/legacy/stores/{tenant}', [SuperadminTenant::class, 'show'])->name('tenants.show');
 
         // Mutations — require recent re-authentication.
         Route::middleware('password.confirm')->group(function () {

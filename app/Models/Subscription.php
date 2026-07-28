@@ -48,6 +48,12 @@ class Subscription extends Model
         return $this->negotiated_price !== null;
     }
 
+    /** Who agreed the bespoke price — shown beside the ⚑ badge. */
+    public function negotiatedBy(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(User::class, 'negotiated_by');
+    }
+
     /*
     |--------------------------------------------------------------------------
     | Operator override (P0 / BUG-P01)

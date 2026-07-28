@@ -19,10 +19,17 @@
 
     // Settings now lives in the unified hub reachable via the gear in the footer
     // (profile.edit) — no separate sidebar entry.
+    // P2 — the account-first control terminal. "Customers" = accounts (who pays);
+    // "Stores" = tenants (which shops are live). Two surfaces, two questions.
+    // The legacy store screens stay reachable by URL but are deliberately NOT
+    // listed here — never two nav entries for the same job (playbook §4).
     $superLinks = [
-        ['route' => 'superadmin.dashboard', 'label' => 'Overview', 'icon' => 'bi-speedometer2', 'match' => 'superadmin.dashboard'],
-        ['route' => 'superadmin.tenants.index', 'label' => 'Stores', 'icon' => 'bi-shop', 'match' => 'superadmin.tenants.*'],
-        ['route' => 'superadmin.audit.index', 'label' => 'Audit log', 'icon' => 'bi-clock-history', 'match' => 'superadmin.audit.*'],
+        ['route' => 'superadmin.dashboard', 'label' => 'Today', 'icon' => 'bi-sunrise', 'match' => 'superadmin.dashboard'],
+        ['route' => 'superadmin.accounts.index', 'label' => 'Customers', 'icon' => 'bi-person-vcard', 'match' => 'superadmin.accounts.*'],
+        ['route' => 'superadmin.stores.index', 'label' => 'Stores', 'icon' => 'bi-shop', 'match' => 'superadmin.stores.*'],
+        ['route' => 'superadmin.billing.index', 'label' => 'Billing', 'icon' => 'bi-receipt', 'match' => 'superadmin.billing.*'],
+        ['route' => 'superadmin.plans.index', 'label' => 'Plans', 'icon' => 'bi-tags', 'match' => 'superadmin.plans.*'],
+        ['route' => 'superadmin.audit.index', 'label' => 'Audit', 'icon' => 'bi-clock-history', 'match' => 'superadmin.audit.*'],
     ];
     $links = $isSuper ? $superLinks : $tenantLinks;
 @endphp

@@ -67,6 +67,46 @@ class Phase70AccountSpineTest extends TestCase
         $this->assertSame(1, Account::count());
     }
 
+    public function test_a_second_store_joins_the_existing_clock_rather_than_starting_its_own(): void
+    {
+        $owner = User::factory()->create(['tenant_id' => null, 'role' => 'store_admin']);
+        $first = app(StoreProvisioner::class)->provision($owner, ['store_name' => 'Branch One']);
+        $originalEnd = $first->account->subscription->current_period_end->toDateString();
+
+        $this->travel(5)->days();
+        $second = app(StoreProvisioner::class)->provision($owner, ['store_name' => 'Branch Two'], $first->account);
+
+        // ONE subscription per account. Minting one per store would give a single
+        // customer several drifting renewal dates — the thing the account layer
+        // exists to prevent.
+        $this->assertSame(1, Subscription::withoutGlobalScopes()->count());
+        $this->assertSame($originalEnd, $first->account->fresh()->subscription->current_period_end->toDateString());
+
+        // …and the new branch is still governed by that clock, so it works.
+        $this->assertTrue($second->fresh()->hasActiveAccess());
+        $this->assertSame(
+            $first->account->subscription->id,
+            $second->fresh()->governingSubscription()->id,
+        );
+    }
+
+    public function test_a_suspended_store_loses_access_even_when_the_account_is_paid(): void
+    {
+        $owner = User::factory()->create(['tenant_id' => null, 'role' => 'store_admin']);
+        $tenant = app(StoreProvisioner::class)->provision($owner, ['store_name' => 'Suspended Optical']);
+        $tenant->account->subscription->update(['status' => 'active', 'current_period_end' => now()->addYear()]);
+
+        $this->assertTrue($tenant->fresh()->hasActiveAccess());
+
+        // 06 §5 — two independent levers: the money, and the per-store switch.
+        $tenant->update(['store_status' => 'suspended']);
+
+        $this->assertFalse($tenant->fresh()->hasActiveAccess());
+        $this->actingAs($owner->fresh())
+            ->get(route('tenant.dashboard'))
+            ->assertRedirect();
+    }
+
     // ---- Pricing: one resolver, itemised --------------------------------
 
     public function test_price_resolves_negotiated_over_plan_over_config(): void

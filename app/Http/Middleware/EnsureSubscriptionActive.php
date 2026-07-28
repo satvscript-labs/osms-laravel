@@ -31,8 +31,14 @@ class EnsureSubscriptionActive
             return $next($request);
         }
 
-        $subscription = $user->tenant?->subscription;
-        $state = $subscription?->accessState() ?? 'locked';
+        // P1 / REQ-12 — access derives from the ACCOUNT's subscription (the payer),
+        // falling back to the store's own row before the backfill runs. A store
+        // individually suspended is locked even when the account is paid up.
+        $tenant = $user->tenant;
+        $subscription = $tenant?->governingSubscription();
+        $state = $tenant && $tenant->store_status === 'suspended'
+            ? 'locked'
+            : ($subscription?->accessState() ?? 'locked');
 
         if ($state === 'locked') {
             // SEC-03 — billing is admin-only, so sending staff there is a 403 dead-end.

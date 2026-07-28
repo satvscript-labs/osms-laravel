@@ -1,102 +1,158 @@
 @extends('layouts.app')
-@section('title', 'Platform overview')
+@section('title', 'Today')
 
 @section('content')
 <div class="p-4 p-md-5">
+
     <div class="mb-4">
         <p class="section-label mb-1">Platform</p>
-        <h1 class="h3 fw-semibold font-display mb-1">Overview</h1>
-        <p class="text-muted-foreground mb-0" style="font-size:var(--text-md);">How the OSMS business is doing across all stores.</p>
+        <h1 class="h3 fw-semibold font-display mb-1">Today</h1>
+        <p class="text-muted-foreground mb-0 text-md">
+            How the money is, how healthy the base is, and what needs you.
+        </p>
     </div>
 
-    {{-- KPIs --}}
+    {{-- A half-migrated deploy must be visible, never silent (P1 backfill). --}}
+    @if ($unbackfilled > 0)
+        <div class="card border-0 shadow-sm rounded-4 mb-4 animate-fade-up"
+             style="border-left:3px solid var(--tone-amber) !important;">
+            <div class="card-body p-4 d-flex align-items-start gap-3">
+                <i class="bi bi-exclamation-triangle" style="color:var(--tone-amber);"></i>
+                <div>
+                    <p class="fw-semibold mb-1">{{ $unbackfilled }} {{ Str::plural('store', $unbackfilled) }} not yet linked to a customer</p>
+                    <p class="text-muted-foreground text-sm mb-0">
+                        Run <code>php artisan osms:backfill-accounts</code> — dry run first, then
+                        <code>--commit</code>. Until then those stores have no billing identity.
+                    </p>
+                </div>
+            </div>
+        </div>
+    @endif
+
+    {{-- ---- 1. How is the money ---- --}}
+    <p class="section-label mb-2">Money</p>
     <div class="row g-3 mb-4 stagger">
         <div class="col-6 col-lg-3">
-            {{-- WEB-03 — MRR excludes comped (manual) subscriptions; they're surfaced
-                 in the label so the number is real revenue without hiding them. --}}
-            <x-metric-card label="{{ ($stats['comped'] ?? 0) > 0 ? 'MRR · ' . $stats['comped'] . ' comped' : 'MRR' }}"
+            <x-metric-card label="{{ $stats['comped'] > 0 ? 'MRR · ' . $stats['comped'] . ' comped' : 'MRR' }}"
                            value="₹ {{ number_format($stats['mrr'], 0) }}" icon="bi-graph-up-arrow" tone="primary" />
         </div>
         <div class="col-6 col-lg-3">
-            <x-metric-card label="Active subscriptions" value="{{ $stats['active'] }}" icon="bi-patch-check" tone="default" />
+            <x-metric-card label="ARR (run rate)" value="₹ {{ number_format($stats['arr'], 0) }}" icon="bi-calendar3" />
         </div>
         <div class="col-6 col-lg-3">
-            <x-metric-card label="On trial" value="{{ $stats['trialing'] }}" icon="bi-hourglass-split" tone="amber" />
+            <x-metric-card label="Collected this month" value="₹ {{ number_format($stats['collected_month'], 0) }}" icon="bi-cash-coin" />
         </div>
         <div class="col-6 col-lg-3">
-            <x-metric-card label="Churned (30d)" value="{{ $stats['churn30'] }}" icon="bi-arrow-down-right" tone="{{ $stats['churn30'] > 0 ? 'amber' : 'default' }}" />
+            <x-metric-card label="Collected all time" value="₹ {{ number_format($stats['collected_all'], 0) }}" icon="bi-safe" />
         </div>
     </div>
 
+    {{-- ---- 2. How healthy is the base ---- --}}
+    <p class="section-label mb-2">Base</p>
     <div class="row g-3 mb-4 stagger">
-        <div class="col-6 col-lg-3">
-            <x-metric-card label="Total stores" value="{{ $stats['stores'] }}" icon="bi-shop" />
-        </div>
-        <div class="col-6 col-lg-3">
-            <x-metric-card label="Store users" value="{{ $stats['users'] }}" icon="bi-people" />
-        </div>
-        <div class="col-6 col-lg-3">
-            <x-metric-card label="Orders (all)" value="{{ $stats['orders'] }}" icon="bi-cart3" />
-        </div>
-        <div class="col-6 col-lg-3">
-            <a href="{{ route('superadmin.tenants.index') }}" class="text-decoration-none">
-                <x-metric-card label="Manage stores" value="→" icon="bi-arrow-right-circle" tone="primary" />
+        <div class="col-6 col-lg-2">
+            <a href="{{ route('superadmin.accounts.index', ['filter' => 'all']) }}" class="text-decoration-none">
+                <x-metric-card label="Customers" value="{{ $stats['accounts'] }}" icon="bi-person-vcard" tone="primary" />
             </a>
         </div>
+        <div class="col-6 col-lg-2">
+            <a href="{{ route('superadmin.stores.index') }}" class="text-decoration-none">
+                <x-metric-card label="Stores" value="{{ $stats['stores'] }}" icon="bi-shop" />
+            </a>
+        </div>
+        <div class="col-6 col-lg-2">
+            <a href="{{ route('superadmin.accounts.index', ['filter' => 'paid']) }}" class="text-decoration-none">
+                <x-metric-card label="Paying" value="{{ $stats['active'] }}" icon="bi-patch-check" />
+            </a>
+        </div>
+        <div class="col-6 col-lg-2">
+            <a href="{{ route('superadmin.accounts.index', ['filter' => 'trialing']) }}" class="text-decoration-none">
+                <x-metric-card label="On trial" value="{{ $stats['trialing'] }}" icon="bi-hourglass-split" tone="amber" />
+            </a>
+        </div>
+        <div class="col-6 col-lg-2">
+            <a href="{{ route('superadmin.accounts.index', ['filter' => 'lapsed']) }}" class="text-decoration-none">
+                <x-metric-card label="Past due" value="{{ $stats['past_due'] }}" icon="bi-exclamation-circle"
+                               tone="{{ $stats['past_due'] > 0 ? 'amber' : 'default' }}" />
+            </a>
+        </div>
+        <div class="col-6 col-lg-2">
+            <x-metric-card label="Cancelled" value="{{ $stats['canceled'] }}" icon="bi-x-circle" />
+        </div>
     </div>
 
-    <div class="row g-4">
-        {{-- Trials at risk --}}
-        <div class="col-lg-7">
-            <div class="card border-0 shadow-sm rounded-4 h-100">
-                <div class="card-body p-4">
-                    <div class="d-flex align-items-center justify-content-between mb-3">
-                        <p class="section-label mb-0">Trials ending soon</p>
-                        <span class="badge text-bg-warning">{{ $atRisk->count() }}</span>
+    {{-- ---- 3. What needs me today ---- --}}
+    <div class="d-flex align-items-center justify-content-between mb-2">
+        <p class="section-label mb-0">What needs you</p>
+        @if ($worklist->isNotEmpty())
+            <span class="osms-badge osms-badge-amber"><span class="osms-badge-dot"></span>{{ $worklist->count() }}</span>
+        @endif
+    </div>
+
+    <div class="card border-0 shadow-sm rounded-4 overflow-hidden stagger">
+        @forelse ($worklist as $row)
+            <a href="{{ $row['url'] }}" class="person-row">
+                <span class="person-avatar">
+                    <i class="bi {{ $row['status'] === 'past_due' ? 'bi-exclamation-circle' : 'bi-hourglass-split' }}"></i>
+                </span>
+                <div class="flex-grow-1 min-w-0">
+                    <div class="d-flex align-items-center gap-2 flex-wrap">
+                        <span class="fw-semibold text-truncate">{{ $row['account'] }}</span>
+                        @include('superadmin.partials.status-pill', ['status' => $row['status'], 'access' => $row['access']])
                     </div>
-                    @forelse ($atRisk as $s)
-                        <a href="{{ route('superadmin.tenants.show', $s->tenant) }}"
-                           class="d-flex align-items-center gap-3 p-2 rounded-3 text-decoration-none search-result-item mb-1">
-                            <span class="d-inline-flex align-items-center justify-content-center rounded-circle bg-warning-subtle text-warning-emphasis"
-                                  style="width:2.25rem;height:2.25rem;"><i class="bi bi-hourglass-bottom"></i></span>
-                            <div class="flex-grow-1 min-w-0">
-                                <p class="mb-0 fw-medium text-truncate">{{ $s->tenant?->store_name ?? '—' }}</p>
-                                <p class="mb-0 text-muted-foreground" style="font-size:var(--text-sm);">
-                                    {{ $s->trialDaysLeft() === 0 ? 'Ends today' : $s->trialDaysLeft() . ' day' . ($s->trialDaysLeft() === 1 ? '' : 's') . ' left' }}
-                                </p>
-                            </div>
-                            <i class="bi bi-chevron-right text-faint"></i>
-                        </a>
-                    @empty
-                        <p class="text-muted-foreground text-center py-4 mb-0" style="font-size:var(--text-sm);">No trials ending in the next 3 days.</p>
-                    @endforelse
+                    <div class="text-muted-foreground text-sm mt-1">
+                        {{ $row['why'] }}
+                        @if ($row['ends'])
+                            ·
+                            @if ($row['days_left'] !== null && $row['days_left'] < 0)
+                                <span style="color:var(--tone-red);">expired {{ abs($row['days_left']) }} {{ Str::plural('day', abs($row['days_left'])) }} ago</span>
+                            @elseif ($row['days_left'] === 0)
+                                <span style="color:var(--tone-amber);">today</span>
+                            @else
+                                in {{ $row['days_left'] }} {{ Str::plural('day', $row['days_left']) }}
+                            @endif
+                            <span class="text-faint">({{ $row['ends'] }})</span>
+                        @endif
+                    </div>
                 </div>
+                <i class="bi bi-chevron-right person-chevron"></i>
+            </a>
+        @empty
+            <div class="text-center p-5">
+                <span class="d-inline-flex align-items-center justify-content-center rounded-circle person-avatar mx-auto mb-3"
+                      style="width:3.25rem;height:3.25rem;font-size:1.2rem;"><i class="bi bi-check2"></i></span>
+                <h2 class="h6 fw-semibold font-display mb-1">Nothing needs you today</h2>
+                <p class="text-muted-foreground text-sm mb-0">
+                    No overdue payments, and nothing expiring in the next two weeks.
+                </p>
             </div>
-        </div>
-
-        {{-- Recent signups --}}
-        <div class="col-lg-5">
-            <div class="card border-0 shadow-sm rounded-4 h-100">
-                <div class="card-body p-4">
-                    <p class="section-label mb-3">Recent signups</p>
-                    @forelse ($recent as $t)
-                        <a href="{{ route('superadmin.tenants.show', $t) }}"
-                           class="d-flex align-items-center gap-3 p-2 rounded-3 text-decoration-none search-result-item mb-1">
-                            <span class="d-inline-flex align-items-center justify-content-center rounded-3 bg-primary-subtle text-primary fw-semibold"
-                                  style="width:2.25rem;height:2.25rem;">{{ strtoupper(substr($t->store_name, 0, 1)) }}</span>
-                            <div class="flex-grow-1 min-w-0">
-                                <p class="mb-0 fw-medium text-truncate">{{ $t->store_name }}</p>
-                                <p class="mb-0 text-muted-foreground" style="font-size:var(--text-sm);">{{ $t->created_at?->format('d M Y') }}</p>
-                            </div>
-                            @php $st = $t->subscription?->status; @endphp
-                            <span class="badge {{ in_array($st, ['active','trialing']) ? 'text-bg-success' : 'text-bg-secondary' }}">{{ $st ?? 'none' }}</span>
-                        </a>
-                    @empty
-                        <p class="text-muted-foreground text-center py-4 mb-0" style="font-size:var(--text-sm);">No stores yet.</p>
-                    @endforelse
-                </div>
-            </div>
-        </div>
+        @endforelse
     </div>
+
+    {{-- Recently joined --}}
+    @if ($recent->isNotEmpty())
+        <p class="section-label mt-4 mb-2">Recently joined</p>
+        <div class="card border-0 shadow-sm rounded-4 overflow-hidden stagger">
+            @foreach ($recent as $account)
+                <a href="{{ route('superadmin.accounts.show', $account) }}" class="person-row">
+                    <span class="person-avatar">{{ mb_strtoupper(mb_substr($account->displayName(), 0, 1)) }}</span>
+                    <div class="flex-grow-1 min-w-0">
+                        <div class="d-flex align-items-center gap-2 flex-wrap">
+                            <span class="fw-semibold text-truncate">{{ $account->displayName() }}</span>
+                            @include('superadmin.partials.status-pill', [
+                                'status' => $account->subscription?->status ?? 'none',
+                                'access' => $account->subscription?->accessState(),
+                            ])
+                        </div>
+                        <div class="text-muted-foreground text-sm mt-1">
+                            {{ $account->stores_count }} {{ Str::plural('store', $account->stores_count) }}
+                            · joined {{ $account->created_at?->format('d M Y') }}
+                        </div>
+                    </div>
+                    <i class="bi bi-chevron-right person-chevron"></i>
+                </a>
+            @endforeach
+        </div>
+    @endif
 </div>
 @endsection
