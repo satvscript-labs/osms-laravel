@@ -10,6 +10,7 @@ use App\Http\Controllers\Superadmin\AuditLogController as SuperadminAuditLog;
 use App\Http\Controllers\Superadmin\BillingController as SuperadminBilling;
 use App\Http\Controllers\Superadmin\DashboardController as SuperadminDashboard;
 use App\Http\Controllers\Superadmin\PlanController as SuperadminPlan;
+use App\Http\Controllers\Superadmin\PlatformController as SuperadminPlatform;
 use App\Http\Controllers\Superadmin\StoreController as SuperadminStore;
 use App\Http\Controllers\Superadmin\SubscriptionController as SuperadminSubscription;
 use App\Http\Controllers\Superadmin\TenantController as SuperadminTenant;
@@ -124,6 +125,9 @@ Route::middleware(['auth', 'superadmin', 'throttle:120,1'])
         // List prices (read-only in P2; editable in P3).
         Route::get('/plans', [SuperadminPlan::class, 'index'])->name('plans.index');
 
+        // P4 — the knobs, and the health of the automated lane.
+        Route::get('/platform', [SuperadminPlatform::class, 'index'])->name('platform.index');
+
         // Audit trail (read-only)
         Route::get('/audit', [SuperadminAuditLog::class, 'index'])->name('audit.index');
 
@@ -154,6 +158,8 @@ Route::middleware(['auth', 'superadmin', 'throttle:120,1'])
             Route::patch('/customers/{account}/stores/{tenant}/status', [SuperadminAccountAction::class, 'storeStatus'])->name('accounts.store.status');
             Route::patch('/customers/{account}/stores/{tenant}/billable', [SuperadminAccountAction::class, 'storeBillable'])->name('accounts.store.billable');
             Route::patch('/customers/{account}/notes', [SuperadminAccountAction::class, 'updateNotes'])->name('accounts.notes');
+            Route::patch('/customers/{account}/supervised', [SuperadminPlatform::class, 'superviseAccount'])->name('accounts.supervised');
+            Route::patch('/platform/supervised-mode', [SuperadminPlatform::class, 'supervisedMode'])->name('platform.supervised-mode');
 
             Route::patch('/stores/{tenant}/notes', [SuperadminTenant::class, 'updateNotes'])->name('tenants.notes');
             Route::patch('/stores/{tenant}/subscription', [SuperadminSubscription::class, 'update'])->name('subscription.update');

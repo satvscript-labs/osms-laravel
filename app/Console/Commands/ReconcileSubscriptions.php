@@ -44,7 +44,25 @@ class ReconcileSubscriptions extends Command
         $expired = 0;
         $reminded = 0;
 
+        $suppressed = 0;
+
         foreach ($trials as $sub) {
+            // P4 / playbook §5.2 rule 5 — a manual action CANCELS conflicting
+            // automation, explicitly.
+            //
+            // "Wire the suppression explicitly — don't rely on the jobs
+            // coincidentally not firing." The lapse below happens not to fire
+            // during an extension (because access isn't locked yet), but the
+            // REMINDERS would have: a customer the operator just comped, or
+            // suspended, or extended as a goodwill gesture, would still be
+            // emailed "your trial ends in 3 days". Chasing someone you have
+            // just made a decision about is the most visible way a panel can
+            // look like it isn't in control.
+            if ($sub->hasActiveOverride()) {
+                $suppressed++;
+                continue;
+            }
+
             if ($sub->accessState() === 'locked') {
                 $sub->status = 'canceled';
                 $sub->save();
@@ -57,6 +75,10 @@ class ReconcileSubscriptions extends Command
                 $this->notifyAdmins($sub, $sub->trialDaysLeft());
                 $reminded++;
             }
+        }
+
+        if ($suppressed > 0) {
+            $this->line("Skipped {$suppressed} subscription(s) under an operator override.");
         }
 
         $lapsed = $this->lapsePaidSubscriptions();

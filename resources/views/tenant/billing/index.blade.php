@@ -3,6 +3,22 @@
 
 @section('content')
 <div class="p-4 p-md-5">
+
+    {{-- P4 — supervised mode: this customer is billed by hand, so the
+         self-serve controls are gone. The server refuses them regardless;
+         hiding them here just avoids offering something that will fail. --}}
+    @if (!empty($supervised))
+        <div class="card border-0 shadow-sm rounded-4 mb-4 animate-fade-up"
+             style="border-left:3px solid var(--osms-primary) !important;">
+            <div class="card-body p-4 d-flex align-items-start gap-3">
+                <i class="bi bi-person-check text-primary"></i>
+                <div>
+                    <p class="fw-semibold mb-1">We look after your billing</p>
+                    <p class="text-muted-foreground text-sm mb-0">{{ $supervised }}</p>
+                </div>
+            </div>
+        </div>
+    @endif
     <div class="mb-4">
         <p class="section-label mb-1">Account</p>
         <h1 class="h3 fw-semibold font-display mb-1">Subscription</h1>
@@ -60,14 +76,17 @@
             @if ($s === 'active' && ! $subscription?->cancel_at_period_end)
                 <div class="d-flex flex-wrap gap-2">
                     @unless ($subscription?->pending_interval)
-                        <form method="POST" action="{{ route('tenant.billing.change-interval') }}">
+                        @if (empty($supervised))
+                    <form method="POST" action="{{ route('tenant.billing.change-interval') }}">
                             @csrf
                             <input type="hidden" name="interval" value="{{ $otherInterval }}">
                             <button type="submit" class="btn btn-light">
                                 Switch to {{ ucfirst($otherInterval) }}@if ($otherInterval === 'yearly' && $yearlySave > 0)<span class="badge text-bg-success ms-1">Save {{ $yearlySave }}%</span>@endif
                             </button>
                         </form>
+                    @endif
                     @endunless
+                    @if (empty($supervised))
                     <form method="POST" action="{{ route('tenant.billing.cancel') }}">
                         @csrf
                         <button type="button" class="btn btn-light text-danger"
@@ -78,6 +97,7 @@
                             Cancel
                         </button>
                     </form>
+                    @endif
                 </div>
             @endif
         </div>
@@ -127,6 +147,7 @@
                         @endforeach
                     </ul>
 
+                    @if (empty($supervised))
                     <form method="POST" action="{{ route('tenant.billing.subscribe') }}">
                         @csrf
                         <input type="hidden" name="tier" value="basic">
@@ -135,6 +156,7 @@
                             {{ $s === 'active' ? 'Current plan' : 'Subscribe' }}
                         </button>
                     </form>
+                    @endif
                 </div>
             </div>
         </div>

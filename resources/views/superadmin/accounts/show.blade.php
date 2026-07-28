@@ -77,6 +77,12 @@
                     @endif
                     <li><button class="dropdown-item text-danger" data-bs-toggle="modal" data-bs-target="#m-cancel"><i class="bi bi-x-octagon me-2"></i>Cancel customer</button></li>
                     <li><button class="dropdown-item text-danger" data-bs-toggle="modal" data-bs-target="#m-expire"><i class="bi bi-exclamation-octagon me-2"></i>End access now</button></li>
+
+                    <li><hr class="dropdown-divider"></li>
+                    <li><h6 class="dropdown-header">Automation</h6></li>
+                    <li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#m-supervise">
+                        <i class="bi bi-person-check me-2"></i>{{ $account->supervised ? 'Let them pay online' : 'Bill by hand' }}
+                    </button></li>
                 </ul>
             </div>
         </div>
@@ -96,6 +102,11 @@
                     </span>
                 @endif
                 <span class="meta-chip"><i class="bi bi-shop"></i> {{ $account->stores->count() }} {{ Str::plural('store', $account->stores->count()) }}</span>
+                @if ($account->isSupervised())
+                    <span class="meta-chip" title="Self-serve checkout is closed — they pay through you">
+                        <i class="bi bi-person-check"></i> billed by hand
+                    </span>
+                @endif
             </div>
             <p class="text-muted-foreground text-sm mt-2 mb-0">
                 @if ($account->billing_email)

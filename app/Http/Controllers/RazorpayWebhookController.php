@@ -6,6 +6,7 @@ use App\Models\Subscription;
 use App\Models\SubscriptionInvoice;
 use App\Models\WebhookEvent;
 use App\Services\BillingService;
+use App\Services\PaymentRecorder;
 use App\Services\SubscriptionLifecycle;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -99,20 +100,18 @@ class RazorpayWebhookController extends Controller
             return;
         }
 
-        SubscriptionInvoice::withoutGlobalScopes()->firstOrCreate(
-            ['razorpay_payment_id' => $paymentId],
+        // P4 — the automated lane writes through the SAME recorder as the
+        // manual one, so both produce identical rows (receipt number included)
+        // and idempotency lives in one place. Previously this wrote the row
+        // directly and skipped `receipt_no`, so a customer who paid online got
+        // a receipt with no number while a cash payer got one.
+        app(PaymentRecorder::class)->recordGatewayPayment(
+            $subscription,
+            $paymentId,
+            ($payment['amount'] ?? 0) / 100, // paise → rupees
             [
-                'tenant_id' => $subscription->tenant_id,
-                // P1 / REQ-5 — the one ledger: every lane stamps who it is. The
-                // column defaults match these values (they doubled as the backfill
-                // for historical rows), but the writer states them explicitly.
-                'account_id' => $subscription->account_id,
-                'method' => 'razorpay',
-                'source' => 'webhook',
                 'razorpay_subscription_id' => $razorpaySubId,
-                'amount' => ($payment['amount'] ?? 0) / 100, // paise → rupees
                 'currency' => $payment['currency'] ?? 'INR',
-                'status' => 'paid',
                 'paid_at' => ! empty($payment['created_at'])
                     ? Carbon::createFromTimestamp($payment['created_at'])
                     : now(),

@@ -30,6 +30,32 @@ class BillingController extends Controller
         return $request->user()?->tenant?->governingSubscription();
     }
 
+    /**
+     * P4 / matrix row 15 — supervised mode.
+     *
+     * When a customer is supervised (their own flag, or the platform-wide
+     * switch) every payment goes through the operator, so the self-serve
+     * checkout is closed for them.
+     *
+     * ⚠ Enforced HERE, server-side, not merely hidden in the view. A hidden
+     * button is a suggestion; this is the rule. Same lesson as the shared-phone
+     * consent gap, where the UI hid an action the server still accepted.
+     *
+     * Constraint C1 — self-serve must never be degraded — is respected by the
+     * default: supervision is OFF unless an operator deliberately turns it on.
+     */
+    private function supervisionBlock(Request $request): ?string
+    {
+        $account = $request->user()?->tenant?->account;
+
+        if (! $account?->isSupervised()) {
+            return null;
+        }
+
+        return $account->supervisionReason()
+            ?? 'Your account is managed directly by our team. Please contact us to make changes.';
+    }
+
     public function index(Request $request, BillingService $billing): View
     {
         $subscription = $this->subscription($request);
@@ -41,6 +67,7 @@ class BillingController extends Controller
 
         return view('tenant.billing.index', [
             'subscription' => $subscription,
+            'supervised' => $this->supervisionBlock($request),
             'plans' => $plans,
             'invoices' => $invoices,
             'configured' => $billing->isConfigured(),
@@ -49,6 +76,10 @@ class BillingController extends Controller
 
     public function subscribe(Request $request, BillingService $billing): RedirectResponse|View
     {
+        if ($blocked = $this->supervisionBlock($request)) {
+            return back()->with('error', $blocked);
+        }
+
         $validated = $request->validate([
             'tier' => ['required', 'in:basic'],
             'interval' => ['required', 'in:monthly,yearly'],
@@ -117,6 +148,10 @@ class BillingController extends Controller
     /** Switch billing cycle (monthly <-> yearly), effective at the next renewal. */
     public function changeInterval(Request $request, BillingService $billing): RedirectResponse
     {
+        if ($blocked = $this->supervisionBlock($request)) {
+            return back()->with('error', $blocked);
+        }
+
         $validated = $request->validate(['interval' => ['required', 'in:monthly,yearly']]);
 
         $subscription = $this->subscription($request);
@@ -157,6 +192,10 @@ class BillingController extends Controller
     /** Cancel at the end of the current billing period (access continues until then). */
     public function cancel(Request $request, BillingService $billing): RedirectResponse
     {
+        if ($blocked = $this->supervisionBlock($request)) {
+            return back()->with('error', $blocked);
+        }
+
         $subscription = $this->subscription($request);
 
         if (! $subscription || $subscription->status !== 'active') {

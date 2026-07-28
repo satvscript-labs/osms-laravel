@@ -29,6 +29,11 @@ class Account extends Model
     protected $fillable = [
         'name', 'display_name', 'billing_email', 'billing_phone', 'billing_address',
         'tax_id', 'status', 'internal_notes', 'owner_user_id',
+        'supervised', 'supervised_reason',
+    ];
+
+    protected $casts = [
+        'supervised' => 'boolean',
     ];
 
     /** The stores (tenants) under this account. Fully isolated from each other (Q-B). */
@@ -79,6 +84,29 @@ class Account extends Model
     public function displayName(): string
     {
         return $this->display_name ?: $this->name;
+    }
+
+    /**
+     * P4 — may this customer pay for themselves, or must it go through you?
+     *
+     * Either switch turns supervision ON: the platform-wide knob, or this
+     * account's own flag. Neither can be inverted by the other, because
+     * "supervise everyone" and "supervise this one" are different intents and
+     * an operator should never have to reason about which wins.
+     */
+    public function isSupervised(): bool
+    {
+        return $this->supervised || PlatformSetting::supervisedGlobally();
+    }
+
+    /** Why self-serve is off for them — shown on their billing page. */
+    public function supervisionReason(): ?string
+    {
+        if ($this->supervised && filled($this->supervised_reason)) {
+            return $this->supervised_reason;
+        }
+
+        return $this->isSupervised() ? 'Your account is managed directly by our team.' : null;
     }
 
     /** Stores that count toward the bill (quantity = this count, from P3). */

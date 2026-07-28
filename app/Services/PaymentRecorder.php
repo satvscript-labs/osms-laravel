@@ -83,6 +83,57 @@ class PaymentRecorder
     }
 
     /**
+     * P4 — record a gateway payment, idempotently.
+     *
+     * The automated lane's door into the SAME ledger. Two things it must do
+     * that `record()` cannot:
+     *
+     *   1. **Be idempotent.** Razorpay retries webhooks, so the same
+     *      `razorpay_payment_id` must never charge or record twice. Keyed
+     *      `firstOrCreate`, per playbook §5.2 rule 9.
+     *   2. **Still issue a receipt number.** Before this, webhook rows carried
+     *      no `receipt_no` while manual ones did — so a customer who paid
+     *      online got a receipt with no number on it, and the ledger had two
+     *      shapes depending on which lane wrote it. "One ledger, one truth"
+     *      has to mean identical rows, not merely the same table.
+     *
+     * @return array{0: SubscriptionInvoice, 1: bool} [row, wasNewlyRecorded]
+     */
+    public function recordGatewayPayment(
+        Subscription $subscription,
+        string $gatewayPaymentId,
+        float $amount,
+        array $options = [],
+    ): array {
+        return DB::transaction(function () use ($subscription, $gatewayPaymentId, $amount, $options) {
+            $existing = SubscriptionInvoice::withoutGlobalScopes()
+                ->where('razorpay_payment_id', $gatewayPaymentId)
+                ->first();
+
+            if ($existing) {
+                return [$existing, false]; // a retry — already recorded
+            }
+
+            $row = SubscriptionInvoice::withoutGlobalScopes()->create([
+                'tenant_id' => $subscription->tenant_id,
+                'account_id' => $subscription->account_id,
+                'razorpay_payment_id' => $gatewayPaymentId,
+                'razorpay_subscription_id' => $options['razorpay_subscription_id'] ?? null,
+                'amount' => round($amount, 2),
+                'currency' => $options['currency'] ?? 'INR',
+                'status' => 'paid',
+                'method' => 'razorpay',
+                'source' => 'webhook',
+                'recorded_by' => null, // nobody typed this; the gateway told us
+                'paid_at' => $options['paid_at'] ?? now(),
+                'receipt_no' => $this->nextReceiptNo(),
+            ]);
+
+            return [$row, true];
+        });
+    }
+
+    /**
      * P3 / matrix row 11 — reverse a payment.
      *
      * A reversal is a STATE, never a delete: the original row stays visible

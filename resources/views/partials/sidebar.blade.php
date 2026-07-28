@@ -30,6 +30,7 @@
         ['route' => 'superadmin.billing.index', 'label' => 'Billing', 'icon' => 'bi-receipt', 'match' => 'superadmin.billing.*'],
         ['route' => 'superadmin.plans.index', 'label' => 'Plans', 'icon' => 'bi-tags', 'match' => 'superadmin.plans.*'],
         ['route' => 'superadmin.audit.index', 'label' => 'Audit', 'icon' => 'bi-clock-history', 'match' => 'superadmin.audit.*'],
+        ['route' => 'superadmin.platform.index', 'label' => 'Platform', 'icon' => 'bi-sliders', 'match' => 'superadmin.platform.*'],
     ];
     $links = $isSuper ? $superLinks : $tenantLinks;
 @endphp

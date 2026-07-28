@@ -287,3 +287,19 @@
         </p>
     </x-operator-modal>
 @endforeach
+
+{{-- ── Row 15 · Supervised mode, for this customer ──────────────── --}}
+<x-operator-modal id="m-supervise"
+    title="{{ $account->supervised ? 'Let them pay online again' : 'Bill this customer by hand' }}"
+    :action="route('superadmin.accounts.supervised', $account)" method="PATCH"
+    label="{{ $account->supervised ? 'Open self-serve' : 'Close self-serve' }}"
+    dismiss="Never mind"
+    tone="{{ $account->supervised ? 'primary' : 'danger' }}" icon="bi-person-check"
+    intro="{{ $account->supervised
+        ? 'They will be able to subscribe and change their plan online again.'
+        : 'They will be told to contact you instead of paying online. Their access and data are untouched.' }}">
+    <input type="hidden" name="supervised" value="{{ $account->supervised ? 0 : 1 }}">
+    <label class="form-label" for="sup-reason">Why <span style="color:var(--tone-red);">*</span></label>
+    <input id="sup-reason" name="reason" type="text" required maxlength="500" class="form-control"
+           placeholder="e.g. they pay by bank transfer each year">
+</x-operator-modal>
