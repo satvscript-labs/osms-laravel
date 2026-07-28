@@ -138,8 +138,13 @@ class Phase54P3FixesTest extends TestCase
 
     public function test_a_comped_subscription_contributes_nothing_to_mrr(): void
     {
+        // P1 / BUG-P05 — the rule changed (owner-approved): `manual` no longer
+        // means "not paying". A comp is identified as a comp — an override in
+        // force — not inferred from who last touched the record.
         $sub = $this->tenant->subscription;
         $sub->update(['status' => 'active', 'tier' => 'basic', 'interval' => 'monthly', 'manual' => true]);
+        $sub->applyOverride(kind: 'comp', until: now()->addMonth(), reason: 'test comp');
+        $sub->save();
 
         $this->assertSame(0.0, Mrr::monthlyValue($sub->fresh()));
     }
@@ -148,6 +153,15 @@ class Phase54P3FixesTest extends TestCase
     {
         $sub = $this->tenant->subscription;
         $sub->update(['status' => 'active', 'tier' => 'basic', 'interval' => 'monthly', 'manual' => false]);
+
+        $this->assertGreaterThan(0, Mrr::monthlyValue($sub->fresh()));
+    }
+
+    public function test_a_manually_billed_store_now_counts_toward_mrr(): void
+    {
+        // The case the old rule hid: hand-managed, genuinely paying (BUG-P05).
+        $sub = $this->tenant->subscription;
+        $sub->update(['status' => 'active', 'tier' => 'basic', 'interval' => 'monthly', 'manual' => true]);
 
         $this->assertGreaterThan(0, Mrr::monthlyValue($sub->fresh()));
     }

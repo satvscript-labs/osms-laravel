@@ -12,6 +12,7 @@ class Tenant extends Model
     use HasUuid;
 
     protected $fillable = [
+        'account_id',
         'store_name',
         'tax_id',
         'logo_url',
@@ -19,12 +20,21 @@ class Tenant extends Model
         'internal_notes',
         'gst_enabled',
         'gst_rate',
+        'is_billable',
+        'store_status',
     ];
 
     protected $casts = [
         'gst_enabled' => 'boolean',
         'gst_rate' => 'decimal:2',
+        'is_billable' => 'boolean',
     ];
+
+    /** P1 / REQ-12 — the paying identity this store belongs to ("Customer" in the panel). */
+    public function account(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(Account::class);
+    }
 
     /** Default GST rate assumed when a registered store hasn't set one (%). */
     public const DEFAULT_GST_RATE = 12.0;
@@ -57,6 +67,14 @@ class Tenant extends Model
             $tenant->subscription()->create([
                 'status' => 'trialing',
                 'tier' => 'basic',
+                // P1 / REQ-12 — dual-write: the subscription is account-scoped from
+                // birth when the tenant already knows its account (StoreProvisioner
+                // sets it before create). Pre-backfill tenants pass null; the
+                // osms:backfill-accounts command fills those in.
+                'account_id' => $tenant->account_id,
+                // REQ-4 — bind to the plan row matching the tier, if seeded. The
+                // PriceResolver falls back to config when plans aren't seeded (tests).
+                'plan_id' => Plan::query()->where('code', 'basic')->value('id'),
                 'current_period_end' => now($tz)->addDays((int) config('billing.trial_days', 14)),
             ]);
         });

@@ -16,14 +16,33 @@ class SubscriptionInvoice extends Model
     use HasUuid, BelongsToTenant;
 
     protected $fillable = [
-        'tenant_id', 'razorpay_payment_id', 'razorpay_invoice_id',
+        'tenant_id', 'account_id', 'razorpay_payment_id', 'razorpay_invoice_id',
         'razorpay_subscription_id', 'amount', 'currency', 'status', 'paid_at',
+        // P1 / REQ-5 — one channel-agnostic ledger. Every money path writes these.
+        'method', 'source', 'reference', 'recorded_by', 'reason',
+        'period_start', 'period_end', 'receipt_no',
+        'reversed_at', 'reversed_by', 'reversal_reason',
     ];
 
     protected $casts = [
         'amount' => 'decimal:2',
         'paid_at' => 'datetime',
+        'period_start' => 'date',
+        'period_end' => 'date',
+        'reversed_at' => 'datetime',
     ];
+
+    /** P1 / REQ-12 — the payer this ledger row belongs to. */
+    public function account(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(Account::class);
+    }
+
+    /** A reversal is a state, never a delete — both rows stay visible. */
+    public function isReversed(): bool
+    {
+        return $this->reversed_at !== null;
+    }
 
     /** GST split for the invoice PDF (India, 18% assumed inclusive). */
     public function taxBreakdown(): array

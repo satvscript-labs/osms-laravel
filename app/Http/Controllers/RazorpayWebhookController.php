@@ -103,6 +103,12 @@ class RazorpayWebhookController extends Controller
             ['razorpay_payment_id' => $paymentId],
             [
                 'tenant_id' => $subscription->tenant_id,
+                // P1 / REQ-5 — the one ledger: every lane stamps who it is. The
+                // column defaults match these values (they doubled as the backfill
+                // for historical rows), but the writer states them explicitly.
+                'account_id' => $subscription->account_id,
+                'method' => 'razorpay',
+                'source' => 'webhook',
                 'razorpay_subscription_id' => $razorpaySubId,
                 'amount' => ($payment['amount'] ?? 0) / 100, // paise → rupees
                 'currency' => $payment['currency'] ?? 'INR',

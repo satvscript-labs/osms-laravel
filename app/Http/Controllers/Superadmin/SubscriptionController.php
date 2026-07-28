@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\AdminAuditLog;
 use App\Models\Tenant;
 use App\Services\BillingService;
+use App\Services\PaymentRecorder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -141,7 +142,7 @@ class SubscriptionController extends Controller
     }
 
     /** Comp a paid subscription for N months without any payment. */
-    public function activate(Request $request, Tenant $tenant): RedirectResponse
+    public function activate(Request $request, Tenant $tenant, PaymentRecorder $ledger): RedirectResponse
     {
         $validated = $request->validate([
             'months' => ['required', 'integer', 'min:1', 'max:60'],
@@ -170,6 +171,17 @@ class SubscriptionController extends Controller
         );
 
         $subscription->save();
+
+        // BUG-P04 — a complimentary grant is still a LEDGER RECORD: a ₹0 row with
+        // method='comp' and a reason, never an absent one. Lifetime value and
+        // "what have we given away?" stay answerable from one query.
+        $ledger->recordComp(
+            $subscription->refresh(),
+            reason: $request->input('reason')
+                ?: "Granted {$validated['months']} month(s) free by operator",
+            periodStart: Carbon::today($this->tz()),
+            periodEnd: $newEnd,
+        );
 
         AdminAuditLog::record(
             'subscription.comped',

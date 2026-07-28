@@ -12,9 +12,10 @@ class Subscription extends Model
     use HasUuid, BelongsToTenant;
 
     protected $fillable = [
-        'tenant_id', 'razorpay_subscription_id', 'razorpay_customer_id',
-        'status', 'tier', 'interval', 'pending_interval',
+        'tenant_id', 'account_id', 'razorpay_subscription_id', 'razorpay_customer_id',
+        'status', 'tier', 'plan_id', 'interval', 'pending_interval', 'quantity',
         'current_period_end', 'cancel_at_period_end', 'manual',
+        'negotiated_price', 'negotiated_reason', 'negotiated_by', 'negotiated_at',
         'override_kind', 'override_until', 'override_reason', 'override_by', 'override_at',
     ];
 
@@ -22,9 +23,30 @@ class Subscription extends Model
         'current_period_end' => 'date',
         'cancel_at_period_end' => 'boolean',
         'manual' => 'boolean',
+        'quantity' => 'integer',
+        'negotiated_price' => 'decimal:2',
+        'negotiated_at' => 'datetime',
         'override_until' => 'date',
         'override_at' => 'datetime',
     ];
+
+    /** P1 / REQ-12 — the paying identity this subscription belongs to. */
+    public function account(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(Account::class);
+    }
+
+    /** P1 / REQ-4 — the plan row whose list price applies (tier's successor). */
+    public function plan(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(Plan::class);
+    }
+
+    /** Is this store on a bespoke, hand-agreed price? (⚑ badge in the panel.) */
+    public function hasNegotiatedPrice(): bool
+    {
+        return $this->negotiated_price !== null;
+    }
 
     /*
     |--------------------------------------------------------------------------
