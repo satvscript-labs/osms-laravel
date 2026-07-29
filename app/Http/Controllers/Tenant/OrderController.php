@@ -232,7 +232,7 @@ class OrderController extends Controller
                 $q->where('is_tracked', false)->orWhere('stock_qty', '>', 0);
             })
             ->orderBy('brand')
-            ->get(['id', 'sku', 'barcode', 'brand', 'model_name', 'selling_price', 'stock_qty']);
+            ->get(['id', 'sku', 'barcode', 'brand', 'model_name', 'selling_price', 'stock_qty', 'is_tracked']);
 
         $selectedCustomer = $request->filled('customer')
             ? Customer::whereKey($request->query('customer'))->first(['id', 'name', 'phone'])
@@ -535,7 +535,7 @@ class OrderController extends Controller
                 $q->where('is_tracked', false)->orWhere('stock_qty', '>', 0);
             })
             ->orderBy('brand')
-            ->get(['id', 'sku', 'barcode', 'brand', 'model_name', 'selling_price', 'stock_qty']);
+            ->get(['id', 'sku', 'barcode', 'brand', 'model_name', 'selling_price', 'stock_qty', 'is_tracked']);
 
         // Prescriptions available to (re)attach.
         $eyeRecords = $order->customer->eyeRecords()->get(['id', 'created_at'])
