@@ -71,6 +71,8 @@ Route::middleware('role:store_admin')->group(function () {
     Route::delete('inventory/{inventory}/force', [InventoryController::class, 'forceDelete'])->name('inventory.force-delete')->withTrashed();
 });
 
+Route::get('inventory/{inventory}', [InventoryController::class, 'show'])->name('inventory.show');
+
 // ---- Orders ----
 Route::get('orders', [OrderController::class, 'index'])->name('orders.index');
 Route::get('orders/create', [OrderController::class, 'create'])->name('orders.create');

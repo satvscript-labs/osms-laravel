@@ -163,7 +163,7 @@
             <div class="card border-0 shadow-sm rounded-4 overflow-hidden stagger">
                 @foreach ($items as $i)
                     @php $isOut = $i->stock_qty === 0; $isLow = !$isOut && $i->stock_qty <= $i->min_alert_qty; @endphp
-                    <a href="{{ auth()->user()->isStoreAdmin() ? route('tenant.inventory.edit', $i) : '#' }}" class="person-row {{ !auth()->user()->isStoreAdmin() ? 'pe-none' : '' }}">
+                    <a href="{{ auth()->user()->isStoreAdmin() ? route('tenant.inventory.edit', $i) : route('tenant.inventory.show', $i) }}" class="person-row">
                         <span class="item-avatar"><i class="bi {{ $typeIcon($i->item_type) }}"></i></span>
                         <div class="flex-grow-1 min-w-0">
                             <div class="d-flex align-items-center gap-2 flex-wrap">
@@ -187,9 +187,7 @@
                             @if ($isOut)<i class="bi bi-x-circle"></i>@elseif ($isLow)<i class="bi bi-exclamation-triangle"></i>@endif
                             {{ $i->stock_qty }}
                         </span>
-                        @if (auth()->user()->isStoreAdmin())
-                            <i class="bi bi-chevron-right person-chevron"></i>
-                        @endif
+                        <i class="bi bi-chevron-right person-chevron"></i>
                     </a>
                 @endforeach
             </div>

@@ -115,10 +115,8 @@
                                             </a>
                                         @endif
                                         @if ($order->customer?->phone)
-                                            <a href="tel:{{ preg_replace('/[^\d+]/', '', $order->customer->phone) }}" 
-                                               class="btn btn-light border btn-sm d-flex align-items-center justify-content-center" 
-                                               style="min-width: 42px;" title="Call customer" aria-label="Call customer">
-                                                <i class="bi bi-telephone text-muted-foreground"></i>
+                                            <a href="tel:{{ preg_replace('/[^\d+]/', '', $order->customer->phone) }}" class="call-pill wa-pill-icon" title="Call customer" aria-label="Call customer">
+                                                <i class="bi bi-telephone-fill"></i> <span>Call</span>
                                             </a>
                                         @endif
                                     </div>

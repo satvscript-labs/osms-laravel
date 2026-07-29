@@ -50,7 +50,7 @@ class InventoryController extends Controller
                         'stock_qty' => $i->stock_qty,
                         'is_out' => $isOut,
                         'is_low' => $isLow,
-                        'url' => auth()->user()->isStoreAdmin() ? route('tenant.inventory.edit', $i) : null,
+                        'url' => auth()->user()->isStoreAdmin() ? route('tenant.inventory.edit', $i) : route('tenant.inventory.show', $i),
                     ];
                 })->values(),
                 'total' => $items->total(),
@@ -84,6 +84,11 @@ class InventoryController extends Controller
         Inventory::create($data);
 
         return redirect()->route('tenant.inventory.index')->with('status', 'Item added to inventory.');
+    }
+
+    public function show(Inventory $inventory): View
+    {
+        return view('tenant.inventory.show', ['item' => $inventory]);
     }
 
     public function edit(Inventory $inventory): View

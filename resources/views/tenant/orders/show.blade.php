@@ -68,8 +68,8 @@
                     <i class="bi bi-printer me-1"></i> Print
                 </button>
                 @if ($p && $p->phone)
-                    <a href="tel:{{ preg_replace('/[^\d+]/', '', $p->phone) }}" class="btn btn-secondary btn-sm text-decoration-none">
-                        <i class="bi bi-telephone me-1"></i> Call
+                    <a href="tel:{{ preg_replace('/[^\d+]/', '', $p->phone) }}" class="call-pill" title="Call {{ $p->phone }}">
+                        <i class="bi bi-telephone-fill"></i> <span>Call</span>
                     </a>
                 @endif
                 @if ($waPend)

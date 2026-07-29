@@ -124,8 +124,8 @@
                                             </a>
                                         @endif
                                         @if ($phone)
-                                            <a href="tel:{{ preg_replace('/[^\d+]/', '', $phone) }}" class="action-icon-btn" title="Call customer" aria-label="Call customer">
-                                                <i class="bi bi-telephone"></i>
+                                            <a href="tel:{{ preg_replace('/[^\d+]/', '', $phone) }}" class="call-pill wa-pill-icon" title="Call customer" aria-label="Call customer">
+                                                <i class="bi bi-telephone-fill"></i> <span>Call</span>
                                             </a>
                                         @endif
                                     @endif
