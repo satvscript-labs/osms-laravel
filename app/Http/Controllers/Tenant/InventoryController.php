@@ -22,14 +22,7 @@ class InventoryController extends Controller
         $stock = (string) $request->query('stock', '');
 
         $items = Inventory::query()
-            ->when($q !== '', function ($query) use ($q) {
-                $query->where(function ($sub) use ($q) {
-                    $sub->where('brand', 'like', "%{$q}%")
-                        ->orWhere('model_name', 'like', "%{$q}%")
-                        ->orWhere('sku', 'like', "%{$q}%")
-                        ->orWhere('barcode', 'like', "%{$q}%");
-                });
-            })
+            ->when($q !== '', fn ($query) => $query->searchBy(['brand', 'model_name', 'sku', 'barcode'], $q))
             ->when($type !== '', fn ($query) => $query->where('item_type', $type))
             ->when($stock === 'low', fn ($query) => $query->whereColumn('stock_qty', '<=', 'min_alert_qty'))
             ->when($stock === 'out', fn ($query) => $query->where('stock_qty', 0))
@@ -52,12 +45,12 @@ class InventoryController extends Controller
                         'type_label' => $i->type_label,
                         'sku' => $i->sku,
                         'barcode' => $i->barcode,
-                        'cost_price' => (float) $i->cost_price,
+                        'cost_price' => auth()->user()->isStoreAdmin() ? (float) $i->cost_price : null,
                         'selling_price' => (float) $i->selling_price,
                         'stock_qty' => $i->stock_qty,
                         'is_out' => $isOut,
                         'is_low' => $isLow,
-                        'url' => route('tenant.inventory.edit', $i),
+                        'url' => auth()->user()->isStoreAdmin() ? route('tenant.inventory.edit', $i) : null,
                     ];
                 })->values(),
                 'total' => $items->total(),
@@ -154,12 +147,7 @@ class InventoryController extends Controller
         $search = trim((string) $request->query('search', ''));
 
         $items = Inventory::onlyTrashed()
-            ->when($search !== '', fn ($query) => $query->where(function ($q) use ($search) {
-                $q->where('sku', 'like', "%{$search}%")
-                  ->orWhere('barcode', 'like', "%{$search}%")
-                  ->orWhere('brand', 'like', "%{$search}%")
-                  ->orWhere('model_name', 'like', "%{$search}%");
-            }))
+            ->when($search !== '', fn ($query) => $query->searchBy(['sku', 'barcode', 'brand', 'model_name'], $search))
             ->latest('deleted_at')
             ->paginate(50)
             ->withQueryString();

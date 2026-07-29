@@ -97,12 +97,7 @@ class OrderController extends Controller
 
         $orders = Order::with('customer:id,name,phone')
             ->withCount('items')
-            ->when($search !== '', function ($query) use ($search) {
-                $query->whereHas('customer', function ($c) use ($search) {
-                    $c->where('name', 'like', "%{$search}%")
-                      ->orWhere('phone', 'like', "%{$search}%");
-                });
-            })
+            ->when($search !== '', fn ($query) => $query->whereHas('customer', fn ($c) => $c->searchBy(['name', 'phone'], $search)))
             ->when(in_array($status, ['pending', 'ready_for_pickup', 'delivered', 'cancelled'], true),
                 fn ($query) => $query->where('status', $status))
             ->when($payment === 'outstanding', fn ($query) => $query->where('status', '!=', 'cancelled')->where('balance_due', '>', 0))
@@ -233,7 +228,9 @@ class OrderController extends Controller
         // PERF-03 — the customer list is unbounded, so it is NOT embedded in the page.
         // The picker searches the customers JSON endpoint as you type; only a
         // pre-selected customer (e.g. "New order" from a profile) is passed through.
-        $inventory = Inventory::where('stock_qty', '>', 0)
+        $inventory = Inventory::where(function($q) {
+                $q->where('is_tracked', false)->orWhere('stock_qty', '>', 0);
+            })
             ->orderBy('brand')
             ->get(['id', 'sku', 'barcode', 'brand', 'model_name', 'selling_price', 'stock_qty']);
 
@@ -354,7 +351,7 @@ class OrderController extends Controller
                     abort(404);
                 }
 
-                if ($qty > $inv->stock_qty) {
+                if ($inv->is_tracked && $qty > $inv->stock_qty) {
                     throw ValidationException::withMessages([
                         'items' => "Only {$inv->stock_qty} × {$inv->brand} {$inv->model_name} in stock (requested {$qty}).",
                     ]);
@@ -442,16 +439,19 @@ class OrderController extends Controller
             // Draw down stock now that the order is committed, logging each
             // movement so the item's stock ledger stays complete (FG-StockLog).
             foreach ($wanted as $id => $qty) {
-                $inventories->get($id)->decrement('stock_qty', $qty);
+                $inv = $inventories->get($id);
+                if ($inv->is_tracked) {
+                    $inv->decrement('stock_qty', $qty);
 
-                StockMovement::create([
-                    'inventory_id' => $id,
-                    'delta' => -$qty,
-                    'type' => 'order',
-                    'reason' => 'Order placed',
-                    'order_id' => $order->id,
-                    'recorded_by' => auth()->id(),
-                ]);
+                    StockMovement::create([
+                        'inventory_id' => $id,
+                        'delta' => -$qty,
+                        'type' => 'order',
+                        'reason' => 'Order placed',
+                        'order_id' => $order->id,
+                        'recorded_by' => auth()->id(),
+                    ]);
+                }
             }
 
             // Record the initial advance as the first payment (FG-PaymentLog),
@@ -531,7 +531,9 @@ class OrderController extends Controller
         ])->values();
 
         // Searchable inventory to add NEW lines (in-stock only, same as create).
-        $inventory = Inventory::where('stock_qty', '>', 0)
+        $inventory = Inventory::where(function($q) {
+                $q->where('is_tracked', false)->orWhere('stock_qty', '>', 0);
+            })
             ->orderBy('brand')
             ->get(['id', 'sku', 'barcode', 'brand', 'model_name', 'selling_price', 'stock_qty']);
 
@@ -636,7 +638,7 @@ class OrderController extends Controller
                 }
 
                 $additional = $qty - ($oldQty[$id] ?? 0);
-                if ($additional > $inv->stock_qty) {
+                if ($inv->is_tracked && $additional > $inv->stock_qty) {
                     throw ValidationException::withMessages([
                         'items' => "Only {$inv->stock_qty} more × {$inv->brand} {$inv->model_name} available (need {$additional} more).",
                     ]);
@@ -713,16 +715,18 @@ class OrderController extends Controller
                     continue; // defensive: removed-line item vanished
                 }
 
-                $delta > 0 ? $inv->increment('stock_qty', $delta) : $inv->decrement('stock_qty', -$delta);
+                if ($inv->is_tracked) {
+                    $delta > 0 ? $inv->increment('stock_qty', $delta) : $inv->decrement('stock_qty', -$delta);
 
-                StockMovement::create([
-                    'inventory_id' => $id,
-                    'delta' => $delta,
-                    'type' => 'edit',
-                    'reason' => 'Order edited',
-                    'order_id' => $order->id,
-                    'recorded_by' => auth()->id(),
-                ]);
+                    StockMovement::create([
+                        'inventory_id' => $id,
+                        'delta' => $delta,
+                        'type' => 'edit',
+                        'reason' => 'Order edited',
+                        'order_id' => $order->id,
+                        'recorded_by' => auth()->id(),
+                    ]);
+                }
             }
 
             // Replace the line items and update the order (advance untouched; the
@@ -1137,16 +1141,18 @@ class OrderController extends Controller
                     continue; // item was deleted; nothing to restore
                 }
 
-                $inv->increment('stock_qty', $item->quantity);
+                if ($inv->is_tracked) {
+                    $inv->increment('stock_qty', $item->quantity);
 
-                StockMovement::create([
-                    'inventory_id' => $inv->id,
-                    'delta' => $item->quantity,
-                    'type' => 'cancel',
-                    'reason' => 'Order cancelled',
-                    'order_id' => $order->id,
-                    'recorded_by' => auth()->id(),
-                ]);
+                    StockMovement::create([
+                        'inventory_id' => $inv->id,
+                        'delta' => $item->quantity,
+                        'type' => 'cancel',
+                        'reason' => 'Order cancelled',
+                        'order_id' => $order->id,
+                        'recorded_by' => auth()->id(),
+                    ]);
+                }
             }
 
             $order->update([

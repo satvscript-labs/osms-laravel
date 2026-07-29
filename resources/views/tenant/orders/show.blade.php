@@ -67,6 +67,11 @@
                 <button type="button" class="btn btn-secondary btn-sm" onclick="window.print()">
                     <i class="bi bi-printer me-1"></i> Print
                 </button>
+                @if ($p && $p->phone)
+                    <a href="tel:{{ preg_replace('/[^\d+]/', '', $p->phone) }}" class="btn btn-secondary btn-sm text-decoration-none">
+                        <i class="bi bi-telephone me-1"></i> Call
+                    </a>
+                @endif
                 @if ($waPend)
                     @include('tenant.orders.partials._wa-undo', ['order' => $order, 'msg' => $waPend])
                 @elseif ($pill)

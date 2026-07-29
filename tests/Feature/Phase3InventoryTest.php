@@ -44,6 +44,7 @@ class Phase3InventoryTest extends TestCase
             'model_name' => 'Aviator',
             'cost_price' => 1000,
             'selling_price' => 2500,
+            'is_tracked' => 1,
             'stock_qty' => 10,
             'min_alert_qty' => 3,
         ])->assertRedirect(route('tenant.inventory.index'));
@@ -132,7 +133,7 @@ class Phase3InventoryTest extends TestCase
 
         $this->actingAs($user)->put(route('tenant.inventory.update', $item), [
             'item_type' => 'frame', 'brand' => 'New', 'model_name' => 'M',
-            'cost_price' => 100, 'selling_price' => 200, 'stock_qty' => 20, 'min_alert_qty' => 4,
+            'cost_price' => 100, 'selling_price' => 200, 'is_tracked' => 1, 'stock_qty' => 20, 'min_alert_qty' => 4,
         ])->assertRedirect(route('tenant.inventory.index'));
 
         $this->assertDatabaseHas('inventory', ['id' => $item->id, 'brand' => 'New', 'stock_qty' => 20]);

@@ -22,7 +22,7 @@
     {{-- Header + date range --}}
     <div class="d-flex flex-column flex-md-row gap-3 align-items-md-end justify-content-between mb-3">
         <div>
-            <p class="section-label mb-1">Store admin</p>
+            <p class="section-label mb-1">Workspace</p>
             <h1 class="h3 fw-semibold font-display mb-1">Analytics</h1>
             <p class="text-muted-foreground mb-0 text-md">
                 Revenue, COGS, gross profit, and outstanding balances.
@@ -83,14 +83,16 @@
                         hint="{{ $stats['ordersCount'] }} delivered {{ Str::plural('order', $stats['ordersCount']) }}"
                         icon="bi-graph-up-arrow" tone="primary" />
                 </div>
-                <div class="col-6 col-lg-3">
-                    <x-metric-card label="COGS" value="{{ $money($stats['cogs']) }}" hint="Cost of goods sold" icon="bi-box-seam" />
-                </div>
-                <div class="col-6 col-lg-3">
-                    <x-metric-card label="Gross profit" value="{{ $money($stats['profit']) }}"
-                        hint="{{ $stats['margin'] !== null ? number_format($stats['margin'], 1) . '% margin' : 'margin — (no cost data)' }}"
-                        icon="bi-receipt" tone="primary" />
-                </div>
+                @if(auth()->user()->isStoreAdmin())
+                    <div class="col-6 col-lg-3">
+                        <x-metric-card label="COGS" value="{{ $money($stats['cogs']) }}" hint="Cost of goods sold" icon="bi-box-seam" />
+                    </div>
+                    <div class="col-6 col-lg-3">
+                        <x-metric-card label="Gross profit" value="{{ $money($stats['profit']) }}"
+                            hint="{{ $stats['margin'] !== null ? number_format($stats['margin'], 1) . '% margin' : 'margin — (no cost data)' }}"
+                            icon="bi-receipt" tone="primary" />
+                    </div>
+                @endif
                 <div class="col-6 col-lg-3">
                     <x-metric-card label="Avg order value"
                         value="{{ $money($stats['ordersCount'] > 0 ? $stats['revenue'] / $stats['ordersCount'] : 0) }}"

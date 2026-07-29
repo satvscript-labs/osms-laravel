@@ -22,6 +22,7 @@ class InventoryRequest extends FormRequest
             // (an out-of-range entry is a 422, never a DB-overflow 500).
             'cost_price' => ['required', 'numeric', 'min:0', 'max:99999999'],
             'selling_price' => ['required', 'numeric', 'min:0', 'max:99999999'],
+            'is_tracked' => ['boolean'],
             'stock_qty' => ['nullable', 'integer', 'min:0', 'max:1000000'],
             'min_alert_qty' => ['nullable', 'integer', 'min:0', 'max:1000000'],
         ];
@@ -29,11 +30,13 @@ class InventoryRequest extends FormRequest
 
     protected function prepareForValidation(): void
     {
+        $isTracked = $this->boolean('is_tracked');
         $this->merge([
             'brand' => trim((string) $this->brand) ?: null,
             'model_name' => trim((string) $this->model_name) ?: null,
-            'stock_qty' => $this->stock_qty ?? 0,
-            'min_alert_qty' => $this->min_alert_qty ?? 5,
+            'is_tracked' => $isTracked,
+            'stock_qty' => $isTracked ? ($this->stock_qty ?? 0) : 0,
+            'min_alert_qty' => $isTracked ? ($this->min_alert_qty ?? 5) : 0,
         ]);
     }
 }

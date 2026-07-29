@@ -33,12 +33,14 @@
             </p>
         </div>
         <div class="d-flex gap-2">
-            <a href="{{ route('tenant.inventory.trash') }}" class="btn btn-light">
-                <i class="bi bi-archive me-1"></i> Archive
-            </a>
-            <a href="{{ route('tenant.inventory.create') }}" class="btn btn-primary">
-                <i class="bi bi-plus-lg me-1"></i> Add item
-            </a>
+            @if (auth()->user()->isStoreAdmin())
+                <a href="{{ route('tenant.inventory.trash') }}" class="btn btn-light">
+                    <i class="bi bi-archive me-1"></i> Archive
+                </a>
+                <a href="{{ route('tenant.inventory.create') }}" class="btn btn-primary">
+                    <i class="bi bi-plus-lg me-1"></i> Add item
+                </a>
+            @endif
         </div>
     </div>
 
@@ -110,7 +112,7 @@
             <template x-if="!loading && rows.length">
                 <div class="card border-0 shadow-sm rounded-4 overflow-hidden stagger" :key="listKey">
                     <template x-for="it in rows" :key="it.id">
-                        <a :href="it.url" class="person-row">
+                        <a :href="it.url || '#'" class="person-row" :class="!it.url ? 'pe-none' : ''">
                             <span class="item-avatar"><i class="bi" :class="typeIcon(it.item_type)"></i></span>
                             <div class="flex-grow-1 min-w-0">
                                 <div class="d-flex align-items-center gap-2 flex-wrap">
@@ -125,13 +127,13 @@
                             <span class="meta-chip d-none d-sm-inline-flex" x-text="it.type_label"></span>
                             <div class="d-none d-md-block text-end" style="min-width:6.5rem;">
                                 <div class="fw-semibold" x-text="money(it.selling_price)"></div>
-                                <div class="text-3xs text-faint">Cost <span x-text="money(it.cost_price)"></span></div>
+                                <div class="text-3xs text-faint" x-show="it.cost_price !== null">Cost <span x-text="money(it.cost_price)"></span></div>
                             </div>
                             <span class="stock-pill" :class="stockClass(it)">
                                 <i class="bi" :class="{'bi-x-circle': it.is_out, 'bi-exclamation-triangle': it.is_low}" x-show="it.is_out || it.is_low"></i>
                                 <span x-text="it.stock_qty"></span>
                             </span>
-                            <i class="bi bi-chevron-right person-chevron"></i>
+                            <i class="bi bi-chevron-right person-chevron" x-show="it.url"></i>
                         </a>
                     </template>
                 </div>
@@ -161,7 +163,7 @@
             <div class="card border-0 shadow-sm rounded-4 overflow-hidden stagger">
                 @foreach ($items as $i)
                     @php $isOut = $i->stock_qty === 0; $isLow = !$isOut && $i->stock_qty <= $i->min_alert_qty; @endphp
-                    <a href="{{ route('tenant.inventory.edit', $i) }}" class="person-row">
+                    <a href="{{ auth()->user()->isStoreAdmin() ? route('tenant.inventory.edit', $i) : '#' }}" class="person-row {{ !auth()->user()->isStoreAdmin() ? 'pe-none' : '' }}">
                         <span class="item-avatar"><i class="bi {{ $typeIcon($i->item_type) }}"></i></span>
                         <div class="flex-grow-1 min-w-0">
                             <div class="d-flex align-items-center gap-2 flex-wrap">
@@ -177,13 +179,17 @@
                         <span class="meta-chip d-none d-sm-inline-flex">{{ $i->type_label }}</span>
                         <div class="d-none d-md-block text-end" style="min-width:6.5rem;">
                             <div class="fw-semibold">₹ {{ number_format($i->selling_price, 2) }}</div>
-                            <div class="text-3xs text-faint">Cost ₹ {{ number_format($i->cost_price, 2) }}</div>
+                            @if (auth()->user()->isStoreAdmin())
+                                <div class="text-3xs text-faint">Cost ₹ {{ number_format($i->cost_price, 2) }}</div>
+                            @endif
                         </div>
                         <span class="stock-pill {{ $isOut ? 'stock-pill-out' : ($isLow ? 'stock-pill-low' : 'stock-pill-ok') }}">
                             @if ($isOut)<i class="bi bi-x-circle"></i>@elseif ($isLow)<i class="bi bi-exclamation-triangle"></i>@endif
                             {{ $i->stock_qty }}
                         </span>
-                        <i class="bi bi-chevron-right person-chevron"></i>
+                        @if (auth()->user()->isStoreAdmin())
+                            <i class="bi bi-chevron-right person-chevron"></i>
+                        @endif
                     </a>
                 @endforeach
             </div>
@@ -196,7 +202,9 @@
                 <span class="item-avatar mx-auto mb-3" style="width:3.25rem;height:3.25rem;font-size:1.5rem;"><i class="bi bi-box-seam"></i></span>
                 <h2 class="h5 fw-semibold font-display">No inventory yet</h2>
                 <p class="text-muted-foreground mb-3">Add your first frame or lens to get started.</p>
-                <a href="{{ route('tenant.inventory.create') }}" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i> Add item</a>
+                @if (auth()->user()->isStoreAdmin())
+                    <a href="{{ route('tenant.inventory.create') }}" class="btn btn-primary"><i class="bi bi-plus-lg me-1"></i> Add item</a>
+                @endif
             </div>
         @endif
     </div>

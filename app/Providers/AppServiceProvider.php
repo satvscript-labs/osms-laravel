@@ -5,6 +5,7 @@ namespace App\Providers;
 use App\Services\WhatsApp\LogDriver;
 use App\Services\WhatsApp\MetaCloudDriver;
 use App\Services\WhatsApp\WhatsAppGateway;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Pagination\Paginator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\URL;
@@ -39,6 +40,36 @@ class AppServiceProvider extends ServiceProvider
 
         $this->hardenForProduction();
         $this->enforceLegacyReadOnly();
+        $this->registerMacros();
+    }
+
+    protected function registerMacros(): void
+    {
+        // MR-02 — Smart tokenized multi-word search macro.
+        Builder::macro('searchBy', function (array $fields, string $term) {
+            $term = trim($term);
+            if ($term === '') {
+                return $this;
+            }
+
+            // Split into unique words (tokens), ignoring extra spaces.
+            $tokens = array_filter(array_unique(explode(' ', $term)));
+            if (empty($tokens)) {
+                return $this;
+            }
+
+            return $this->where(function (Builder $query) use ($fields, $tokens) {
+                foreach ($tokens as $token) {
+                    // AND every token (all words must match)...
+                    $query->where(function (Builder $sub) use ($fields, $token) {
+                        // ...in AT LEAST ONE of the given fields.
+                        foreach ($fields as $field) {
+                            $sub->orWhere($field, 'like', "%{$token}%");
+                        }
+                    });
+                }
+            });
+        });
     }
 
     /**

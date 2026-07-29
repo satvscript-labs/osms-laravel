@@ -103,15 +103,26 @@
                                     </div>
                                 @endif
 
-                                {{-- Manual "Send on WhatsApp" pill (FT-WhatsApp, Manual mode). --}}
-                                @if ($pill)
-                                    <a href="{{ $pill['url'] }}" target="_blank" rel="noopener"
-                                       class="wa-pill w-100 mt-2 {{ $pill['fallback'] ? 'wa-pill-warn' : '' }}"
-                                       aria-label="{{ $pill['label'] }}">
-                                        <i class="bi bi-whatsapp"></i>
-                                        <span>{{ $pill['label'] }}</span>
-                                    </a>
-                                    @if ($pill['fallback'])
+                                {{-- Manual "Send on WhatsApp" pill and Call button. --}}
+                                @if ($pill || $order->customer?->phone)
+                                    <div class="d-flex gap-2 mt-2">
+                                        @if ($pill)
+                                            <a href="{{ $pill['url'] }}" target="_blank" rel="noopener"
+                                               class="wa-pill w-100 {{ $pill['fallback'] ? 'wa-pill-warn' : '' }}"
+                                               aria-label="{{ $pill['label'] }}">
+                                                <i class="bi bi-whatsapp"></i>
+                                                <span>{{ $pill['label'] }}</span>
+                                            </a>
+                                        @endif
+                                        @if ($order->customer?->phone)
+                                            <a href="tel:{{ preg_replace('/[^\d+]/', '', $order->customer->phone) }}" 
+                                               class="btn btn-light border btn-sm d-flex align-items-center justify-content-center" 
+                                               style="min-width: 42px;" title="Call customer" aria-label="Call customer">
+                                                <i class="bi bi-telephone text-muted-foreground"></i>
+                                            </a>
+                                        @endif
+                                    </div>
+                                    @if ($pill && $pill['fallback'])
                                         <a href="{{ route('profile.edit') }}" class="wa-setup-hint mt-1">
                                             <i class="bi bi-exclamation-circle"></i> Finish WhatsApp setup
                                         </a>
