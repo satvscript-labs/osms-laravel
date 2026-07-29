@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Models\Concerns\BelongsToTenant;
 use App\Models\Concerns\HasUuid;
+use App\Support\Mrr;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 
@@ -17,6 +18,7 @@ class Subscription extends Model
         'current_period_end', 'cancel_at_period_end', 'manual',
         'negotiated_price', 'negotiated_interval', 'negotiated_reason', 'negotiated_by', 'negotiated_at',
         'override_kind', 'override_until', 'override_reason', 'override_by', 'override_at',
+        'churned_at', 'churned_mrr', 'churned_from',
     ];
 
     protected $casts = [
@@ -28,7 +30,59 @@ class Subscription extends Model
         'negotiated_at' => 'datetime',
         'override_until' => 'date',
         'override_at' => 'datetime',
+        'churned_at' => 'datetime',
+        'churned_mrr' => 'decimal:2',
     ];
+
+    /**
+     * P6 / 03 §8 — churn is stamped by the MODEL, not by whoever changed the
+     * status.
+     *
+     * There are four writers that can end a subscription: the operator panel,
+     * the Razorpay webhook, the nightly reconcile, and a customer's own
+     * self-cancel. A metric that depends on all four remembering to record the
+     * same fact is a metric that will be wrong within a month. Putting it here
+     * means no lane can forget, and a future fifth lane inherits it.
+     */
+    protected static function booted(): void
+    {
+        static::saving(function (Subscription $subscription) {
+            if (! $subscription->isDirty('status')) {
+                return;
+            }
+
+            $was = $subscription->getOriginal('status');
+            $now = $subscription->status;
+
+            if ($now === 'canceled' && $was !== 'canceled') {
+                /*
+                 * Value the loss at what they were paying BEFORE the status
+                 * moved — `Mrr::monthlyValue()` returns 0 for anything that is
+                 * not `active`, so asking it after the change would record
+                 * every churn as ₹0. The status is put back immediately; this
+                 * runs inside `saving`, so nothing is persisted in between.
+                 *
+                 * Deliberately reusing the ONE MRR definition rather than
+                 * recomputing the price here: two definitions of revenue drift,
+                 * and the one that drifts is always the one nobody is watching.
+                 */
+                $subscription->status = $was;
+                $subscription->churned_mrr = Mrr::monthlyValue($subscription);
+                $subscription->status = $now;
+
+                $subscription->churned_at = now();
+                $subscription->churned_from = $was;
+            }
+
+            // Came back. Someone who returned did not churn — leaving the stamp
+            // would double-count them the next time they leave.
+            if ($was === 'canceled' && $now !== 'canceled') {
+                $subscription->churned_at = null;
+                $subscription->churned_mrr = null;
+                $subscription->churned_from = null;
+            }
+        });
+    }
 
     /** P1 / REQ-12 — the paying identity this subscription belongs to. */
     public function account(): \Illuminate\Database\Eloquent\Relations\BelongsTo

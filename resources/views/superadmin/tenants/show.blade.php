@@ -15,8 +15,7 @@
 
     <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
         <div class="d-flex align-items-center gap-3">
-            <span class="d-inline-flex align-items-center justify-content-center rounded-4 bg-primary text-white fw-semibold"
-                  style="width:3rem;height:3rem;font-size:1.25rem;">{{ strtoupper(substr($tenant->store_name, 0, 1)) }}</span>
+            <span class="avatar-page bg-primary text-white fw-semibold">{{ strtoupper(substr($tenant->store_name, 0, 1)) }}</span>
             <div>
                 <h1 class="h4 fw-semibold font-display mb-1">{{ $tenant->store_name }}</h1>
                 <div class="d-flex align-items-center gap-2">

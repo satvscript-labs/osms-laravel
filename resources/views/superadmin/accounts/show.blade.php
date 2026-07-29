@@ -33,8 +33,7 @@
 
     {{-- ---- Header band ---- --}}
     <div class="d-flex flex-wrap align-items-start gap-3 mb-4">
-        <span class="d-inline-flex align-items-center justify-content-center rounded-4 bg-primary text-white fw-semibold flex-shrink-0 order-1"
-              style="width:3rem;height:3rem;font-size:1.25rem;">{{ mb_strtoupper(mb_substr($account->displayName(), 0, 1)) }}</span>
+        <span class="avatar-page bg-primary text-white fw-semibold flex-shrink-0 order-1">{{ mb_strtoupper(mb_substr($account->displayName(), 0, 1)) }}</span>
 
         {{-- P3 — primary action + the full lever set, inline and reachable
              without scrolling. Every matrix row is ≤3 clicks from here.
@@ -145,7 +144,9 @@
     </div>
 
     {{-- ---- Tabs ---- --}}
-    <ul class="nav nav-pills gap-2 mb-3" role="tablist">
+    {{-- `osms-360-tabs` makes five pills scroll sideways on a phone instead of
+         wrapping to a second row and shoving the content down (03 §6.5). --}}
+    <ul class="nav nav-pills gap-2 mb-3 osms-360-tabs" role="tablist">
         @foreach ([
             'stores' => ['Stores', 'bi-shop'],
             'commercial' => ['Commercial', 'bi-cash-stack'],
@@ -278,8 +279,7 @@
                 @empty
                     <div class="col-12">
                         <div class="glass card-lift rounded-4 text-center p-5 animate-fade-up">
-                            <span class="d-inline-flex align-items-center justify-content-center rounded-circle person-avatar mx-auto mb-3"
-                                  style="width:3.25rem;height:3.25rem;font-size:1.2rem;"><i class="bi bi-shop"></i></span>
+                            <span class="d-inline-flex align-items-center justify-content-center rounded-circle person-avatar mx-auto mb-3 person-avatar-lg"><i class="bi bi-shop"></i></span>
                             <h2 class="h6 fw-semibold font-display mb-1">No stores under this customer</h2>
                             <p class="text-muted-foreground text-sm mb-0">They are paying, but nothing is provisioned yet.</p>
                         </div>

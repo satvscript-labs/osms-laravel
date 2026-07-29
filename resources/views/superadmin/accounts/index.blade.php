@@ -9,11 +9,12 @@
     customers list, per CLAUDE.md's reference-implementation rule.
 --}}
 <div class="p-4 p-md-5"
-     x-data="superadminCustomers({
+     x-data="superadminList({
         endpoint: @js(route('superadmin.accounts.index')),
         query: @js($search),
         filter: @js($filter),
         serverTotal: {{ $accounts->total() }},
+        noun: 'customer',
      })">
 
     <div class="d-flex flex-column flex-md-row gap-3 align-items-md-end justify-content-between mb-4">
@@ -134,8 +135,7 @@
 
             <template x-if="!loading && !rows.length">
                 <div class="glass card-lift rounded-4 text-center p-5 animate-fade-up">
-                    <span class="d-inline-flex align-items-center justify-content-center rounded-circle person-avatar mx-auto mb-3"
-                          style="width:3.25rem;height:3.25rem;font-size:1.2rem;"><i class="bi bi-search"></i></span>
+                    <span class="d-inline-flex align-items-center justify-content-center rounded-circle person-avatar mx-auto mb-3 person-avatar-lg"><i class="bi bi-search"></i></span>
                     <h2 class="h5 fw-semibold font-display">No customers match</h2>
                     <p class="text-muted-foreground mb-0">Try a different name, email, or store.</p>
                 </div>
@@ -191,8 +191,7 @@
             @endif
         @else
             <div class="glass card-lift rounded-4 text-center p-5 animate-fade-up">
-                <span class="d-inline-flex align-items-center justify-content-center rounded-circle person-avatar mx-auto mb-3"
-                      style="width:3.25rem;height:3.25rem;font-size:1.2rem;"><i class="bi bi-person-vcard"></i></span>
+                <span class="d-inline-flex align-items-center justify-content-center rounded-circle person-avatar mx-auto mb-3 person-avatar-lg"><i class="bi bi-person-vcard"></i></span>
                 <h2 class="h5 fw-semibold font-display">
                     {{ $filter === 'attention' ? 'Nothing needs you' : 'No customers yet' }}
                 </h2>
@@ -206,70 +205,5 @@
     </div>
 </div>
 
-@push('scripts')
-<script nonce="{{ csp_nonce() }}">
-function superadminCustomers(config) {
-    return {
-        endpoint: config.endpoint,
-        query: config.query || '',
-        filter: config.filter || 'attention',
-        rows: [],
-        loading: false,
-        total: config.serverTotal,
-        listKey: 0,
-        // 'idle' shows the server-rendered rows; the moment the operator types
-        // or switches filter we swap to live results. Never a full page reload.
-        mode: 'idle',
-        seq: 0,
-
-        setFilter(f) {
-            if (this.filter === f) return;
-            this.filter = f;
-            this.refresh();
-        },
-
-        async refresh() {
-            this.mode = 'live';
-            this.loading = true;
-            const mine = ++this.seq;
-
-            const url = new URL(this.endpoint, window.location.origin);
-            if (this.query) url.searchParams.set('q', this.query);
-            url.searchParams.set('filter', this.filter);
-
-            // Keep the URL shareable/bookmarkable without a navigation.
-            history.replaceState(null, '', url.toString());
-
-            try {
-                const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
-                const data = await res.json();
-                if (mine !== this.seq) return; // a newer keystroke already won
-                this.rows = data.rows || [];
-                this.total = data.total || 0;
-                this.listKey++;
-            } finally {
-                if (mine === this.seq) this.loading = false;
-            }
-        },
-
-        displayTotal() {
-            const n = this.mode === 'idle' ? config.serverTotal : this.total;
-            return n + (n === 1 ? ' customer' : ' customers');
-        },
-
-        initial(name) { return (name || '?').trim().charAt(0).toUpperCase(); },
-        money(v) { return Number(v || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 }); },
-
-        pillLabel(a) {
-            if (a.access === 'grace') return 'In grace';
-            return { active: 'Active', trialing: 'Trial', past_due: 'Past due', canceled: 'Cancelled' }[a.status] || 'No subscription';
-        },
-        pillTone(a) {
-            if (a.access === 'grace') return 'osms-badge-amber';
-            return { active: 'osms-badge-green', trialing: 'osms-badge-blue', past_due: 'osms-badge-amber' }[a.status] || '';
-        },
-    };
-}
-</script>
-@endpush
+@include('superadmin.partials.live-list')
 @endsection

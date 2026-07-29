@@ -7,6 +7,7 @@ use App\Models\Account;
 use App\Models\Subscription;
 use App\Models\SubscriptionInvoice;
 use App\Models\Tenant;
+use App\Support\Metrics;
 use App\Support\Mrr;
 use Illuminate\View\View;
 
@@ -109,10 +110,16 @@ class DashboardController extends Controller
         // backfill runs. Surfaced so a half-migrated deploy is visible, not silent.
         $unbackfilled = Tenant::whereNull('account_id')->count();
 
+        $metrics = app(Metrics::class);
+
         return view('superadmin.dashboard', [
             'stats' => $stats,
             'worklist' => $worklist,
             'unbackfilled' => $unbackfilled,
+            // P6 / §8 — the two metrics the one ledger and the account layer
+            // made possible. Both state their own limits on the surface.
+            'collection' => $metrics->collection(),
+            'churn' => $metrics->churn(),
             'recent' => Account::query()
                 ->with('subscription')
                 ->withCount('stores')

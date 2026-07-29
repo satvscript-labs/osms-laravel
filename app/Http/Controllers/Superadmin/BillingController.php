@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Superadmin;
 
 use App\Http\Controllers\Controller;
 use App\Models\SubscriptionInvoice;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
@@ -18,7 +19,7 @@ class BillingController extends Controller
 {
     private const PER_PAGE = 50;
 
-    public function index(Request $request): View
+    public function index(Request $request): View|JsonResponse
     {
         $method = (string) $request->query('method', 'all');
         $search = trim((string) $request->query('q', ''));
@@ -40,11 +41,23 @@ class BillingController extends Controller
             ->paginate(self::PER_PAGE)
             ->withQueryString();
 
+        // P6 — live filtering, per the LIQUID MOTION STANDARD. Searching a
+        // ledger by receipt number is the most typing-heavy job in the panel
+        // and was the worst place to make somebody wait for a page load.
+        if ($request->wantsJson()) {
+            return response()->json([
+                'rows' => $rows->getCollection()->map(fn ($r) => $this->row($r))->values(),
+                'total' => $rows->total(),
+                'has_more' => $rows->hasMorePages(),
+            ]);
+        }
+
         // Aggregates in SQL. Reversed rows never count toward collected revenue.
         $live = SubscriptionInvoice::withoutGlobalScopes()->whereNull('reversed_at');
 
         return view('superadmin.billing.index', [
             'rows' => $rows,
+            'liveRows' => $rows->getCollection()->map(fn ($r) => $this->row($r)),
             'method' => $method,
             'search' => $search,
             'totals' => [
@@ -61,5 +74,32 @@ class BillingController extends Controller
                 ->groupBy('method')
                 ->pluck('c', 'method'),
         ]);
+    }
+
+    /**
+     * One ledger row — the SAME shape server-rendered and live.
+     *
+     * Money is formatted here, once, rather than in two renderers. A row whose
+     * amount is punctuated differently depending on how it was fetched is the
+     * kind of thing that makes an operator doubt the ledger itself.
+     */
+    private function row(SubscriptionInvoice $invoice): array
+    {
+        return [
+            'id' => $invoice->id,
+            'amount' => '₹ ' . number_format((float) $invoice->amount, 2),
+            'method' => $invoice->method,
+            'method_label' => $invoice->methodLabel(),
+            'reversed' => $invoice->isReversed(),
+            'account' => $invoice->account?->displayName(),
+            'account_url' => $invoice->account_id
+                ? route('superadmin.accounts.show', $invoice->account_id)
+                : null,
+            'store' => $invoice->tenant?->store_name,
+            'receipt_no' => $invoice->receipt_no,
+            'reference' => $invoice->reference,
+            'date' => ($invoice->paid_at ?? $invoice->created_at)?->format('d M Y'),
+            'by' => $invoice->recordedBy?->name ?? 'automatic',
+        ];
     }
 }

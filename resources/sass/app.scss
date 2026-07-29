@@ -165,6 +165,11 @@ $enable-negative-margins:  true;
   --text-sm:   0.82rem;
   --text-md:   0.9rem;
   --text-base: 1rem;
+  // P6 — the two glyph sizes that were being written as literals in Blade
+  // (1.2rem on empty-state circles, 1.25rem on page-header avatars). Naming
+  // them is what stops the next one being 1.15rem "because it looked right".
+  --text-lg:   1.2rem;
+  --text-xl:   1.25rem;
 
   // --- Radii ---
   --radius-sm:  0.45rem;
@@ -694,6 +699,26 @@ body {
 }
 .person-row:hover .person-avatar { transform: scale(1.06); }
 
+// P6 token pass — two sizes that existed only as inline style attributes.
+//
+// `.person-avatar` scaled up for an empty-state illustration; `.avatar-page`
+// is the identity mark in a page header. Both were previously written as
+// `style="width:3.25rem;height:3.25rem;font-size:1.2rem"` in nine Blade files,
+// which is exactly the drift the design directive forbids: nine places to
+// change, and nothing to stop the tenth being slightly different.
+.person-avatar-lg {
+  width: 3.25rem; height: 3.25rem;
+  font-size: var(--text-lg);
+}
+
+.avatar-page {
+  width: 3rem; height: 3rem; flex-shrink: 0;
+  border-radius: var(--radius-xl);
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: var(--text-xl);
+  font-weight: 600;
+}
+
 .person-chevron {
   color: var(--osms-faint);
   flex-shrink: 0;
@@ -708,6 +733,17 @@ body {
   padding: 0.15rem 0.55rem; border-radius: var(--radius-pill);
   background: var(--surface-sunken); color: var(--osms-muted);
   font-size: var(--text-xs); font-weight: 500; white-space: nowrap;
+}
+
+// P6 — a chip acting as a filter, in its chosen state.
+//
+// The billing method filter previously hard-coded this as an inline
+// `style="background:var(--osms-primary-soft)"` on the active link. Same
+// treatment, named once, so "selected" looks identical wherever chips filter.
+.meta-chip-selected {
+  background: var(--osms-primary-soft);
+  color: var(--osms-primary);
+  font-weight: 600;
 }
 
 // Item avatar (inventory rows) — rounded-square type glyph, matches the
@@ -1595,7 +1631,93 @@ $wa-green-strong: #0b8043;
 }
 
 // ============================================================
-// 23. PRINT  (thermal receipt + A4)
+// 23. OPERATOR PANEL — SMALL SCREENS  (P6 / 03 §6.5)
+// ============================================================
+// "The operator will open this on a phone during a support call." The bar is
+// not the whole panel on a phone — it is that the Customer 360 and Record
+// payment are genuinely usable there.
+//
+// This is the retrofit 03 §6.2 predicted: because all sixteen actions render
+// through ONE `<x-operator-modal>`, converting them to bottom sheets is this
+// single block rather than sixteen edits. Scoped to `.operator-sheet` so the
+// tenant app's own modals are untouched (Track C decides those).
+
+@media (max-width: 575.98px) {
+  .operator-sheet .modal-dialog {
+    // Anchored to the bottom, where a thumb is — not floating mid-screen.
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    width: 100%;
+    max-width: 100%;
+    margin: 0;
+    // Never taller than the viewport; the body scrolls, the sheet does not.
+    max-height: 92dvh;
+    display: flex;
+  }
+
+  .operator-sheet .modal-content {
+    border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+    max-height: 92dvh;
+  }
+
+  .operator-sheet .modal-body {
+    overflow-y: auto;
+    // Room for the home indicator, so the last field is not under it.
+    padding-bottom: var(--space-4);
+  }
+
+  // Slides up from the edge it is attached to, rather than scaling from centre.
+  .operator-sheet.fade .modal-dialog {
+    transform: translateY(100%);
+    transition: transform var(--duration-slow) var(--ease-spring);
+  }
+  .operator-sheet.show .modal-dialog { transform: translateY(0); }
+
+  // A grab handle, so it reads as a sheet before it is touched.
+  .operator-sheet .modal-header::before {
+    content: '';
+    position: absolute;
+    top: 0.5rem; left: 50%;
+    transform: translateX(-50%);
+    width: 2.25rem; height: 0.25rem;
+    border-radius: var(--radius-pill);
+    background: var(--osms-border-strong);
+  }
+  .operator-sheet .modal-header { position: relative; padding-top: 1.5rem !important; }
+
+  // Full-width, thumb-sized actions. Two half-width buttons on a phone are
+  // two chances to hit the wrong one.
+  .operator-sheet .modal-footer { flex-direction: column-reverse; }
+  .operator-sheet .modal-footer .btn { width: 100%; }
+
+  /*
+   * R-1 (10_RESPONSIVE_UI) — the 16px input floor.
+   *
+   * iOS Safari ZOOMS the whole page when a focused input's font-size is below
+   * 16px, and does not zoom back out. Our form controls inherit ~14.4px, so
+   * every operator action on an iPhone would jolt the page on first tap. This
+   * is not a preference; it is the platform's rule.
+   */
+  .operator-sheet .form-control,
+  .operator-sheet .form-select,
+  .operator-sheet textarea { font-size: 16px; }
+}
+
+// Customer 360 tabs — five pills do not fit a phone. Scroll them sideways
+// rather than wrapping into a second row that pushes content down.
+@media (max-width: 767.98px) {
+  .osms-360-tabs {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .osms-360-tabs::-webkit-scrollbar { display: none; }
+  .osms-360-tabs .nav-item { flex: 0 0 auto; }
+}
+
+// ============================================================
+// 24. PRINT  (thermal receipt + A4)
 // ============================================================
 @media print {
   .app-sidebar, .no-print, .btn { display: none !important; }

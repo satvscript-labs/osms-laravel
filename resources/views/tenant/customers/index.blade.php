@@ -155,8 +155,7 @@
             {{-- Live empty state --}}
             <template x-if="!loading && !rows.length">
                 <div class="glass card-lift rounded-4 text-center p-5 animate-fade-up">
-                    <span class="d-inline-flex align-items-center justify-content-center rounded-circle person-avatar mx-auto mb-3"
-                          style="width:3.25rem;height:3.25rem;font-size:1.2rem;"><i class="bi bi-search"></i></span>
+                    <span class="d-inline-flex align-items-center justify-content-center rounded-circle person-avatar mx-auto mb-3 person-avatar-lg"><i class="bi bi-search"></i></span>
                     <h2 class="h5 fw-semibold font-display">No customers match your search</h2>
                     <p class="text-muted-foreground mb-0">Try a different name or phone number.</p>
                 </div>

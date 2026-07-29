@@ -36,7 +36,10 @@
     Slot = the form fields. The footer, preview panel and submit are ours.
 --}}
 
-<div class="modal fade" id="{{ $id }}" tabindex="-1" aria-labelledby="{{ $id }}-title" aria-hidden="true"
+{{-- `operator-sheet` is what turns this into a bottom sheet on phones (03 §6.5).
+     Scoped to the operator overlay deliberately — the tenant app's modals are
+     Track C's call, not this phase's. --}}
+<div class="modal fade operator-sheet" id="{{ $id }}" tabindex="-1" aria-labelledby="{{ $id }}-title" aria-hidden="true"
      x-data="operatorModal({
         id: @js($id),
         previewAction: @js($preview),

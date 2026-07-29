@@ -24,8 +24,7 @@
     </div>
 
     <div class="d-flex flex-wrap align-items-start gap-3 mb-4">
-        <span class="d-inline-flex align-items-center justify-content-center rounded-4 bg-primary text-white flex-shrink-0"
-              style="width:3rem;height:3rem;font-size:1.25rem;"><i class="bi bi-shop"></i></span>
+        <span class="avatar-page bg-primary text-white flex-shrink-0"><i class="bi bi-shop"></i></span>
         <div class="min-w-0">
             <h1 class="h4 fw-semibold font-display mb-1 text-truncate">{{ $store->store_name }}</h1>
             <div class="chip-rail">

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Superadmin;
 use App\Http\Controllers\Controller;
 use App\Models\AdminAuditLog;
 use App\Models\Tenant;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
 
@@ -22,7 +23,7 @@ class StoreController extends Controller
 {
     private const PER_PAGE = 25;
 
-    public function index(Request $request): View
+    public function index(Request $request): View|JsonResponse
     {
         $search = trim((string) $request->query('q', ''));
         $filter = (string) $request->query('filter', 'all');
@@ -46,8 +47,20 @@ class StoreController extends Controller
             ->paginate(self::PER_PAGE)
             ->withQueryString();
 
+        // P6 — the live-filter endpoint. CLAUDE.md's LIQUID MOTION STANDARD:
+        // "Full-page GET reloads for search are not acceptable." This list was
+        // the last operator surface still submitting a form to search.
+        if ($request->wantsJson()) {
+            return response()->json([
+                'rows' => $stores->getCollection()->map(fn ($s) => $this->row($s))->values(),
+                'total' => $stores->total(),
+                'has_more' => $stores->hasMorePages(),
+            ]);
+        }
+
         return view('superadmin.stores.index', [
             'stores' => $stores,
+            'rows' => $stores->getCollection()->map(fn ($s) => $this->row($s)),
             'search' => $search,
             'filter' => $filter,
             'counts' => [
@@ -57,6 +70,28 @@ class StoreController extends Controller
                 'quiet' => Tenant::doesntHave('orders')->count(),
             ],
         ]);
+    }
+
+    /**
+     * One list row — the SAME shape server-rendered and live.
+     *
+     * Built in one place precisely so the two renderings cannot drift: a row
+     * that gains a badge when you type, or loses one, is the kind of bug nobody
+     * reports because it looks like a redraw.
+     */
+    private function row(Tenant $store): array
+    {
+        return [
+            'id' => $store->id,
+            'name' => $store->store_name,
+            'account' => $store->account?->displayName(),
+            'status' => $store->store_status,
+            'closed' => $store->isClosed(),
+            'billable' => (bool) $store->is_billable,
+            'customers' => (int) ($store->customers_count ?? 0),
+            'orders' => (int) ($store->orders_count ?? 0),
+            'url' => route('superadmin.stores.show', $store),
+        ];
     }
 
     /**

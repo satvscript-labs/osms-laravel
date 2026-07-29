@@ -47,6 +47,61 @@
         </div>
     </div>
 
+    {{-- ---- 1b. Collection health (P6 / §8) ----
+         Newly possible now that ONE ledger records every method. Labelled
+         "expected", not "outstanding", because OSMS raises no invoices in
+         advance — there is no receivable, only a price and a date. Saying so
+         costs one line and stops the number being read as a debtors' book. --}}
+    <div class="row g-3 mb-4 stagger">
+        <div class="col-12 col-lg-6">
+            <div class="card card-lift border-0 shadow-sm rounded-4 h-100"
+                 @if ($collection['overdue_count'] > 0) style="border-left:3px solid var(--tone-amber) !important;" @endif>
+                <div class="card-body p-4 d-flex align-items-start gap-3">
+                    <span class="osms-stat-icon {{ $collection['overdue_count'] > 0 ? 'osms-stat-icon-amber' : 'osms-stat-icon-neutral' }} flex-shrink-0">
+                        <i class="bi bi-exclamation-circle"></i>
+                    </span>
+                    <div class="min-w-0">
+                        <p class="section-label mb-1">Overdue</p>
+                        <p class="h4 fw-semibold font-display mb-1">
+                            ₹ {{ number_format($collection['overdue_amount'], 0) }}
+                        </p>
+                        <p class="text-muted-foreground text-sm mb-0">
+                            @if ($collection['overdue_count'] === 0)
+                                Nobody is behind on payment.
+                            @else
+                                from {{ $collection['overdue_count'] }}
+                                {{ Str::plural('customer', $collection['overdue_count']) }} whose payment
+                                has failed or not arrived.
+                            @endif
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12 col-lg-6">
+            <div class="card card-lift border-0 shadow-sm rounded-4 h-100">
+                <div class="card-body p-4 d-flex align-items-start gap-3">
+                    <span class="osms-stat-icon osms-stat-icon-blue flex-shrink-0">
+                        <i class="bi bi-calendar-check"></i>
+                    </span>
+                    <div class="min-w-0">
+                        <p class="section-label mb-1">Expected in {{ $collection['horizon_days'] }} days</p>
+                        <p class="h4 fw-semibold font-display mb-1">
+                            ₹ {{ number_format($collection['due_soon_amount'], 0) }}
+                        </p>
+                        <p class="text-muted-foreground text-sm mb-0">
+                            {{ $collection['due_soon_count'] }}
+                            {{ Str::plural('renewal', $collection['due_soon_count']) }} at their current
+                            price. Nothing is invoiced in advance, so this is what they would pay —
+                            not a bill anyone has sent.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     {{-- ---- 2. How healthy is the base ---- --}}
     <p class="section-label mb-2">Base</p>
     <div class="row g-3 mb-4 stagger">
@@ -78,6 +133,58 @@
         </div>
         <div class="col-6 col-lg-2">
             <x-metric-card label="Cancelled" value="{{ $stats['canceled'] }}" icon="bi-x-circle" />
+        </div>
+    </div>
+
+    {{-- ---- 2b. Churn (P6 / §8) ----
+         §8: "ship, but label honestly — at n=1 a single churn = 100%. Show
+         counts, not percentages, until n ≥ 10." So this shows people and
+         rupees, states the window, and admits what it cannot see. A metric
+         that hides its own blind spot is worse than no metric. --}}
+    <p class="section-label mb-2">Churn · last {{ $churn['window_days'] }} days</p>
+    <div class="card border-0 shadow-sm rounded-4 mb-4 animate-fade-up">
+        <div class="card-body p-4">
+            <div class="row g-4">
+                <div class="col-6 col-lg-3">
+                    <p class="text-muted-foreground mb-1 text-xs">Customers lost</p>
+                    <p class="h4 fw-semibold font-display mb-0">{{ $churn['logo'] }}</p>
+                </div>
+                <div class="col-6 col-lg-3">
+                    <p class="text-muted-foreground mb-1 text-xs">Monthly revenue lost</p>
+                    <p class="h4 fw-semibold font-display mb-0">₹ {{ number_format($churn['revenue'], 0) }}</p>
+                </div>
+                <div class="col-6 col-lg-3">
+                    <p class="text-muted-foreground mb-1 text-xs">Trials that lapsed</p>
+                    <p class="h4 fw-semibold font-display mb-0">{{ $churn['trials_lapsed'] }}</p>
+                </div>
+                <div class="col-6 col-lg-3">
+                    <p class="text-muted-foreground mb-1 text-xs">Churn rate</p>
+                    <p class="h4 fw-semibold font-display mb-0 text-faint">—</p>
+                </div>
+            </div>
+
+            <div class="mt-3 pt-3" style="border-top:1px solid var(--osms-border);">
+                <p class="text-muted-foreground text-sm mb-0">
+                    <i class="bi bi-info-circle me-1"></i>
+                    @unless ($churn['show_percentage'])
+                        No rate is shown below {{ \App\Support\Metrics::PERCENTAGE_FLOOR }} paying
+                        customers — with a handful of customers a single departure reads as a
+                        catastrophic percentage and tells you nothing.
+                    @else
+                        A rate is now meaningful at this size and can be added.
+                    @endunless
+                    A lapsed trial is counted separately: it never paid, so losing it is a
+                    different question.
+                    @if ($churn['untracked'] > 0)
+                        <br>
+                        <i class="bi bi-exclamation-triangle me-1" style="color:var(--tone-amber);"></i>
+                        {{ $churn['untracked'] }} earlier
+                        {{ Str::plural('cancellation', $churn['untracked']) }}
+                        {{ $churn['untracked'] === 1 ? 'predates' : 'predate' }} churn tracking and
+                        {{ $churn['untracked'] === 1 ? 'is' : 'are' }} not counted above.
+                    @endif
+                </p>
+            </div>
         </div>
     </div>
 
@@ -119,8 +226,7 @@
             </a>
         @empty
             <div class="text-center p-5">
-                <span class="d-inline-flex align-items-center justify-content-center rounded-circle person-avatar mx-auto mb-3"
-                      style="width:3.25rem;height:3.25rem;font-size:1.2rem;"><i class="bi bi-check2"></i></span>
+                <span class="d-inline-flex align-items-center justify-content-center rounded-circle person-avatar mx-auto mb-3 person-avatar-lg"><i class="bi bi-check2"></i></span>
                 <h2 class="h6 fw-semibold font-display mb-1">Nothing needs you today</h2>
                 <p class="text-muted-foreground text-sm mb-0">
                     No overdue payments, and nothing expiring in the next two weeks.
