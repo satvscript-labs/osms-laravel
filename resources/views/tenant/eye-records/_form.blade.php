@@ -285,6 +285,7 @@
         const num = (v) => { const x = parseFloat(v); return Number.isFinite(x) ? x : null; };
         const round = (x) => Math.round(x * 100) / 100;
         const dirty = {}; // fields the user typed into directly (never auto-overwritten)
+        const auto_copied = {}; // fields automatically mirrored in this session
 
         const isAxis = (input) => /_axis$/.test(input.name);
         const isVa = (input) => /_va$/.test(input.name);
@@ -393,6 +394,7 @@
             // re-validated exactly as if it had been typed.
             if (eye === 'od' && ! dirty['os_' + f]) {
                 setValue(el('os_' + f), el('od_' + f).value);
+                auto_copied['os_' + f] = true;
             }
 
             derive('od');
@@ -540,6 +542,16 @@
 
             format(input);
             if (isAxis(input)) markAxisFilled(input);
+
+            input.addEventListener('focus', () => {
+                if (auto_copied[input.name]) {
+                    setValue(input, '');
+                    auto_copied[input.name] = false;
+                    dirty[input.name] = true;
+                    derive(eye);
+                    validate();
+                }
+            });
 
             input.addEventListener('input', () => {
                 if (isAxis(input)) markAxisFilled(input);
