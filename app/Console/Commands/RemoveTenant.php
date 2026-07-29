@@ -4,9 +4,8 @@ namespace App\Console\Commands;
 
 use App\Models\Tenant;
 use App\Models\User;
+use App\Services\StoreClosure;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Schema;
 
 /**
  * Permanently remove a store and everything belonging to it.
@@ -20,6 +19,11 @@ use Illuminate\Support\Facades\Schema;
  *
  * Addressed by UUID only. Store names are not unique and MySQL compares them
  * case-insensitively, so a name is not safe to point a destructive command at.
+ *
+ * P5 — the deletion itself now lives in `StoreClosure`, shared with the panel's
+ * closure surface. This command keeps the confirmation ceremony and the report;
+ * both doors destroy data through exactly one code path, so a fix to the cascade
+ * can never land on one and miss the other.
  */
 class RemoveTenant extends Command
 {
@@ -29,13 +33,10 @@ class RemoveTenant extends Command
 
     protected $description = 'Permanently delete a store, its users and all its data';
 
-    /** Every table that hangs off a tenant, for the before/after inventory. */
-    private const OWNED_TABLES = [
-        'customers', 'eye_records', 'patients', 'orders', 'order_items', 'payments',
-        'inventory', 'stock_movements', 'tax_invoices', 'subscriptions',
-        'subscription_invoices', 'staff_invitations', 'activity_logs',
-        'whatsapp_configs', 'whatsapp_messages',
-    ];
+    public function __construct(private readonly StoreClosure $closure)
+    {
+        parent::__construct();
+    }
 
     public function handle(): int
     {
@@ -56,7 +57,7 @@ class RemoveTenant extends Command
         }
 
         $users = User::withoutGlobalScopes()->where('tenant_id', $tenant->id)->get();
-        $counts = $this->inventory($tenant->id);
+        $counts = $this->closure->inventory($tenant->id);
 
         $this->newLine();
         $this->line('<options=bold>About to permanently delete</>');
@@ -96,52 +97,35 @@ class RemoveTenant extends Command
             }
         }
 
-        DB::transaction(function () use ($tenant, $users) {
-            // Users first and by hand: the FK would otherwise strand them.
-            foreach ($users as $user) {
-                $user->forceDelete();
-            }
+        $id = $tenant->id;
+        $name = $tenant->store_name;
 
-            $tenant->delete();
-        });
+        // --force here means "skip the typed confirmation", which for a store
+        // that was never formally closed also means skipping the retention
+        // window. That is the CLI's job, not the panel's.
+        $this->closure->purge($tenant, 'osms:remove-tenant', force: true);
 
-        return $this->verify($tenant->id, $tenant->store_name);
-    }
-
-    /** @return array<string,int> */
-    private function inventory(string $tenantId): array
-    {
-        $counts = [];
-
-        foreach (self::OWNED_TABLES as $table) {
-            if (! Schema::hasTable($table) || ! Schema::hasColumn($table, 'tenant_id')) {
-                continue;
-            }
-            $counts[$table] = DB::table($table)->where('tenant_id', $tenantId)->count();
-        }
-
-        return $counts;
+        return $this->report($id, $name);
     }
 
     /** Prove the cascade actually fired and left nothing addressable behind. */
-    private function verify(string $tenantId, string $name): int
+    private function report(string $tenantId, string $name): int
     {
-        $leftovers = array_filter($this->inventory($tenantId));
-        $strandedUsers = User::withoutGlobalScopes()->where('tenant_id', $tenantId)->count();
+        $result = $this->closure->verify($tenantId);
 
         $this->newLine();
 
-        if ($leftovers === [] && $strandedUsers === 0 && ! Tenant::find($tenantId)) {
+        if ($result['clean']) {
             $this->info("\"{$name}\" and everything belonging to it is gone. Nothing was left behind.");
 
             return self::SUCCESS;
         }
 
         $this->error('Deletion did not fully clean up:');
-        if ($strandedUsers > 0) {
-            $this->line("  {$strandedUsers} user(s) still reference this tenant");
+        if ($result['stranded_users'] > 0) {
+            $this->line("  {$result['stranded_users']} user(s) still reference this tenant");
         }
-        foreach ($leftovers as $table => $n) {
+        foreach ($result['leftovers'] as $table => $n) {
             $this->line("  {$table}: {$n} row(s) remain");
         }
 

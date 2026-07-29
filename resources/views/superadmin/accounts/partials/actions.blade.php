@@ -303,3 +303,88 @@
     <input id="sup-reason" name="reason" type="text" required maxlength="500" class="form-control"
            placeholder="e.g. they pay by bank transfer each year">
 </x-operator-modal>
+
+{{-- ══════════════════════════════════════════════════════════════
+     P5 · Access & operations
+     Rows 14 (credentials) and 16 (closure), plus read-only view-as.
+     ══════════════════════════════════════════════════════════════ --}}
+
+{{-- ── Row 16 · Closure, in two steps weeks apart ───────────────── --}}
+@foreach ($account->stores as $store)
+    @if ($store->isClosed())
+        <x-operator-modal :id="'m-reopen-' . $store->id" title="Reopen {{ $store->store_name }}"
+            :action="route('superadmin.accounts.store.reopen', [$account, $store])"
+            label="Reopen store" dismiss="Never mind" icon="bi-arrow-counterclockwise"
+            intro="Everything is exactly where they left it — customers, orders, inventory and staff logins all come straight back.">
+            <label class="form-label" for="ro-{{ $store->id }}">Why <span style="color:var(--tone-red);">*</span></label>
+            <input id="ro-{{ $store->id }}" name="reason" type="text" required maxlength="500"
+                   class="form-control" placeholder="e.g. changed their mind, paying again">
+        </x-operator-modal>
+
+        @if ($store->isPurgeable())
+            <x-operator-modal :id="'m-purge-' . $store->id" title="Delete {{ $store->store_name }} permanently"
+                :action="route('superadmin.accounts.store.purge', [$account, $store])" method="DELETE"
+                label="Delete everything" dismiss="Keep it" icon="bi-trash3" tone="danger"
+                :confirm="$store->store_name"
+                confirmLabel="Type the store name exactly to confirm"
+                intro="This destroys every customer record, prescription, order and login belonging to this store. It cannot be undone and there is no copy.">
+                <div class="p-3 rounded-3 mb-1" style="background:var(--tone-red-bg);">
+                    <p class="text-sm mb-0" style="color:var(--tone-red);">
+                        <strong>{{ number_format($storeRowCounts[$store->id] ?? 0) }} rows</strong> and
+                        <strong>{{ $store->users_count }} {{ Str::plural('login', $store->users_count) }}</strong>
+                        will be destroyed.
+                    </p>
+                </div>
+                <label class="form-label mt-2" for="pg-{{ $store->id }}">Why <span style="color:var(--tone-red);">*</span></label>
+                <input id="pg-{{ $store->id }}" name="reason" type="text" required maxlength="500" class="form-control">
+            </x-operator-modal>
+        @endif
+    @else
+        <x-operator-modal :id="'m-close-' . $store->id" title="Close {{ $store->store_name }}"
+            :action="route('superadmin.accounts.store.close', [$account, $store])"
+            label="Close this store" dismiss="Never mind" icon="bi-archive" tone="danger"
+            intro="Access stops immediately. Nothing is deleted — their data is kept for {{ config('saas.closure_retention_days', 30) }} days and can be restored in full at any point in that window.">
+            <label class="form-label" for="cl-{{ $store->id }}">Why <span style="color:var(--tone-red);">*</span></label>
+            <input id="cl-{{ $store->id }}" name="reason" type="text" required maxlength="500"
+                   class="form-control" placeholder="e.g. shop sold, moving to another system">
+            <p class="text-muted-foreground text-xs mt-3 mb-0">
+                <i class="bi bi-info-circle me-1"></i>
+                Their subscription is left alone. If this is their last store, cancel the
+                customer separately — closing a branch must never stop the money for the others.
+            </p>
+        </x-operator-modal>
+    @endif
+@endforeach
+
+{{-- ── Row 14 · Credentials, and read-only view-as ──────────────── --}}
+@foreach ($account->stores as $store)
+    @foreach ($store->users as $u)
+        <x-operator-modal :id="'m-cred-' . $u->id" title="New password for {{ $u->name }}"
+            :action="route('superadmin.accounts.credential', [$account, $u])"
+            label="Issue new password" dismiss="Never mind" icon="bi-key" tone="danger"
+            intro="Their current password stops working immediately, and any device still signed in with “remember me” is signed out. The new one is shown to you once.">
+            <label class="form-label" for="cr-{{ $u->id }}">Why <span style="color:var(--tone-red);">*</span></label>
+            <input id="cr-{{ $u->id }}" name="reason" type="text" required maxlength="500"
+                   class="form-control" placeholder="e.g. locked out, reset email never arrived">
+            <p class="text-muted-foreground text-xs mt-3 mb-0">
+                <i class="bi bi-shield-lock me-1"></i>
+                The password is never stored or logged — only that you issued one, and why.
+            </p>
+        </x-operator-modal>
+
+        @if ($store->store_status === 'active')
+            <x-operator-modal :id="'m-view-' . $u->id" title="View {{ $store->store_name }} as {{ $u->name }}"
+                :action="route('superadmin.accounts.impersonate', [$account, $u])"
+                label="Start viewing" dismiss="Never mind" icon="bi-eye"
+                intro="You will see exactly what they see, and you will not be able to change anything. The session ends by itself after {{ config('saas.impersonation_minutes', 30) }} minutes.">
+                <label class="form-label" for="im-{{ $u->id }}">Why <span style="color:var(--tone-red);">*</span></label>
+                <input id="im-{{ $u->id }}" name="reason" type="text" required maxlength="500"
+                       class="form-control" placeholder="e.g. support call — their order list looks empty">
+                <p class="text-muted-foreground text-xs mt-3 mb-0">
+                    <i class="bi bi-record-circle me-1"></i>
+                    Starting and leaving are both recorded against your name, with the duration.
+                </p>
+            </x-operator-modal>
+        @endif
+    @endforeach
+@endforeach

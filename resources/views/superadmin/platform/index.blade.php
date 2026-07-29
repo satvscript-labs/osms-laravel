@@ -17,6 +17,29 @@
         </p>
     </div>
 
+    {{-- ---- Ops health (P5) ----
+         First, because it answers the question you did not know to ask. Every
+         tile is an observable measurement; where a fact cannot be known it says
+         "unknown" rather than showing a reassuring tick (playbook §9). --}}
+    <p class="section-label mb-2">Operations</p>
+    <div class="row g-3 mb-4 stagger">
+        @foreach ($health as $check)
+            <div class="col-6 col-lg-3">
+                <div class="card card-lift border-0 shadow-sm rounded-4 h-100">
+                    <div class="card-body p-4">
+                        <div class="d-flex align-items-center gap-2 mb-2">
+                            <span class="osms-badge osms-badge-{{ $check['tone'] === 'neutral' ? 'blue' : $check['tone'] }}">
+                                <span class="osms-badge-dot"></span>{{ $check['value'] }}
+                            </span>
+                        </div>
+                        <p class="fw-semibold mb-1">{{ $check['label'] }}</p>
+                        <p class="text-muted-foreground text-sm mb-0">{{ $check['detail'] }}</p>
+                    </div>
+                </div>
+            </div>
+        @endforeach
+    </div>
+
     {{-- ---- Supervised mode ---- --}}
     <div class="card border-0 shadow-sm rounded-4 mb-4"
          @if ($supervisedGlobally) style="border-left:3px solid var(--tone-amber) !important;" @endif>

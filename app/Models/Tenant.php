@@ -22,12 +22,18 @@ class Tenant extends Model
         'gst_rate',
         'is_billable',
         'store_status',
+        'closed_at',
+        'closure_reason',
+        'purge_after',
+        'closed_by',
     ];
 
     protected $casts = [
         'gst_enabled' => 'boolean',
         'gst_rate' => 'decimal:2',
         'is_billable' => 'boolean',
+        'closed_at' => 'datetime',
+        'purge_after' => 'datetime',
     ];
 
     /** P1 / REQ-12 — the paying identity this store belongs to ("Customer" in the panel). */
@@ -127,11 +133,51 @@ class Tenant extends Model
      */
     public function hasActiveAccess(): bool
     {
-        if ($this->store_status === 'suspended') {
+        if ($this->isBlocked()) {
             return false;
         }
 
         return (bool) $this->governingSubscription()?->hasAccess();
+    }
+
+    /**
+     * P5 — the store itself is shut, whatever the money says.
+     *
+     * Two different intents, one answer for the enforcement layer: `suspended`
+     * is a lever you expect to release, `closed` is the end of the relationship.
+     * Every caller that asks "may this store be used?" must go through here, so
+     * a third state can never be added and silently forgotten in one branch.
+     */
+    public function isBlocked(): bool
+    {
+        return in_array($this->store_status, ['suspended', 'closed'], true);
+    }
+
+    public function isClosed(): bool
+    {
+        return $this->store_status === 'closed';
+    }
+
+    /**
+     * Whether the retention window has run out and the data may now be destroyed.
+     * A closed store with time left on the clock is deliberately NOT purgeable —
+     * the window is the whole safety mechanism.
+     */
+    public function isPurgeable(): bool
+    {
+        return $this->isClosed()
+            && $this->purge_after !== null
+            && $this->purge_after->isPast();
+    }
+
+    /** Whole days left before this store's data may be destroyed. */
+    public function daysUntilPurge(): ?int
+    {
+        if (! $this->isClosed() || ! $this->purge_after) {
+            return null;
+        }
+
+        return max(0, (int) ceil(now()->diffInDays($this->purge_after, false)));
     }
 
     public function customers(): HasMany

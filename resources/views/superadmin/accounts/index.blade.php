@@ -24,6 +24,12 @@
                 Who pays, what they pay, and who needs chasing.
             </p>
         </div>
+
+        {{-- P5 / REQ-2 — the door that did not exist until now: selling to
+             somebody who has never visited the site. --}}
+        <a href="{{ route('superadmin.accounts.create') }}" class="btn btn-primary flex-shrink-0">
+            <i class="bi bi-person-plus me-1"></i> New customer
+        </a>
     </div>
 
     {{-- Search + segmented filter. One row on phones: the search flexes, the

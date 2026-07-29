@@ -14,6 +14,9 @@
         @include('partials.sidebar')
 
         <div class="app-main">
+            {{-- P5 — read-only "view as store". Above everything, on every page. --}}
+            @include('partials.impersonation-band')
+
             {{-- Mobile top bar --}}
             <div class="d-md-none d-flex align-items-center justify-content-between border-bottom bg-white px-3 py-2 no-print">
                 <button class="btn btn-sm btn-light" type="button" data-bs-toggle="offcanvas"

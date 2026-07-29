@@ -26,15 +26,17 @@ class Phase71SuperadminBoundaryTest extends TestCase
     use RefreshDatabase;
 
     private Tenant $tenant;
+    private User $owner;
     private \App\Models\SubscriptionInvoice $invoice;
 
     protected function setUp(): void
     {
         parent::setUp();
 
-        $owner = User::factory()->create(['tenant_id' => null, 'role' => 'store_admin']);
+        $this->owner = User::factory()->create(['tenant_id' => null, 'role' => 'store_admin']);
         $this->tenant = app(\App\Services\StoreProvisioner::class)
-            ->provision($owner, ['store_name' => 'Boundary Optical']);
+            ->provision($this->owner, ['store_name' => 'Boundary Optical']);
+        $this->owner->refresh();
 
         // A real ledger row, so the reversal route resolves and its gate is
         // genuinely exercised rather than 404-ing during model binding.
@@ -58,6 +60,8 @@ class Phase71SuperadminBoundaryTest extends TestCase
             'account' => $this->tenant->account_id,
             'store' => $this->tenant->id,
             'invoice' => $this->invoice->id,
+            // P5 — the credential and view-as routes act on a person.
+            'user' => $this->owner->id,
         ];
 
         foreach (Route::getRoutes() as $route) {

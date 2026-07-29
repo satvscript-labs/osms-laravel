@@ -12,6 +12,10 @@
     'preview' => null,          // lifecycle action name to live-preview, or null
     'account' => null,          // account id, required when $preview is set
     'intro' => null,
+    'confirm' => null,          // exact phrase the operator must type to arm the
+                                // primary button — for irreversible actions only
+    'confirmName' => 'confirm_name',
+    'confirmLabel' => 'Type the name to confirm',
 ])
 
 {{--
@@ -37,6 +41,7 @@
         id: @js($id),
         previewAction: @js($preview),
         previewUrl: @js($account ? route('superadmin.accounts.preview', $account) : null),
+        confirmPhrase: @js($confirm),
      })">
     <div class="modal-dialog modal-dialog-centered">
         <form method="POST" action="{{ $action }}" class="modal-content rounded-4 border-0"
@@ -64,6 +69,18 @@
                 @endif
 
                 {{ $slot }}
+
+                {{-- ---- Typed confirmation ----
+                     For irreversible actions only. Typing the name is not
+                     ceremony: it is the pause that turns a reflex click into a
+                     decision, and it makes "I clicked the wrong row" impossible.
+                     Compared exactly, here and again on the server. --}}
+                @if ($confirm)
+                    <label class="form-label mt-3" for="{{ $id }}-confirm">{{ $confirmLabel }}</label>
+                    <input id="{{ $id }}-confirm" name="{{ $confirmName }}" type="text" required
+                           class="form-control font-monospace" autocomplete="off" spellcheck="false"
+                           x-model="typed" placeholder="{{ $confirm }}">
+                @endif
 
                 {{-- ---- Live "this will…" panel ----
                      Motion contract (CLAUDE.md): nothing toggles on/off. Once
@@ -135,7 +152,7 @@
                 <button type="button" class="btn btn-light flex-grow-1 flex-sm-grow-0" data-bs-dismiss="modal">{{ $dismiss }}</button>
                 <button type="submit"
                         class="btn {{ $tone === 'danger' ? 'btn-danger' : 'btn-primary' }} flex-grow-1 flex-sm-grow-0"
-                        :disabled="submitting || (previewAction && settled && !!error)">
+                        :disabled="submitting || (previewAction && settled && !!error) || (confirmPhrase && typed !== confirmPhrase)">
                     <span x-show="!submitting">{{ $label }}</span>
                     <span x-show="submitting" x-cloak>
                         <span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Working…
@@ -157,6 +174,10 @@ function operatorModal(config) {
     return {
         previewAction: config.previewAction,
         previewUrl: config.previewUrl,
+        // Non-null only for irreversible actions; the primary button stays
+        // disabled until `typed` matches it exactly.
+        confirmPhrase: config.confirmPhrase || null,
+        typed: '',
         rows: [],
         warnings: [],
         ledger: 0,
@@ -171,9 +192,22 @@ function operatorModal(config) {
         seq: 0,
 
         init() {
-            if (!this.previewAction || !this.previewUrl) return;
-
             const root = this.$el;
+
+            // Reset on close ALWAYS — including for modals with no preview, whose
+            // typed confirmation must re-arm rather than stay satisfied from the
+            // last time it was opened.
+            root.addEventListener('hidden.bs.modal', () => {
+                clearTimeout(this._t);
+                this.seq++;                 // orphan any in-flight response
+                this.rows = []; this.warnings = []; this.ledger = 0; this.error = null;
+                this.settled = false; this.loading = false; this.submitting = false;
+                this.typed = '';
+                const field = root.querySelector('input[x-model="typed"]');
+                if (field) field.value = '';
+            });
+
+            if (!this.previewAction || !this.previewUrl) return;
 
             // Re-quote whenever any field changes — the operator should never
             // have to guess what a different amount or date would do.
@@ -183,14 +217,6 @@ function operatorModal(config) {
             // Quote once on open, so the panel is populated before they touch
             // anything (many actions need no input at all).
             root.addEventListener('shown.bs.modal', () => this.refresh());
-            root.addEventListener('hidden.bs.modal', () => {
-                // Full reset on close so the next open re-quotes from scratch
-                // rather than showing a stale answer for the old inputs.
-                clearTimeout(this._t);
-                this.seq++;                 // orphan any in-flight response
-                this.rows = []; this.warnings = []; this.ledger = 0; this.error = null;
-                this.settled = false; this.loading = false; this.submitting = false;
-            });
         },
 
         schedule() {

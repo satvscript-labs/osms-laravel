@@ -26,6 +26,18 @@ class EnsureSubscriptionActive
             return $next($request);
         }
 
+        $tenant = $user->tenant;
+
+        // P5 — closure is checked BEFORE the billing exemption below, deliberately.
+        // Billing self-exempts so a lapsed store can still reach the page where it
+        // pays; a CLOSED store must not, because taking money for a relationship
+        // you have ended is worse than a dead end. The lock screen is all it gets.
+        if ($tenant?->isClosed()) {
+            return $request->routeIs('tenant.locked')
+                ? $next($request)
+                : redirect()->route('tenant.locked');
+        }
+
         // The pay page (and the staff lock screen) must stay reachable while locked.
         if ($request->routeIs('tenant.billing.*', 'tenant.locked')) {
             return $next($request);
@@ -34,9 +46,8 @@ class EnsureSubscriptionActive
         // P1 / REQ-12 — access derives from the ACCOUNT's subscription (the payer),
         // falling back to the store's own row before the backfill runs. A store
         // individually suspended is locked even when the account is paid up.
-        $tenant = $user->tenant;
         $subscription = $tenant?->governingSubscription();
-        $state = $tenant && $tenant->store_status === 'suspended'
+        $state = $tenant && $tenant->isBlocked()
             ? 'locked'
             : ($subscription?->accessState() ?? 'locked');
 

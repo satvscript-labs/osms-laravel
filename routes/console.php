@@ -39,3 +39,14 @@ Schedule::command('osms:monitor-failed-jobs')->hourly()->withoutOverlapping(5);
 // FILE exists. Unlike cron's MAILTO, that also catches the cron being deleted or
 // never firing. Runs well after the 02:00/02:30 backup window.
 Schedule::command('osms:monitor-backups')->dailyAt('09:00')->withoutOverlapping(5);
+
+// P5 — the scheduler's own heartbeat.
+//
+// The panel's ops surface needs to answer "is the cron alive?" honestly. On this
+// host the app cannot see cron at all, and inferring health from side effects is
+// how a dead scheduler stays invisible for a week. So the scheduler stamps the
+// time every five minutes; a stale stamp means exactly one thing.
+Schedule::call(fn () => \App\Models\PlatformSetting::set(
+    \App\Models\PlatformSetting::SCHEDULER_HEARTBEAT,
+    now()->toIso8601String(),
+))->everyFiveMinutes()->name('scheduler-heartbeat')->withoutOverlapping(5);

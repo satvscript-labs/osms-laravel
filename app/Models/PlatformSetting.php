@@ -28,6 +28,17 @@ class PlatformSetting extends Model
     public const SUPERVISED_MODE = 'supervised_mode';
     public const SELF_SERVE_ENABLED = 'self_serve_enabled';
 
+    /**
+     * P5 — the scheduler's heartbeat.
+     *
+     * On this host the scheduler is a cron entry the app cannot observe. Rather
+     * than infer health from side effects ("mail went out, so cron must be
+     * alive"), the scheduler stamps this every five minutes. A stale stamp is
+     * then unambiguous: the cron is not running. Same reasoning as the backup
+     * watchdog — check the observable outcome, not the intention.
+     */
+    public const SCHEDULER_HEARTBEAT = 'scheduler_heartbeat';
+
     private const CACHE_PREFIX = 'platform_setting:';
 
     public static function get(string $key, mixed $default = null): mixed

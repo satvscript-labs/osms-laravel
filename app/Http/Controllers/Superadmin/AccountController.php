@@ -7,6 +7,7 @@ use App\Models\Account;
 use App\Models\Subscription;
 use App\Models\SubscriptionInvoice;
 use App\Services\PriceResolver;
+use App\Services\StoreClosure;
 use App\Support\Mrr;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -59,6 +60,9 @@ class AccountController extends Controller
             'subscription.plan',
             // Eager-loaded with counts so the Stores tab is one query, not N.
             'stores' => fn ($q) => $q->withCount(['customers', 'orders', 'users'])->orderBy('store_name'),
+            // P5 — the Access tab lists every person who can sign in. Eager-loaded
+            // (admins first) so the tab is one more query, not one per store.
+            'stores.users' => fn ($q) => $q->orderByRaw("role = 'store_admin' desc")->orderBy('name'),
             'owner',
         ]);
 
@@ -85,6 +89,20 @@ class AccountController extends Controller
                 ->where('account_id', $account->id)
                 ->whereNull('reversed_at')
                 ->sum('amount'),
+            /*
+             * P5 / row 16 — "N rows will be destroyed", for the purge confirmation.
+             *
+             * Counted only for stores that are actually closed, because the count
+             * sweeps fifteen tables and no live store can be purged anyway. An
+             * operator about to delete a shop's history deserves to see its size
+             * first; an operator looking at a healthy customer deserves not to
+             * pay for that query.
+             */
+            'storeRowCounts' => $account->stores
+                ->filter->isClosed()
+                ->mapWithKeys(fn ($store) => [
+                    $store->id => array_sum(app(StoreClosure::class)->inventory($store->id)),
+                ]),
             'auditLogs' => \App\Models\AdminAuditLog::query()
                 ->whereIn('tenant_id', $account->stores->pluck('id'))
                 ->with('admin:id,name')

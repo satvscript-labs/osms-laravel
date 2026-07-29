@@ -1546,7 +1546,56 @@ $wa-green-strong: #0b8043;
 }
 
 // ============================================================
-// 22. PRINT  (thermal receipt + A4)
+// 22. IMPERSONATION BAND + ONE-TIME CREDENTIAL  (P5)
+// ============================================================
+// Two surfaces that must never be mistaken for ordinary chrome. Both use the
+// amber tone pair deliberately: this is neither an error nor a success, it is
+// a state the operator has to keep in mind.
+
+.impersonation-band {
+  position: sticky;
+  top: 0;
+  z-index: 1035;              // above page content, below modals (1055)
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0.55rem var(--space-4);
+  background: var(--tone-amber-bg);
+  color: var(--tone-amber);
+  font-size: var(--text-sm);
+  border-bottom: 1px solid color-mix(in srgb, var(--tone-amber) 30%, transparent);
+  // Entrance, like everything else — it slides in rather than appearing.
+  animation: fade-up var(--duration-base) var(--ease-spring) both;
+}
+
+.impersonation-clock {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  padding: 0.15rem 0.45rem;
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--tone-amber) 16%, transparent);
+  font-variant-numeric: tabular-nums;   // no width jitter as it counts down
+}
+
+// The password, shown exactly once. Monospaced and large enough to read down
+// a phone line, because that is literally how it gets delivered.
+.credential-secret {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius);
+  background: var(--surface-sunken);
+  border: 1px dashed var(--osms-border-strong);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 1.15rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  word-break: break-all;
+}
+
+// ============================================================
+// 23. PRINT  (thermal receipt + A4)
 // ============================================================
 @media print {
   .app-sidebar, .no-print, .btn { display: none !important; }

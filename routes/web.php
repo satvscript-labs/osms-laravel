@@ -4,13 +4,16 @@ use App\Http\Controllers\InvitationController;
 use App\Http\Controllers\OnboardingController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\RazorpayWebhookController;
+use App\Http\Controllers\Superadmin\AccessController as SuperadminAccess;
 use App\Http\Controllers\Superadmin\AccountActionController as SuperadminAccountAction;
 use App\Http\Controllers\Superadmin\AccountController as SuperadminAccount;
 use App\Http\Controllers\Superadmin\AuditLogController as SuperadminAuditLog;
 use App\Http\Controllers\Superadmin\BillingController as SuperadminBilling;
+use App\Http\Controllers\Superadmin\ClosureController as SuperadminClosure;
 use App\Http\Controllers\Superadmin\DashboardController as SuperadminDashboard;
 use App\Http\Controllers\Superadmin\PlanController as SuperadminPlan;
 use App\Http\Controllers\Superadmin\PlatformController as SuperadminPlatform;
+use App\Http\Controllers\Superadmin\ProvisioningController as SuperadminProvisioning;
 use App\Http\Controllers\Superadmin\StoreController as SuperadminStore;
 use App\Http\Controllers\Superadmin\SubscriptionController as SuperadminSubscription;
 use App\Http\Controllers\Superadmin\TenantController as SuperadminTenant;
@@ -44,6 +47,17 @@ Route::get('/dashboard', fn () => redirect(Navigation::homeFor(request()->user()
 Route::middleware('auth')->group(function () {
     Route::get('/onboarding', [OnboardingController::class, 'create'])->name('onboarding.create');
     Route::post('/onboarding', [OnboardingController::class, 'store'])->name('onboarding.store');
+
+    /*
+    | P5 — leaving a "view as store" session.
+    |
+    | Deliberately NOT under the `superadmin` gate: while impersonating, the
+    | signed-in user IS the shopkeeper, so EnsureSuperadmin would refuse the one
+    | request whose whole job is to hand the operator their own seat back. The
+    | authorisation is the session state itself — with no impersonation in
+    | progress this route does nothing at all.
+    */
+    Route::post('/impersonation/stop', [SuperadminAccess::class, 'stopImpersonating'])->name('impersonation.stop');
 
     // Account profile (Breeze)
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
@@ -113,6 +127,8 @@ Route::middleware(['auth', 'superadmin', 'throttle:120,1'])
         | different questions: "who pays me?" vs "which shops are live?".
         */
         Route::get('/customers', [SuperadminAccount::class, 'index'])->name('accounts.index');
+        // P5 / REQ-2 — registered BEFORE `{account}`, or "new" is read as an id.
+        Route::get('/customers/new', [SuperadminProvisioning::class, 'create'])->name('accounts.create');
         Route::get('/customers/{account}', [SuperadminAccount::class, 'show'])->name('accounts.show');
 
         // Cross-account operational sweep of every store.
@@ -160,6 +176,22 @@ Route::middleware(['auth', 'superadmin', 'throttle:120,1'])
             Route::patch('/customers/{account}/notes', [SuperadminAccountAction::class, 'updateNotes'])->name('accounts.notes');
             Route::patch('/customers/{account}/supervised', [SuperadminPlatform::class, 'superviseAccount'])->name('accounts.supervised');
             Route::patch('/platform/supervised-mode', [SuperadminPlatform::class, 'supervisedMode'])->name('platform.supervised-mode');
+
+            /*
+            | P5 — access & operations (matrix rows 1–2, 14, 16).
+            |
+            | Provisioning, credentials and closure sit behind the same recent
+            | re-authentication as the money levers. Creating a login, resetting
+            | someone's password and destroying a shop's history are not lesser
+            | acts than moving a renewal date.
+            */
+            Route::post('/customers', [SuperadminProvisioning::class, 'store'])->name('accounts.store');
+            Route::post('/customers/{account}/users/{user}/credential', [SuperadminAccess::class, 'reissue'])->name('accounts.credential');
+            Route::post('/customers/{account}/users/{user}/impersonate', [SuperadminAccess::class, 'impersonate'])->name('accounts.impersonate');
+
+            Route::post('/customers/{account}/stores/{tenant}/close', [SuperadminClosure::class, 'close'])->name('accounts.store.close');
+            Route::post('/customers/{account}/stores/{tenant}/reopen', [SuperadminClosure::class, 'reopen'])->name('accounts.store.reopen');
+            Route::delete('/customers/{account}/stores/{tenant}', [SuperadminClosure::class, 'purge'])->name('accounts.store.purge');
 
             Route::patch('/stores/{tenant}/notes', [SuperadminTenant::class, 'updateNotes'])->name('tenants.notes');
             Route::patch('/stores/{tenant}/subscription', [SuperadminSubscription::class, 'update'])->name('subscription.update');

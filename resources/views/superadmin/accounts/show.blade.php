@@ -27,6 +27,10 @@
         <i class="bi bi-arrow-left"></i> All customers
     </a>
 
+    {{-- P5 — a freshly issued password, shown exactly once. Top of the page,
+         because if it scrolls past unnoticed it is gone. --}}
+    @include('superadmin.partials.credential-card')
+
     {{-- ---- Header band ---- --}}
     <div class="d-flex flex-wrap align-items-start gap-3 mb-4">
         <span class="d-inline-flex align-items-center justify-content-center rounded-4 bg-primary text-white fw-semibold flex-shrink-0 order-1"
@@ -184,8 +188,10 @@
                                             <i class="bi bi-arrow-right-short"></i>
                                         </a>
                                         <div class="chip-rail mt-1">
-                                            @if ($store->store_status !== 'active')
-                                                <span class="osms-badge osms-badge-red"><span class="osms-badge-dot"></span>Suspended</span>
+                                            @if ($store->isClosed())
+                                                <span class="osms-badge osms-badge-red"><span class="osms-badge-dot"></span>Closed</span>
+                                            @elseif ($store->store_status !== 'active')
+                                                <span class="osms-badge osms-badge-amber"><span class="osms-badge-dot"></span>Suspended</span>
                                             @else
                                                 <span class="osms-badge osms-badge-green"><span class="osms-badge-dot"></span>Active</span>
                                             @endif
@@ -214,20 +220,58 @@
                                         </div>
                                     @endforeach
                                 </div>
+
+                                {{-- P5 — a closed store states its own deadline. The
+                                     date is the reassurance: nothing is gone yet. --}}
+                                @if ($store->isClosed())
+                                    <div class="mt-3 p-3 rounded-3" style="background:var(--tone-red-bg);">
+                                        <p class="fw-semibold mb-1 text-sm" style="color:var(--tone-red);">
+                                            <i class="bi bi-archive me-1"></i>Closed
+                                            {{ $store->closed_at?->format('d M Y') }}
+                                        </p>
+                                        <p class="text-muted-foreground text-sm mb-0">
+                                            @if ($store->isPurgeable())
+                                                The retention window has passed — this store's data can now be deleted.
+                                            @else
+                                                Everything is kept until <strong>{{ $store->purge_after?->format('d M Y') }}</strong>
+                                                ({{ $store->daysUntilPurge() }} {{ Str::plural('day', $store->daysUntilPurge()) }}),
+                                                and can be restored in full until then.
+                                            @endif
+                                            @if ($store->closure_reason) <br><em>“{{ $store->closure_reason }}”</em> @endif
+                                        </p>
+                                    </div>
+                                @endif
                             </div>
 
                             <div class="px-4 py-3 d-flex flex-wrap gap-2"
                                  style="border-top:1px solid var(--osms-border);">
-                                <button type="button" class="btn btn-light btn-sm"
-                                        data-bs-toggle="modal" data-bs-target="#m-store-{{ $store->id }}">
-                                    <i class="bi {{ $store->store_status === 'suspended' ? 'bi-play-circle' : 'bi-pause-circle' }} me-1"></i>
-                                    {{ $store->store_status === 'suspended' ? 'Reactivate' : 'Suspend' }}
-                                </button>
-                                <button type="button" class="btn btn-light btn-sm"
-                                        data-bs-toggle="modal" data-bs-target="#m-bill-{{ $store->id }}">
-                                    <i class="bi bi-receipt-cutoff me-1"></i>
-                                    {{ $store->is_billable ? 'Exclude from billing' : 'Include in billing' }}
-                                </button>
+                                @if ($store->isClosed())
+                                    <button type="button" class="btn btn-light btn-sm"
+                                            data-bs-toggle="modal" data-bs-target="#m-reopen-{{ $store->id }}">
+                                        <i class="bi bi-arrow-counterclockwise me-1"></i>Reopen
+                                    </button>
+                                    @if ($store->isPurgeable())
+                                        <button type="button" class="btn btn-light btn-sm text-danger"
+                                                data-bs-toggle="modal" data-bs-target="#m-purge-{{ $store->id }}">
+                                            <i class="bi bi-trash3 me-1"></i>Delete permanently
+                                        </button>
+                                    @endif
+                                @else
+                                    <button type="button" class="btn btn-light btn-sm"
+                                            data-bs-toggle="modal" data-bs-target="#m-store-{{ $store->id }}">
+                                        <i class="bi {{ $store->store_status === 'suspended' ? 'bi-play-circle' : 'bi-pause-circle' }} me-1"></i>
+                                        {{ $store->store_status === 'suspended' ? 'Reactivate' : 'Suspend' }}
+                                    </button>
+                                    <button type="button" class="btn btn-light btn-sm"
+                                            data-bs-toggle="modal" data-bs-target="#m-bill-{{ $store->id }}">
+                                        <i class="bi bi-receipt-cutoff me-1"></i>
+                                        {{ $store->is_billable ? 'Exclude from billing' : 'Include in billing' }}
+                                    </button>
+                                    <button type="button" class="btn btn-light btn-sm text-danger ms-auto"
+                                            data-bs-toggle="modal" data-bs-target="#m-close-{{ $store->id }}">
+                                        <i class="bi bi-archive me-1"></i>Close
+                                    </button>
+                                @endif
                             </div>
                         </div>
                     </div>
@@ -241,6 +285,21 @@
                         </div>
                     </div>
                 @endforelse
+
+                {{-- P5 / matrix row 1 — a branch for someone who already pays.
+                     It joins their existing clock rather than starting a second. --}}
+                <div class="col-12 col-xl-6">
+                    <a href="{{ route('superadmin.accounts.create', ['account' => $account->id]) }}"
+                       class="card card-lift border-0 rounded-4 h-100 text-decoration-none d-flex align-items-center justify-content-center p-4 text-center"
+                       style="border:1px dashed var(--osms-border-strong) !important;background:transparent;min-height:8rem;">
+                        <span class="d-inline-flex align-items-center justify-content-center rounded-3 mb-2"
+                              style="width:2.5rem;height:2.5rem;background:var(--osms-primary-soft);color:var(--osms-primary);">
+                            <i class="bi bi-plus-lg"></i>
+                        </span>
+                        <span class="fw-semibold">Add a store</span>
+                        <span class="text-muted-foreground text-sm">Joins this customer's existing subscription</span>
+                    </a>
+                </div>
             </div>
         </div>
 
@@ -373,29 +432,59 @@
             </div>
         </div>
 
-        {{-- ===== Access ===== --}}
+        {{-- ===== Access (P5 — matrix row 14 + view-as) ===== --}}
         <div class="tab-pane fade" id="tab-access" role="tabpanel">
-            <div class="card border-0 shadow-sm rounded-4">
-                <div class="card-body p-4">
-                    <p class="section-label mb-3">People</p>
-                    @foreach ($account->stores as $store)
-                        <p class="fw-semibold text-sm mb-2">{{ $store->store_name }}</p>
-                        @foreach ($store->users()->orderByRaw("role = 'store_admin' desc")->get() as $u)
-                            <div class="d-flex align-items-center gap-2 py-1 text-sm">
-                                <div class="flex-grow-1 min-w-0">
-                                    <p class="mb-0 fw-medium text-truncate">{{ $u->name }}</p>
-                                    <p class="mb-0 text-muted-foreground text-xs text-truncate">{{ $u->email }}</p>
+            <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
+                @forelse ($account->stores as $store)
+                    <div class="px-4 pt-4 pb-2 d-flex align-items-center justify-content-between gap-2">
+                        <p class="section-label mb-0">{{ $store->store_name }}</p>
+                        <span class="meta-chip">{{ $store->users->count() }}/{{ $store->seatLimit() }} seats</span>
+                    </div>
+
+                    @foreach ($store->users as $u)
+                        <div class="person-row" style="cursor:default;">
+                            <span class="person-avatar">{{ mb_strtoupper(mb_substr($u->name, 0, 1)) }}</span>
+                            <div class="flex-grow-1 min-w-0">
+                                <div class="d-flex align-items-center gap-2 flex-wrap">
+                                    <span class="fw-semibold text-truncate">{{ $u->name }}</span>
+                                    <span class="meta-chip">{{ $u->role === 'store_admin' ? 'admin' : 'staff' }}</span>
+                                    @if ($u->hasTwoFactorEnabled())
+                                        <span class="meta-chip" title="Two-factor authentication is on"><i class="bi bi-shield-check"></i> 2FA</span>
+                                    @endif
                                 </div>
-                                <span class="meta-chip">{{ $u->role === 'store_admin' ? 'admin' : 'staff' }}</span>
+                                <div class="text-muted-foreground text-sm mt-1 text-truncate">{{ $u->email }}</div>
                             </div>
-                        @endforeach
+
+                            <div class="d-flex gap-2 flex-shrink-0">
+                                {{-- Row 14. The secret is shown once, on return. --}}
+                                <button type="button" class="btn btn-light btn-sm"
+                                        data-bs-toggle="modal" data-bs-target="#m-cred-{{ $u->id }}"
+                                        title="Issue a new password">
+                                    <i class="bi bi-key"></i><span class="d-none d-lg-inline ms-1">New password</span>
+                                </button>
+                                @if ($store->store_status === 'active')
+                                    <button type="button" class="btn btn-light btn-sm"
+                                            data-bs-toggle="modal" data-bs-target="#m-view-{{ $u->id }}"
+                                            title="See their screen, read-only">
+                                        <i class="bi bi-eye"></i><span class="d-none d-lg-inline ms-1">View as</span>
+                                    </button>
+                                @endif
+                            </div>
+                        </div>
                     @endforeach
-                    <p class="text-muted-foreground text-sm mt-3 mb-0">
-                        Credential re-issue and read-only impersonation arrive with the operator
-                        actions.
+                @empty
+                    <p class="text-muted-foreground text-center py-4 mb-0 text-sm">
+                        Nobody can sign in — this customer has no stores yet.
                     </p>
-                </div>
+                @endforelse
             </div>
+
+            <p class="text-muted-foreground text-xs mt-3 mb-0">
+                <i class="bi bi-info-circle me-1"></i>
+                Viewing as a store is read-only and lasts
+                {{ config('saas.impersonation_minutes', 30) }} minutes. Entering and leaving are
+                both recorded against your name.
+            </p>
         </div>
 
         {{-- ===== Notes & audit ===== --}}

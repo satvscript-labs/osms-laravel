@@ -59,4 +59,25 @@ return [
     'backup_max_age_hours' => (int) env('OSMS_BACKUP_MAX_AGE_HOURS', 26),
     'backup_min_bytes' => (int) env('OSMS_BACKUP_MIN_BYTES', 1024),
 
+    /*
+    | P5 / REQ-7 — "view as store" (read-only impersonation).
+    |
+    | Short on purpose. This is long enough to answer a support call and short
+    | enough that an operator who closes their laptop mid-session does not leave
+    | a live door into a customer's data. Raising it buys nothing: the session
+    | can simply be started again.
+    */
+    'impersonation_minutes' => (int) env('OSMS_IMPERSONATION_MINUTES', 30),
+
+    /*
+    | P5 / REQ-7, matrix row 16 — the retention window between closing a store
+    | and its data being destroyed.
+    |
+    | This number IS the safety mechanism: closure is instant and reversible,
+    | purging is neither and cannot happen before the window elapses. It also
+    | covers the case the owner cares about — a customer who leaves in anger in
+    | January and asks for their shop back in February.
+    */
+    'closure_retention_days' => (int) env('OSMS_CLOSURE_RETENTION_DAYS', 30),
+
 ];

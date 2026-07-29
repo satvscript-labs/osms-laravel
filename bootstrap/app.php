@@ -17,6 +17,9 @@ return Application::configure(basePath: dirname(__DIR__))
             \App\Http\Middleware\SecurityHeaders::class,
             // SEC-05 — hold a half-authenticated session on the 2FA challenge.
             \App\Http\Middleware\EnforceTwoFactor::class,
+            // P5 — "view as store" is read-only, enforced on every route rather
+            // than on the ones we remembered to protect.
+            \App\Http\Middleware\ReadOnlyImpersonation::class,
         ]);
 
         $middleware->alias([

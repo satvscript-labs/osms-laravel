@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Account;
 use App\Models\AdminAuditLog;
 use App\Models\PlatformSetting;
+use App\Support\PlatformHealth;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -22,6 +23,9 @@ class PlatformController extends Controller
     {
         return view('superadmin.platform.index', [
             'supervisedGlobally' => PlatformSetting::supervisedGlobally(),
+            // P5 — the ops surface. Everything here is a real measurement, not
+            // an inference; see PlatformHealth for why each one is observable.
+            'health' => app(PlatformHealth::class)->checks(),
             // Accounts supervised individually — the platform switch is separate
             // and is shown above, so this lists only deliberate per-customer calls.
             'supervisedAccounts' => Account::where('supervised', true)
