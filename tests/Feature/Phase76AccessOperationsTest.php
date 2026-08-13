@@ -172,7 +172,18 @@ class Phase76AccessOperationsTest extends TestCase
 
         // 0 is a real choice, not "unset" — someone who paid on the spot should
         // not also get a fortnight free.
-        $this->assertTrue($subscription->current_period_end->isToday());
+        //
+        // ⚠ Compared in the BILLING timezone, not the app's. A trial end is a
+        // calendar date in Asia/Kolkata (StoreProvisioner builds it there on
+        // purpose), and `isToday()` asks UTC — so between 18:30 UTC and
+        // midnight the IST date is already tomorrow and this assertion failed
+        // while the product was correct. It passed for two weeks and then
+        // started failing at a certain hour of day, which is exactly how a
+        // timezone bug in a test hides.
+        $this->assertSame(
+            now(config('billing.timezone'))->toDateString(),
+            $subscription->current_period_end->toDateString(),
+        );
     }
 
     /*
