@@ -109,9 +109,44 @@ class Account extends Model
         return $this->isSupervised() ? 'Your account is managed directly by our team.' : null;
     }
 
-    /** Stores that count toward the bill (quantity = this count, from P3). */
+    /**
+     * Stores that count toward the bill (quantity = this count, from P3).
+     *
+     * AUD-A11 — a CLOSED store is excluded here rather than by flipping its
+     * `is_billable` flag at closure. Flipping the flag would destroy the
+     * operator's own earlier "exclude this one from billing" decision, and
+     * reopening could not tell the two apart. Closure is a separate axis, so
+     * it is filtered on a separate axis.
+     */
     public function billableStores(): HasMany
     {
-        return $this->stores()->where('is_billable', true);
+        return $this->stores()->where('is_billable', true)->where('store_status', '!=', 'closed');
+    }
+
+    /** Stores that are still in use — neither closed nor suspended. */
+    public function openStores(): HasMany
+    {
+        return $this->stores()->whereNotIn('store_status', ['closed']);
+    }
+
+    /**
+     * AUD-A05 — is there anything left to pay for?
+     *
+     * A customer whose every store is closed kept contributing to MRR forever,
+     * because MRR reads the subscription and closure lives on the store. The
+     * clock is deliberately left running when a branch closes (a three-branch
+     * customer must not stop paying because one shut), but when the LAST one
+     * closes there is nothing being sold and counting it is fiction.
+     *
+     * Uses the loaded relation when the caller eager-loaded it, so the
+     * dashboard's MRR sum stays one query rather than one per customer.
+     */
+    public function hasOpenStore(): bool
+    {
+        if ($this->relationLoaded('stores')) {
+            return $this->stores->contains(fn (Tenant $s) => ! $s->isClosed());
+        }
+
+        return $this->openStores()->exists();
     }
 }

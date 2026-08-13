@@ -36,8 +36,11 @@ class DashboardController extends Controller
         // ---- 1. Money -------------------------------------------------
         // MRR needs the plan + override to resolve a price, so hydrate only
         // the ACTIVE ones (bounded by paying customers, not by all history).
+        // AUD-A05 — `account.stores` is eager-loaded because Mrr now asks
+        // whether the customer has a store still open. Loading it here keeps
+        // that one query for the whole page instead of one per customer.
         $active = Subscription::withoutGlobalScopes()
-            ->with('plan')
+            ->with(['plan', 'account.stores:id,account_id,store_status'])
             ->where('status', 'active')
             ->get();
 

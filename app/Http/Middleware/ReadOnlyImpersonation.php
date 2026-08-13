@@ -30,8 +30,8 @@ class ReadOnlyImpersonation
     /** Read-shaped verbs. Everything else is a write until proven otherwise. */
     private const SAFE_METHODS = ['GET', 'HEAD', 'OPTIONS'];
 
-    /** The only writes allowed: the exits. Never widen this list casually. */
-    private const ALLOWED_ROUTES = ['impersonation.stop', 'logout'];
+    /** The only write allowed: the exit. Never widen this list casually. */
+    private const ALLOWED_ROUTES = ['impersonation.stop'];
 
     public function __construct(private readonly Impersonation $impersonation) {}
 
@@ -48,6 +48,24 @@ class ReadOnlyImpersonation
 
         if (! $state) {
             return $next($request);
+        }
+
+        /*
+         * AUD-A04 — logging out mid-session used to destroy the operator's own
+         * login and write NO exit audit row, because `logout` regenerates the
+         * session and the impersonation state went with it. The panel claims
+         * impersonation is "audited on entry AND exit"; an entry with no exit
+         * is the single worst shape for that trail, since it reads as a session
+         * that never ended.
+         *
+         * The store's own Log out button now means "leave the store", which is
+         * also the only thing an operator could sensibly intend by pressing it.
+         */
+        if ($request->routeIs('logout')) {
+            $this->impersonation->stop($request, 'logout');
+
+            return redirect()->route('superadmin.dashboard')
+                ->with('status', 'You left the view-as session and are back in your own account.');
         }
 
         View::share('impersonation', $state);

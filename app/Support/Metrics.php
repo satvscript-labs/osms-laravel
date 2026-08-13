@@ -52,14 +52,31 @@ class Metrics
         // past_due is bounded by customers who have failed to pay — small by
         // definition, and it must be hydrated because the effective price needs
         // the plan and any negotiated override to resolve.
+        //
+        // AUD-A07 — a SUSPENSION is expressed as `past_due` + an override, so
+        // every deliberately suspended customer was being reported as money you
+        // are owed. You are not owed it: you switched them off. Filtered in PHP
+        // rather than SQL because "is the override still live?" is a calendar
+        // question the model already answers correctly.
         $overdue = Subscription::withoutGlobalScopes()
             ->with('plan')
             ->where('status', 'past_due')
-            ->get();
+            ->get()
+            ->reject(fn (Subscription $s) => $s->override_kind === 'suspension' && $s->hasActiveOverride());
 
+        /*
+         * AUD-A10 — renewals only, never trials.
+         *
+         * A trial that has never paid a rupee was being counted as money
+         * expected within 30 days, which is the most flattering possible
+         * reading of a trial and precisely the fabricated metric playbook §9
+         * forbids. Whether trials convert is a separate question, and §8
+         * defers it for want of volume — so it is not answered here by
+         * implication.
+         */
         $dueSoon = Subscription::withoutGlobalScopes()
             ->with('plan')
-            ->whereIn('status', ['active', 'trialing'])
+            ->where('status', 'active')
             ->whereNotNull('current_period_end')
             ->whereBetween('current_period_end', [
                 now()->toDateString(),

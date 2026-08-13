@@ -131,10 +131,29 @@ class StoreClosure
         $name = $tenant->store_name;
         $accountId = $tenant->account_id;
         $counts = $this->inventory($tenantId);
-        $users = User::withoutGlobalScopes()->where('tenant_id', $tenantId)->get();
 
-        DB::transaction(function () use ($tenant, $users) {
-            // Users first and by hand: the FK would otherwise strand them.
+        /*
+         * AUD-A06 — never delete an operator.
+         *
+         * A superadmin can legitimately carry a `tenant_id` (they were promoted
+         * from a store account, or were seeded onto one), and this deleted
+         * every user whose tenant_id matched — which for the wrong store meant
+         * destroying the platform owner's own login, permanently, as a side
+         * effect of tidying up a shop. They are detached instead: superadmins
+         * are not tenant-owned data and a null tenant_id is their normal state.
+         */
+        $operators = User::withoutGlobalScopes()
+            ->where('tenant_id', $tenantId)->where('role', 'superadmin')->get();
+
+        $users = User::withoutGlobalScopes()
+            ->where('tenant_id', $tenantId)->where('role', '!=', 'superadmin')->get();
+
+        DB::transaction(function () use ($tenant, $users, $operators) {
+            foreach ($operators as $operator) {
+                $operator->forceFill(['tenant_id' => null])->save();
+            }
+
+            // Store users first and by hand: the FK would otherwise strand them.
             foreach ($users as $user) {
                 $user->forceDelete();
             }

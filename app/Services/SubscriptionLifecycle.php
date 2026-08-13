@@ -331,7 +331,12 @@ class SubscriptionLifecycle
     private function doForceExpire(Subscription $s, string $reason): void
     {
         $s->status = 'canceled';
-        $s->current_period_end = now()->subDay()->toDateString();
+        // AUD-A09 — yesterday in the BILLING timezone, like every other clock
+        // operation here. `now()` is UTC, which put the date up to two calendar
+        // days back in IST terms and made "ends today" behave differently
+        // depending on the hour the operator clicked.
+        $s->current_period_end = Carbon::today(config('billing.timezone', 'Asia/Kolkata'))
+            ->subDay()->toDateString();
         $s->cancel_at_period_end = false;
         $s->applyOverride('cancellation', null, $reason);
     }
@@ -350,29 +355,86 @@ class SubscriptionLifecycle
 
     // ---- Row 8 · Failed payment --------------------------------------
 
+    /**
+     * "Their payment did arrive, outside the gateway."
+     *
+     * ⚠ AUD-A01 — this used to set `status = 'active'` and nothing else, which
+     * failed in the only situation it exists for. A `past_due` customer is
+     * normally past their period end, so:
+     *
+     *   • access stayed **locked** — `active` past the boundary and beyond
+     *     grace is locked — so the operator was told the payment was recorded
+     *     while the customer still could not sign in; and
+     *   • the override was pinned to the already-expired period end, making it
+     *     dead on arrival, so that night's reconcile put them straight back to
+     *     `past_due`.
+     *
+     * Both halves of the confirmation message ("Marked as paid — dunning will
+     * not override this") were false. Marking a payment received must move the
+     * clock, exactly as a renewal does — because that is what being paid means.
+     */
     private function doMarkPaid(Subscription $s, array $input, string $reason): void
     {
-        $amount = $input['amount'] !== null && $input['amount'] !== ''
-            ? (float) $input['amount']
+        $given = $input['amount'] ?? null;   // AUD-A03 — the key may be absent
+        $amount = ($given !== null && $given !== '')
+            ? (float) $given
             : $this->prices->effectivePrice($s);
+
+        if ($amount <= 0.0) {
+            throw new InvalidArgumentException('Marking a payment as received needs an amount. To give them the cycle for free, use Waive instead.');
+        }
+
+        $end = $this->advanceOneCycle($s);
 
         $this->payments->record($s, $amount, (string) ($input['method'] ?? 'cash'), [
             'reference' => $input['reference'] ?? null,
             'reason' => $reason,
+            'period_start' => $this->clockBase($s),
+            'period_end' => $end,
         ]);
 
         $s->status = 'active';
+        $s->current_period_end = $end;
+        $s->cancel_at_period_end = false;
 
-        // Manual wins and cancels conflicting automation: the override stops
-        // dunning from re-marking this past_due behind the operator's back.
-        $s->applyOverride('manual_renewal', $s->current_period_end, $reason);
+        // Sticky until the cycle they just paid for ends — long enough to
+        // actually suppress the dunning it is meant to suppress.
+        $s->applyOverride('manual_renewal', $end, $reason);
     }
 
+    /**
+     * "They are not paying for this cycle, and they are not losing access."
+     *
+     * Same AUD-A01 defect and the same fix: a waive that leaves the customer
+     * locked out has waived nothing. It grants the cycle at ₹0 — which is what
+     * a waiver is — and records it, so lifetime value and "what have we given
+     * away?" stay answerable.
+     */
     private function doWaive(Subscription $s, string $reason): void
     {
+        $start = $this->clockBase($s);
+        $end = $this->advanceOneCycle($s);
+
         $s->status = 'active';
-        $s->applyOverride('comp', $s->current_period_end, $reason);
-        $this->payments->recordComp($s, "Waived: {$reason}");
+        $s->current_period_end = $end;
+        $s->cancel_at_period_end = false;
+        $s->applyOverride('comp', $end, $reason);
+
+        $this->payments->recordComp($s, "Waived: {$reason}", $start, $end);
+    }
+
+    /**
+     * One billing cycle on from the clock base — the shared definition used by
+     * renew, mark-paid and waive so the three cannot disagree about what "a
+     * cycle" means.
+     */
+    private function advanceOneCycle(Subscription $s): Carbon
+    {
+        $base = $this->clockBase($s);
+
+        return ($s->interval ?? 'monthly') === 'yearly'
+            ? $base->copy()->addYear()
+            : $base->copy()->addMonth();
     }
 
     // ---------------------------------------------------------------

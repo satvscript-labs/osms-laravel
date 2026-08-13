@@ -52,6 +52,19 @@ class Mrr
             return 0.0;
         }
 
+        // AUD-A05 — a customer with no store left open is not revenue.
+        //
+        // Closure lives on the STORE and money lives on the ACCOUNT, so a
+        // customer whose every shop was closed kept contributing to MRR
+        // indefinitely: the subscription knew nothing about it. Leaving the
+        // clock running when ONE branch closes is deliberate (a three-branch
+        // customer must not stop paying because one shut), but when the last
+        // one closes there is nothing being sold, and counting it is fiction
+        // of exactly the kind AUD-01 was raised about.
+        if ($sub->account && ! $sub->account->hasOpenStore()) {
+            return 0.0;
+        }
+
         $effective = app(PriceResolver::class)->effectivePrice($sub);
 
         return $sub->interval === 'yearly'

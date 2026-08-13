@@ -61,6 +61,15 @@ class Impersonation
 
         $tenant = Tenant::findOrFail($target->tenant_id);
 
+        // AUD-A13 — a closed store cannot be viewed. Without this the session
+        // started, was audited, and then EnsureSubscriptionActive immediately
+        // bounced the operator to the lock screen: a refusal dressed as a
+        // success, plus an impersonation entry in the trail for a session that
+        // never showed anything.
+        if ($tenant->isClosed()) {
+            throw new InvalidArgumentException("{$tenant->store_name} is closed — reopen it before viewing it.");
+        }
+
         // Nesting would make "who is really acting?" unanswerable from the logs.
         if ($this->active($request)) {
             throw new InvalidArgumentException('Already viewing as a store — leave that session first.');

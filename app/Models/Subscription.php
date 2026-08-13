@@ -56,19 +56,34 @@ class Subscription extends Model
 
             if ($now === 'canceled' && $was !== 'canceled') {
                 /*
-                 * Value the loss at what they were paying BEFORE the status
-                 * moved — `Mrr::monthlyValue()` returns 0 for anything that is
-                 * not `active`, so asking it after the change would record
-                 * every churn as ₹0. The status is put back immediately; this
-                 * runs inside `saving`, so nothing is persisted in between.
+                 * Value the loss at the state they were in BEFORE this save —
+                 * all of it, not just the status.
                  *
-                 * Deliberately reusing the ONE MRR definition rather than
-                 * recomputing the price here: two definitions of revenue drift,
-                 * and the one that drifts is always the one nobody is watching.
+                 * `Mrr::monthlyValue()` returns 0 for anything that is not
+                 * `active` AND 0 for anything past its period end, so asking it
+                 * after the change records ₹0. Restoring only the status was
+                 * not enough: AUD-A08 — `force_expire` moves the period end to
+                 * yesterday in the same save, so it recorded every forced
+                 * cancellation as worthless while an ordinary `cancel` of the
+                 * identical customer recorded their real value. One commercial
+                 * event, two different numbers, depending on which button was
+                 * pressed.
+                 *
+                 * Both fields are put back immediately; this runs inside
+                 * `saving`, so nothing is persisted in between. Deliberately
+                 * reusing the ONE MRR definition rather than recomputing the
+                 * price here: two definitions of revenue drift, and the one
+                 * that drifts is always the one nobody is watching.
                  */
+                $pendingStatus = $subscription->status;
+                $pendingEnd = $subscription->current_period_end;
+
                 $subscription->status = $was;
+                $subscription->current_period_end = $subscription->getOriginal('current_period_end');
                 $subscription->churned_mrr = Mrr::monthlyValue($subscription);
-                $subscription->status = $now;
+
+                $subscription->status = $pendingStatus;
+                $subscription->current_period_end = $pendingEnd;
 
                 $subscription->churned_at = now();
                 $subscription->churned_from = $was;

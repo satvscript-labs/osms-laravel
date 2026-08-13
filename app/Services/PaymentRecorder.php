@@ -200,8 +200,17 @@ class PaymentRecorder
         $year = now(config('billing.timezone', 'Asia/Kolkata'))->year;
         $prefix = "OSMS-{$year}-";
 
+        // AUD-A12 — order by LENGTH first, then value.
+        //
+        // A plain string sort puts "OSMS-2026-10000" *before* "OSMS-2026-9999"
+        // (because '1' < '9'), so the moment the four-digit run is exhausted
+        // the "latest" receipt is read as 9999 forever and every subsequent
+        // payment mints 10000 again — duplicate receipt numbers on real
+        // receipts, silently. Sorting by length first restores numeric order
+        // and works identically on MySQL and SQLite.
         $latest = SubscriptionInvoice::withoutGlobalScopes()
             ->where('receipt_no', 'like', $prefix . '%')
+            ->orderByRaw('LENGTH(receipt_no) DESC')
             ->orderByDesc('receipt_no')
             ->lockForUpdate()
             ->value('receipt_no');
