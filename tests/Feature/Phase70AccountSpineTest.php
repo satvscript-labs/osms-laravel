@@ -136,7 +136,13 @@ class Phase70AccountSpineTest extends TestCase
         $this->assertSame(3500.0, $breakdown['effective']);
         $this->assertSame('negotiated', $breakdown['source']);
         $this->assertSame(5999.0, $breakdown['list_price']);
-        $this->assertCount(2, $breakdown['steps']); // list → negotiated: itemised, per PR-13's shape
+
+        // REQ-15 — three steps now: list rate → negotiated rate → branch count.
+        // The branch line is rendered even at one branch, deliberately: a line
+        // that appears only sometimes is a line nobody learns to read.
+        $this->assertCount(3, $breakdown['steps']);
+        $this->assertSame(1, $breakdown['quantity']);
+        $this->assertSame(3500.0, $breakdown['unit_price']);
     }
 
     public function test_price_falls_back_to_config_when_plans_are_not_seeded(): void

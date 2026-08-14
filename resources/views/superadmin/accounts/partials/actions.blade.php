@@ -13,13 +13,14 @@
     :action="route('superadmin.accounts.payment', $account)"
     label="Record payment" icon="bi-cash-coin"
     intro="A payment that arrived outside the gateway — cash at the counter, UPI, a bank transfer.">
-    <div class="row g-3">
+    <div class="row g-3" x-data="bargainField({{ (float) ($price['effective'] ?? 0) }})">
         <div class="col-6">
             <label class="form-label" for="pay-amount">Amount</label>
             <div class="input-group">
                 <span class="input-group-text">₹</span>
                 <input id="pay-amount" name="amount" type="number" step="0.01" min="0" required
-                       value="{{ $price['effective'] ?? '' }}" class="form-control" inputmode="decimal">
+                       x-model.number="amount" value="{{ $price['effective'] ?? '' }}"
+                       class="form-control" inputmode="decimal">
             </div>
         </div>
         <div class="col-6">
@@ -43,6 +44,27 @@
             <label class="form-label" for="pay-note">Note <span class="text-faint">optional</span></label>
             <input id="pay-note" name="reason" type="text" class="form-control" maxlength="500">
         </div>
+
+        {{-- REQ-15 — the counter-bargain.
+             Appears only when the amount typed is BELOW what they owe, because
+             a field that is always there invites a discount nobody asked for.
+             Deliberately not an offer engine: one amount, one reason, this
+             charge only. A standing lower rate is Set negotiated price. --}}
+        <div class="col-12" x-show="discounted" x-cloak x-transition.opacity>
+            <div class="rounded-3 p-3" style="background:var(--tone-green-bg);">
+                <p class="text-sm mb-2" style="color:var(--tone-green);">
+                    <i class="bi bi-tag me-1"></i>
+                    <strong>₹ <span x-text="saved"></span></strong> below their price of
+                    ₹{{ number_format($price['effective'] ?? 0, 2) }} — recorded as a discount
+                    on this payment only, not on their ongoing rate.
+                </p>
+                <label class="form-label" for="pay-discount-why">Why the discount
+                    <span class="text-faint">optional</span></label>
+                <input id="pay-discount-why" name="discount_reason" type="text"
+                       class="form-control" maxlength="500"
+                       placeholder="e.g. bargained at the counter, rounded down">
+            </div>
+        </div>
     </div>
     <p class="text-muted-foreground text-xs mt-3 mb-0">
         <i class="bi bi-info-circle me-1"></i>
@@ -54,13 +76,14 @@
 <x-operator-modal id="m-renew" title="Renew now" :action="$act" preview="renew" :account="$account"
     label="Take payment & renew" icon="bi-arrow-repeat"
     intro="Records the payment AND moves the renewal date. Manual wins for this cycle.">
-    <div class="row g-3">
+    <div class="row g-3" x-data="bargainField({{ (float) ($price['effective'] ?? 0) }})">
         <div class="col-6">
             <label class="form-label" for="rn-amount">Amount</label>
             <div class="input-group">
                 <span class="input-group-text">₹</span>
                 <input id="rn-amount" name="amount" type="number" step="0.01" min="0"
-                       value="{{ $price['effective'] ?? '' }}" class="form-control" inputmode="decimal">
+                       x-model.number="amount" value="{{ $price['effective'] ?? '' }}"
+                       class="form-control" inputmode="decimal">
             </div>
         </div>
         <div class="col-6">
@@ -82,6 +105,22 @@
         <div class="col-6">
             <label class="form-label" for="rn-ref">Reference <span class="text-faint">optional</span></label>
             <input id="rn-ref" name="reference" type="text" class="form-control">
+        </div>
+
+        {{-- REQ-15 — the counter-bargain, on a renewal too. --}}
+        <div class="col-12" x-show="discounted" x-cloak x-transition.opacity>
+            <div class="rounded-3 p-3" style="background:var(--tone-green-bg);">
+                <p class="text-sm mb-2" style="color:var(--tone-green);">
+                    <i class="bi bi-tag me-1"></i>
+                    <strong>₹ <span x-text="saved"></span></strong> below their price —
+                    recorded as a discount on this renewal only.
+                </p>
+                <label class="form-label" for="rn-discount-why">Why the discount
+                    <span class="text-faint">optional</span></label>
+                <input id="rn-discount-why" name="discount_reason" type="text"
+                       class="form-control" maxlength="500"
+                       placeholder="e.g. bargained at renewal">
+            </div>
         </div>
     </div>
 </x-operator-modal>
@@ -409,3 +448,35 @@
         @endif
     @endforeach
 @endforeach
+
+
+@once
+@push('scripts')
+<script nonce="{{ csp_nonce() }}">
+/**
+ * REQ-15 — the counter-bargain field.
+ *
+ * Reveals itself only when the operator types LESS than the customer owes. A
+ * discount box that is always on screen invites a discount nobody asked for;
+ * this one appears because a bargain has already happened.
+ *
+ * Motion contract (CLAUDE.md): it fades in rather than popping — an element
+ * must never hard-swap between shown and hidden.
+ */
+function bargainField(list) {
+    return {
+        list: Number(list) || 0,
+        amount: Number(list) || 0,
+        get discounted() {
+            return this.list > 0 && Number(this.amount) >= 0 && Number(this.amount) < this.list;
+        },
+        get saved() {
+            return (this.list - Number(this.amount)).toLocaleString('en-IN', {
+                minimumFractionDigits: 2, maximumFractionDigits: 2,
+            });
+        },
+    };
+}
+</script>
+@endpush
+@endonce

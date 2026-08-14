@@ -217,9 +217,18 @@ class SubscriptionLifecycle
     {
         $method = (string) ($input['method'] ?? 'cash');
         $interval = (string) ($input['interval'] ?? $s->interval ?? 'monthly');
+
+        // REQ-15 — a renewal is the moment the branch count is reconciled.
+        // Branches added mid-cycle were charged pro rata at the time; from here
+        // they are simply part of the bill, and a branch CLOSED mid-cycle stops
+        // being charged (decision D4: no refund, they keep what they paid for
+        // until this moment).
+        $this->syncQuantity($s);
+
+        $list = $this->prices->effectivePrice($s, $interval);
         $amount = ($input['amount'] ?? null) !== null && $input['amount'] !== ''
             ? (float) $input['amount']
-            : $this->prices->effectivePrice($s, $interval);
+            : $list;
 
         // AUD-05 - a zero-rupee "cash payment" is a lie in the ledger: no money
         // moved. Giving time away for free is what a comp is for, and a comp
@@ -237,7 +246,7 @@ class SubscriptionLifecycle
             'period_start' => $base,
             'period_end' => $end,
             'reason' => $input['reason'] ?? null,
-        ]);
+        ] + $this->bargain($list, $amount, $input));
 
         $s->status = 'active';
         $s->interval = $interval;
@@ -384,14 +393,16 @@ class SubscriptionLifecycle
             throw new InvalidArgumentException('Marking a payment as received needs an amount. To give them the cycle for free, use Waive instead.');
         }
 
+        $this->syncQuantity($s);
         $end = $this->advanceOneCycle($s);
+        $list = $this->prices->effectivePrice($s);
 
         $this->payments->record($s, $amount, (string) ($input['method'] ?? 'cash'), [
             'reference' => $input['reference'] ?? null,
             'reason' => $reason,
             'period_start' => $this->clockBase($s),
             'period_end' => $end,
-        ]);
+        ] + $this->bargain($list, $amount, $input));
 
         $s->status = 'active';
         $s->current_period_end = $end;
@@ -522,6 +533,59 @@ class SubscriptionLifecycle
         }
 
         return $out;
+    }
+
+    /**
+     * REQ-15 — reconcile what they are billed for with what they actually have.
+     *
+     * `quantity` is stored rather than derived because a receipt has to be able
+     * to reproduce itself months later, after the branch count has moved again.
+     * Storing it means it can drift, so it is re-synced at every renewal — the
+     * one moment where "what are we charging for?" is being answered anyway.
+     */
+    private function syncQuantity(Subscription $s): void
+    {
+        if (! $s->account) {
+            return;
+        }
+
+        $billable = $s->account->billableStores()->count();
+
+        // Never below 1: an account with every store closed still has a clock
+        // until somebody cancels it, and quantity 0 would price it at ₹0 —
+        // which would read as a comp rather than as the anomaly it is.
+        $s->quantity = max(1, $billable);
+    }
+
+    /**
+     * REQ-15 — somebody bargained at the counter.
+     *
+     * A ONE-OFF reduction on THIS charge, with a reason. Deliberately not an
+     * offer or coupon engine — the owner ruled that out and it stays out. There
+     * is no rule, no stacking, no expiry, nothing that repeats: a standing
+     * lower rate is a NEGOTIATED PRICE, which already exists and is the right
+     * tool for "they always pay less".
+     *
+     * Returns nothing at all when the amount is at or above list, so an
+     * ordinary payment carries no discount fields and reads exactly as before.
+     *
+     * @return array{list_amount?: float, discount_reason?: string}
+     */
+    private function bargain(float $list, float $charged, array $input): array
+    {
+        if ($charged >= $list || $list <= 0) {
+            return [];
+        }
+
+        return [
+            'list_amount' => $list,
+            // Falls back to the action's own reason rather than refusing: the
+            // operator has already had to say WHY at the top of the modal, and
+            // demanding it twice for the same decision is how required fields
+            // get filled with "x".
+            'discount_reason' => trim((string) ($input['discount_reason'] ?? ''))
+                ?: (trim((string) ($input['reason'] ?? '')) ?: 'Agreed at the counter'),
+        ];
     }
 
     /** Never shorten coverage by accident: extend from today or the end, whichever is later. */

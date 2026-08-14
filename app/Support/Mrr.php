@@ -65,7 +65,28 @@ class Mrr
             return 0.0;
         }
 
-        $effective = app(PriceResolver::class)->effectivePrice($sub);
+        /*
+         * REQ-15 — MRR is priced at the branches that will RECUR, not at the
+         * quantity currently on the invoice. The two differ for exactly one
+         * cycle and the distinction matters:
+         *
+         *   `quantity`          what they are billed for right now. A branch
+         *                       closed mid-cycle is still in it, because
+         *                       decision D4 says no refund — they keep what
+         *                       they paid for until renewal.
+         *   billable branches   what will still be there next cycle.
+         *
+         * MRR is a forward run-rate. Counting a branch that has already been
+         * closed would overstate it for a month, which is the same shape as
+         * AUD-01 (revenue that has stopped still being counted) — just shorter.
+         * `effectivePrice` deliberately keeps using the stored quantity,
+         * because charging is a different question from forecasting.
+         */
+        $recurring = $sub->account
+            ? max(1, $sub->account->billableStoreCount())
+            : (int) ($sub->quantity ?: 1);
+
+        $effective = app(PriceResolver::class)->effectivePrice($sub, null, $recurring);
 
         return $sub->interval === 'yearly'
             ? round($effective / 12, 2)

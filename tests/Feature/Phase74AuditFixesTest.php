@@ -236,7 +236,10 @@ class Phase74AuditFixesTest extends TestCase
                 'action' => 'renew', 'amount' => '', 'method' => 'cash', 'interval' => 'monthly',
             ])->assertSessionHas('status');
 
-        $this->assertSame('499.00', SubscriptionInvoice::withoutGlobalScopes()->first()->amount);
+        // REQ-15 — this account genuinely has TWO branches, so the list price
+        // it falls back to is now 2 × ₹499. Before branch pricing existed it
+        // was ₹499 however many shops they had, which was the defect.
+        $this->assertSame('998.00', SubscriptionInvoice::withoutGlobalScopes()->first()->amount);
     }
 
     // ================================================================

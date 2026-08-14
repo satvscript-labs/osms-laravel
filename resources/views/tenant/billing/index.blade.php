@@ -258,6 +258,18 @@
                                         </a>
                                     </td>
                                 </tr>
+
+                                {{-- REQ-15 — the customer sees the same working the
+                                     operator does. A part-period charge is the line
+                                     most likely to be queried, and "₹338.03" with no
+                                     derivation cannot be answered across a counter. --}}
+                                @if ($invoice->hasCalculation() || $invoice->hasDiscount())
+                                    <tr>
+                                        <td colspan="4" class="pt-0 pb-3 px-4" style="border-top:0;">
+                                            @include('partials.charge-working', ['invoice' => $invoice])
+                                        </td>
+                                    </tr>
+                                @endif
                             @endforeach
                         </tbody>
                     </table>

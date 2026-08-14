@@ -40,7 +40,7 @@ class DashboardController extends Controller
         // whether the customer has a store still open. Loading it here keeps
         // that one query for the whole page instead of one per customer.
         $active = Subscription::withoutGlobalScopes()
-            ->with(['plan', 'account.stores:id,account_id,store_status'])
+            ->with(['plan', 'account.stores:id,account_id,store_status,is_billable'])
             ->where('status', 'active')
             ->get();
 

@@ -22,6 +22,9 @@ class SubscriptionInvoice extends Model
         'method', 'source', 'reference', 'recorded_by', 'reason',
         'period_start', 'period_end', 'receipt_no',
         'reversed_at', 'reversed_by', 'reversal_reason',
+        // REQ-15 — what it would have cost, what was knocked off, and (for a
+        // part-period charge) the arithmetic that produced it.
+        'list_amount', 'discount_amount', 'discount_reason', 'calculation',
     ];
 
     protected $casts = [
@@ -30,7 +33,29 @@ class SubscriptionInvoice extends Model
         'period_start' => 'date',
         'period_end' => 'date',
         'reversed_at' => 'datetime',
+        'list_amount' => 'decimal:2',
+        'discount_amount' => 'decimal:2',
+        'calculation' => 'array',
     ];
+
+    /** REQ-15 — was something bargained off this particular charge? */
+    public function hasDiscount(): bool
+    {
+        return $this->discount_amount !== null && (float) $this->discount_amount > 0;
+    }
+
+    /**
+     * REQ-15 — the stored working for a part-period charge.
+     *
+     * Read back rather than recomputed, deliberately: by the time anyone opens
+     * this receipt the branch count and the tier may both have moved, and a
+     * recomputation would answer with today's numbers rather than the ones the
+     * customer was actually charged on.
+     */
+    public function hasCalculation(): bool
+    {
+        return is_array($this->calculation) && ! empty($this->calculation['lines']);
+    }
 
     /** P1 / REQ-12 — the payer this ledger row belongs to. */
     public function account(): \Illuminate\Database\Eloquent\Relations\BelongsTo

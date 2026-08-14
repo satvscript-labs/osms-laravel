@@ -38,6 +38,11 @@ class PaymentRecorder
      *   recorded_by?: int|null,
      *   source?: string,
      *   paid_at?: Carbon|null,
+     *   tenant_id?: string|null,
+     *   list_amount?: float|null,
+     *   discount_amount?: float|null,
+     *   discount_reason?: string|null,
+     *   calculation?: array|null,
      * } $options
      */
     public function record(
@@ -62,11 +67,33 @@ class PaymentRecorder
             throw new InvalidArgumentException('Amounts are never negative; reverse a row instead.');
         }
 
-        return DB::transaction(function () use ($subscription, $amount, $method, $options, $reason) {
+        /*
+         * REQ-15 — a bargain is recorded, never absorbed.
+         *
+         * `amount` keeps its exact meaning: **what was actually received**, so
+         * every revenue, lifetime-value and collection figure built on it stays
+         * correct untouched. `list_amount` is what it would have been. Without
+         * that pair, money given away at the counter is invisible — the same
+         * mistake BUG-P04 made with comps, where an absent row meant an absent
+         * fact.
+         */
+        $discount = $this->discount($amount, $options);
+
+        if ($discount && blank($options['discount_reason'] ?? null)) {
+            throw new InvalidArgumentException('A discount must say why — it is a discretionary decision, and in six months the ledger has to explain it.');
+        }
+
+        return DB::transaction(function () use ($subscription, $amount, $method, $options, $reason, $discount) {
             return SubscriptionInvoice::withoutGlobalScopes()->create([
-                'tenant_id' => $subscription->tenant_id,
+                // A part-period charge belongs to the BRANCH that caused it, so
+                // "what did Branch 2 cost us?" stays answerable.
+                'tenant_id' => $options['tenant_id'] ?? $subscription->tenant_id,
                 'account_id' => $subscription->account_id,
                 'amount' => round($amount, 2), // decimal, rounded once at the boundary
+                'list_amount' => $discount ? round((float) $options['list_amount'], 2) : null,
+                'discount_amount' => $discount ? round($discount, 2) : null,
+                'discount_reason' => $discount ? $options['discount_reason'] : null,
+                'calculation' => $options['calculation'] ?? null,
                 'currency' => 'INR',
                 'status' => 'paid',
                 'method' => $method,
@@ -80,6 +107,29 @@ class PaymentRecorder
                 'receipt_no' => $this->nextReceiptNo(),
             ]);
         });
+    }
+
+    /**
+     * How much was knocked off, or null.
+     *
+     * Derived from `list_amount` rather than taken on trust, so the three
+     * numbers on the row can never contradict one another.
+     */
+    private function discount(float $amount, array $options): ?float
+    {
+        $list = $options['list_amount'] ?? null;
+
+        if ($list === null) {
+            return null;
+        }
+
+        $discount = round((float) $list - $amount, 2);
+
+        if ($discount <= 0) {
+            return null;   // charged at or above list — nothing was given away
+        }
+
+        return $discount;
     }
 
     /**

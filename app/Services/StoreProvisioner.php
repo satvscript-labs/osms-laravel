@@ -61,8 +61,90 @@ class StoreProvisioner
 
             $owner->forceFill(['tenant_id' => $tenant->id])->save();
 
+            $this->billNewBranch($tenant, $account);
+
             return $tenant;
         });
+    }
+
+    /**
+     * REQ-15 — a branch that joins an existing customer starts costing money.
+     *
+     * Before this, a second shop was free until the next renewal — on a yearly
+     * plan, free for up to twelve months — and `quantity` was never raised at
+     * all, so it stayed free after that too. Branch count simply did not reach
+     * the price.
+     *
+     * Now, in the SAME transaction that creates the store: the part period is
+     * charged, `quantity` is raised, and the arithmetic is stored on the ledger
+     * row so the charge can explain itself months later.
+     *
+     * Nothing happens for the account's FIRST store — there is no existing
+     * clock to join, and `Tenant::booted()` has just started one.
+     */
+    private function billNewBranch(Tenant $tenant, Account $account): void
+    {
+        // withoutGlobalScopes per AUD-02: this runs for a superadmin whose own
+        // tenant_id is null, and Subscription is tenant-scoped.
+        $subscription = $account->subscription()->withoutGlobalScopes()->first();
+
+        if (! $subscription || $subscription->tenant_id === $tenant->id) {
+            return;   // first store on the account — it IS the clock
+        }
+
+        $proration = app(Proration::class)->forNewBranch($subscription);
+
+        // The quantity rises either way. Whether we could charge for the part
+        // period is a separate question from whether they now have two shops —
+        // conflating them is how a branch ends up permanently unbilled.
+        $subscription->quantity = (int) ($subscription->quantity ?: 1) + 1;
+        $subscription->save();
+
+        if (! $proration['applicable'] || $proration['amount'] <= 0) {
+            AdminAuditLog::record(
+                'subscription.branch_added',
+                "{$tenant->store_name} added to {$account->displayName()} — no part-period charge",
+                $tenant->id,
+                [
+                    'account_id' => $account->id,
+                    'quantity' => $subscription->quantity,
+                    'why_no_charge' => $proration['reason'],
+                ],
+            );
+
+            return;
+        }
+
+        $invoice = app(PaymentRecorder::class)->record(
+            $subscription,
+            $proration['amount'],
+            'adjustment',
+            [
+                'tenant_id' => $tenant->id,          // the branch that caused it
+                'reason' => "Part period for {$tenant->store_name}",
+                'period_start' => $proration['period_start'],
+                'period_end' => $proration['period_end'],
+                'calculation' => [
+                    'kind' => 'proration',
+                    'lines' => $proration['lines'],
+                    'formula' => $proration['formula'],
+                ],
+            ],
+        );
+
+        AdminAuditLog::record(
+            'subscription.branch_added',
+            "{$tenant->store_name} added to {$account->displayName()} — ₹"
+                . number_format($proration['amount'], 2) . ' charged for the part period',
+            $tenant->id,
+            [
+                'account_id' => $account->id,
+                'quantity' => $subscription->quantity,
+                'amount' => $proration['amount'],
+                'receipt_no' => $invoice->receipt_no,
+                'formula' => $proration['formula'],
+            ],
+        );
     }
 
     /**

@@ -104,7 +104,13 @@ class AccountActionController extends Controller
             'reference' => ['nullable', 'string', 'max:120'],
             'reason' => ['nullable', 'string', 'max:500'],
             'paid_at' => ['nullable', 'date'],
+            // REQ-15 — a counter-bargain. One-off on this row, never recurring.
+            'discount_reason' => ['nullable', 'string', 'max:500'],
         ]);
+
+        // What it would have been. Passing this lets PaymentRecorder work out
+        // the discount itself, so the three numbers on the row cannot disagree.
+        $list = app(\App\Services\PriceResolver::class)->effectivePrice($subscription);
 
         try {
             $invoice = $this->payments->record(
@@ -115,7 +121,7 @@ class AccountActionController extends Controller
                     'reference' => $validated['reference'] ?? null,
                     'reason' => $validated['reason'] ?? null,
                     'paid_at' => isset($validated['paid_at']) ? \Illuminate\Support\Carbon::parse($validated['paid_at']) : null,
-                ],
+                ] + $this->bargain($list, (float) $validated['amount'], $validated),
             );
         } catch (InvalidArgumentException $e) {
             return back()->with('error', $e->getMessage());
@@ -217,6 +223,27 @@ class AccountActionController extends Controller
         );
 
         return back()->with('status', 'Notes saved.');
+    }
+
+    /**
+     * REQ-15 — a one-off bargain, recorded rather than absorbed.
+     *
+     * Silent when the amount is at or above list, so an ordinary payment
+     * carries no discount fields at all.
+     *
+     * @return array{list_amount?: float, discount_reason?: string}
+     */
+    private function bargain(float $list, float $charged, array $validated): array
+    {
+        if ($charged >= $list || $list <= 0) {
+            return [];
+        }
+
+        return [
+            'list_amount' => $list,
+            'discount_reason' => trim((string) ($validated['discount_reason'] ?? ''))
+                ?: (trim((string) ($validated['reason'] ?? '')) ?: 'Agreed at the counter'),
+        ];
     }
 
     private function confirmation(string $action): string

@@ -24,6 +24,18 @@
      */
     $reversed = $invoice->isReversed();
 
+    /**
+     * REQ-15 — a part-period charge must explain itself ON THE RECEIPT, not
+     * only in the panel. This is the copy the customer keeps, and the one they
+     * will be holding when they ring up to ask what ₹338.03 was for.
+     *
+     * Read from the STORED working: recomputing it here would use today's
+     * branch count and today's tier, neither of which is what they were
+     * charged on.
+     */
+    $calc = $invoice->calculation ?? null;
+    $calcLines = $calc['lines'] ?? [];
+
     // BUG-P10 — never render a labelled-but-empty legal field. Blank values make
     // the whole line disappear rather than leaving "GSTIN:" hanging.
     $legalEntity = trim((string) config('saas.legal_entity'));
@@ -70,6 +82,18 @@
             color: #d92d20;
         }
         .void-notice .t { font-weight: bold; font-size: 13px; }
+
+        /* REQ-15 — the pro-rata working. Set quietly: it is reference material,
+           not the headline, but it must be legible without squinting. */
+        .working {
+            margin-top: 22px; padding: 12px 14px;
+            background: #f4f6f9; border-radius: 6px; font-size: 11px;
+        }
+        .working .formula {
+            margin-top: 8px; padding-top: 8px;
+            border-top: 1px solid #e3e8ee;
+            font-weight: bold; color: #004f75;
+        }
     </style>
 </head>
 <body>
@@ -126,6 +150,23 @@
         </tbody>
     </table>
 
+    @if ($calcLines)
+        <div class="working">
+            <div class="label" style="margin-bottom:6px;">How this was worked out</div>
+            <table style="width:100%;">
+                @foreach ($calcLines as $line)
+                    <tr>
+                        <td class="muted" style="padding:2px 0;">{{ $line['label'] }}</td>
+                        <td class="right" style="padding:2px 0;">{{ $line['value'] }}</td>
+                    </tr>
+                @endforeach
+            </table>
+            @if (! empty($calc['formula']))
+                <div class="formula">{{ $calc['formula'] }}</div>
+            @endif
+        </div>
+    @endif
+
     <table class="totals">
         @if ($isTaxInvoice)
             <tr><td class="muted">Taxable value</td><td class="right">₹ {{ number_format($tax['base'], 2) }}</td></tr>
@@ -134,6 +175,16 @@
             <tr class="grand"><td>Total ({{ $invoice->currency }})</td><td class="right">₹ {{ number_format($tax['total'], 2) }}</td></tr>
         @else
             {{-- No tax lines: none was charged. A single honest total. --}}
+            @if ($invoice->hasDiscount())
+                {{-- REQ-15 — a bargain is shown, never absorbed into a smaller
+                     total. The customer should be able to see what they saved,
+                     and we should be able to see what we gave away. --}}
+                <tr><td class="muted">Subtotal</td><td class="right">₹ {{ number_format($invoice->list_amount, 2) }}</td></tr>
+                <tr>
+                    <td class="muted">Discount{{ $invoice->discount_reason ? ' — ' . $invoice->discount_reason : '' }}</td>
+                    <td class="right">− ₹ {{ number_format($invoice->discount_amount, 2) }}</td>
+                </tr>
+            @endif
             <tr class="grand">
                 <td>{{ $reversed ? 'Total reversed' : 'Total paid' }} ({{ $invoice->currency }})</td>
                 <td class="right">₹ {{ number_format($invoice->amount, 2) }}</td>

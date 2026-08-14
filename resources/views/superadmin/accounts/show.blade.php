@@ -122,6 +122,39 @@
         </div>
     </div>
 
+    {{-- REQ-15 / B5 — billed-for vs. actually-has.
+         Under automatic proration these two converge in the same transaction
+         that creates a branch, so a gap here means something went wrong: a
+         store created outside the normal door, or a charge that failed. It is
+         surfaced rather than silently under-billing, which is the failure mode
+         that costs money without ever raising an error. --}}
+    @php
+        $billedFor = (int) ($s?->quantity ?? 1);
+        $actuallyHas = $account->billableStores()->count();
+    @endphp
+    @if ($s && $actuallyHas > $billedFor)
+        <div class="card border-0 shadow-sm rounded-4 mb-4 animate-fade-up"
+             style="border-left:3px solid var(--tone-amber) !important;">
+            <div class="card-body p-4 d-flex align-items-start gap-3">
+                <span class="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
+                      style="width:2.5rem;height:2.5rem;background:var(--tone-amber-bg);color:var(--tone-amber);">
+                    <i class="bi bi-exclamation-triangle"></i>
+                </span>
+                <div class="min-w-0">
+                    <p class="fw-semibold mb-1">
+                        Billed for {{ $billedFor }} {{ Str::plural('branch', $billedFor) }},
+                        but has {{ $actuallyHas }}
+                    </p>
+                    <p class="text-muted-foreground text-sm mb-0">
+                        A branch is not being charged for. This should not happen on its own —
+                        adding a branch charges the part period and raises the count in the same
+                        step. <strong>Renew now</strong> reconciles it from the next cycle.
+                    </p>
+                </div>
+            </div>
+        </div>
+    @endif
+
     {{-- ---- Fact strip ---- --}}
     <div class="row g-3 mb-4 stagger">
         <div class="col-6 col-lg-3">
@@ -411,6 +444,13 @@
                                 @if ($row->reference)<span class="text-faint">ref {{ $row->reference }}</span>@endif
                                 @if ($row->reason)<em class="text-faint">“{{ $row->reason }}”</em>@endif
                             </div>
+
+                            {{-- REQ-15 — a part-period charge or a counter-bargain
+                                 shows its working, from what was stored at the
+                                 time. Same partial the customer sees. --}}
+                            @if ($row->hasCalculation() || $row->hasDiscount())
+                                @include('partials.charge-working', ['invoice' => $row])
+                            @endif
                         </div>
                         <div class="d-none d-md-block text-end" style="min-width:6rem;">
                             <div class="text-sm">{{ ($row->paid_at ?? $row->created_at)?->format('d M Y') }}</div>

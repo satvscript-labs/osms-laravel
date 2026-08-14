@@ -96,7 +96,32 @@ class Account extends Model
      */
     public function isSupervised(): bool
     {
-        return $this->supervised || PlatformSetting::supervisedGlobally();
+        return $this->supervised
+            || PlatformSetting::supervisedGlobally()
+            || $this->needsSupervisionForBranches();
+    }
+
+    /**
+     * REQ-15 / PR-14 — the multi-branch guard, and why it exists.
+     *
+     * `BillingService` sends Razorpay a hardcoded `quantity => 1`. That was
+     * consistent while price ignored branch count; it is not now. A customer
+     * with three branches who checked out through self-serve would pay for
+     * ONE — the panel would show them as paid up, and nothing anywhere would
+     * flag the shortfall.
+     *
+     * So multi-branch customers are billed by hand until the gateway lane
+     * understands quantity (PR-14). Supervised mode was built for exactly this
+     * and the switch already exists; using it costs nothing and closes the hole
+     * completely.
+     *
+     * ⚠ This is a GUARD, not a fix. It means multi-branch customers cannot pay
+     * online at all — acceptable at one customer with one branch, and a silent
+     * growth ceiling if it is still here in a year. PR-14 removes it.
+     */
+    public function needsSupervisionForBranches(): bool
+    {
+        return $this->billableStoreCount() > 1;
     }
 
     /** Why self-serve is off for them — shown on their billing page. */
@@ -104,6 +129,15 @@ class Account extends Model
     {
         if ($this->supervised && filled($this->supervised_reason)) {
             return $this->supervised_reason;
+        }
+
+        if (! $this->supervised
+            && ! PlatformSetting::supervisedGlobally()
+            && $this->needsSupervisionForBranches()) {
+            // Say something true about THEM rather than the generic line —
+            // "managed by our team" reads as an error to somebody who simply
+            // opened a second shop.
+            return 'You have more than one store, so we handle your billing directly. Contact us to pay or change your plan.';
         }
 
         return $this->isSupervised() ? 'Your account is managed directly by our team.' : null;
@@ -121,6 +155,26 @@ class Account extends Model
     public function billableStores(): HasMany
     {
         return $this->stores()->where('is_billable', true)->where('store_status', '!=', 'closed');
+    }
+
+    /**
+     * How many branches are being paid for — from the loaded relation when the
+     * caller eager-loaded it.
+     *
+     * `billableStores()->count()` is one query, which is fine on a customer's
+     * own page and ruinous in a loop: MRR is summed over every active
+     * subscription on the dashboard, so a bare count there is one query per
+     * customer. Caught by the query-count guards rather than by inspection.
+     */
+    public function billableStoreCount(): int
+    {
+        if ($this->relationLoaded('stores')) {
+            return $this->stores
+                ->filter(fn (Tenant $s) => $s->is_billable && ! $s->isClosed())
+                ->count();
+        }
+
+        return $this->billableStores()->count();
     }
 
     /** Stores that are still in use — neither closed nor suspended. */
