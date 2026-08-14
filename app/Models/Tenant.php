@@ -170,6 +170,78 @@ class Tenant extends Model
             && $this->purge_after->isPast();
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | Why is this store locked? (ISS-01)
+    |--------------------------------------------------------------------------
+    | ONE place answers it, because three surfaces need the same answer and were
+    | each guessing separately: the enforcement middleware (where do I send
+    | them?), the lock screen (what do I say?), and the billing page (which
+    | banner?).
+    |
+    | The guessing produced two real defects. A store the OPERATOR suspended was
+    | told "Your payment is overdue — please renew", so a paid-up customer was
+    | invited to pay a second time for something no payment could fix. And a
+    | CLOSED store bounced between the lock screen and the dashboard forever,
+    | because closure lives on the tenant while `hasAccess()` asks the
+    | subscription — which is still perfectly active.
+    */
+
+    /** @return string|null null = access is fine */
+    public function accessDenialReason(): ?string
+    {
+        if ($this->isClosed()) {
+            return 'closed';
+        }
+
+        if ($this->store_status === 'suspended') {
+            return 'store_suspended';
+        }
+
+        $subscription = $this->governingSubscription();
+
+        if (! $subscription) {
+            return 'inactive';
+        }
+
+        if ($subscription->hasAccess()) {
+            return null;
+        }
+
+        // An operator's deliberate decision outranks whatever the status field
+        // says — `suspend` is expressed as past_due, and reading the status
+        // alone is exactly how the customer got told to pay again.
+        if ($subscription->hasActiveOverride()) {
+            if ($subscription->override_kind === 'suspension') {
+                return 'suspended';
+            }
+            if ($subscription->override_kind === 'cancellation') {
+                return 'cancelled_by_us';
+            }
+        }
+
+        return match ($subscription->status) {
+            'trialing' => 'trial_ended',
+            'past_due' => 'payment_overdue',
+            'canceled' => 'cancelled',
+            default => 'inactive',
+        };
+    }
+
+    /**
+     * Could the customer fix this themselves by paying?
+     *
+     * False for everything an operator imposed. Sending someone to a checkout
+     * that cannot lift their block is worse than telling them nothing: they
+     * pay, nothing changes, and now you owe them a refund conversation.
+     */
+    public function lockIsSelfResolvable(): bool
+    {
+        return in_array($this->accessDenialReason(), [
+            'trial_ended', 'payment_overdue', 'cancelled', 'inactive',
+        ], true);
+    }
+
     /** Whole days left before this store's data may be destroyed. */
     public function daysUntilPurge(): ?int
     {

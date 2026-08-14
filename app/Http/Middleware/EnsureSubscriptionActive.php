@@ -2,7 +2,6 @@
 
 namespace App\Http\Middleware;
 
-use App\Models\Subscription;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -10,10 +9,13 @@ use Symfony\Component\HttpFoundation\Response;
 /**
  * ST-Enforce (S1) — the tenant workspace requires a live subscription.
  *
- * A `locked` store (expired trial, canceled, or lapsed beyond grace) is
- * hard-locked and redirected to billing. `grace` and `active` pass through
- * (grace shows a warning banner from the layout). Billing routes are exempt so
- * a locked store can still reach the page where it pays.
+ * A locked store is redirected; `grace` and `active` pass through (grace shows
+ * a warning banner from the layout).
+ *
+ * ISS-01 — WHERE it redirects and WHAT it says both depend on
+ * `Tenant::accessDenialReason()`, because those two questions have more than
+ * two answers. A store the operator suspended cannot pay its way out, so it
+ * must not be shown a checkout; a closed store must not be shown one either.
  */
 class EnsureSubscriptionActive
 {
@@ -28,45 +30,53 @@ class EnsureSubscriptionActive
 
         $tenant = $user->tenant;
 
-        // P5 — closure is checked BEFORE the billing exemption below, deliberately.
-        // Billing self-exempts so a lapsed store can still reach the page where it
-        // pays; a CLOSED store must not, because taking money for a relationship
-        // you have ended is worse than a dead end. The lock screen is all it gets.
-        if ($tenant?->isClosed()) {
-            return $request->routeIs('tenant.locked')
+        if (! $tenant) {
+            return $next($request);
+        }
+
+        $reason = $tenant->accessDenialReason();
+
+        if ($reason === null) {
+            return $next($request);
+        }
+
+        // The lock screen must ALWAYS be reachable, or a store whose block
+        // cannot be lifted by paying has nowhere at all to land (ISS-01: this
+        // is half of the redirect loop a closed store used to hit).
+        if ($request->routeIs('tenant.locked')) {
+            return $next($request);
+        }
+
+        /*
+         * ISS-01 — the pay page is exempt only when paying would actually help.
+         *
+         * It used to be exempt unconditionally, so a store the operator had
+         * SUSPENDED landed on a live checkout and was told to renew. They were
+         * already paid up: no payment could lift that block, and taking one
+         * would have created a refund conversation. The same is true of a
+         * closed store and an operator cancellation.
+         */
+        if ($request->routeIs('tenant.billing.*')) {
+            return $tenant->lockIsSelfResolvable()
                 ? $next($request)
                 : redirect()->route('tenant.locked');
         }
 
-        // The pay page (and the staff lock screen) must stay reachable while locked.
-        if ($request->routeIs('tenant.billing.*', 'tenant.locked')) {
-            return $next($request);
-        }
-
-        // P1 / REQ-12 — access derives from the ACCOUNT's subscription (the payer),
-        // falling back to the store's own row before the backfill runs. A store
-        // individually suspended is locked even when the account is paid up.
-        $subscription = $tenant?->governingSubscription();
-        $state = $tenant && $tenant->isBlocked()
-            ? 'locked'
-            : ($subscription?->accessState() ?? 'locked');
-
-        if ($state === 'locked') {
-            // SEC-03 — billing is admin-only, so sending staff there is a 403 dead-end.
-            // Give them a lock screen that explains it and names who can renew.
-            return $user->isStoreAdmin()
-                ? redirect()->route('tenant.billing.index')->with('error', $this->lockedMessage($subscription))
-                : redirect()->route('tenant.locked');
-        }
-
-        return $next($request);
+        // SEC-03 — billing is admin-only, so sending staff there is a 403
+        // dead-end. Admins go to the pay page only when there is something
+        // they can pay for; everyone else gets the screen that explains it.
+        return $user->isStoreAdmin() && $tenant->lockIsSelfResolvable()
+            ? redirect()->route('tenant.billing.index')->with('error', $this->lockedMessage($reason))
+            : redirect()->route('tenant.locked');
     }
 
-    private function lockedMessage(?Subscription $subscription): string
+    /** Say what is actually true, and never invite a payment that cannot help. */
+    private function lockedMessage(string $reason): string
     {
-        return match ($subscription?->status) {
-            'trialing' => 'Your free trial has ended. Subscribe to continue using OSMS.',
-            'past_due' => 'Your payment is overdue and access is paused. Please renew to continue.',
+        return match ($reason) {
+            'trial_ended' => 'Your free trial has ended. Subscribe to continue using OSMS.',
+            'payment_overdue' => 'Your payment is overdue and access is paused. Please renew to continue.',
+            'cancelled' => 'Your subscription was cancelled. Subscribe again to continue using OSMS.',
             default => 'Your subscription is inactive. Subscribe to continue using OSMS.',
         };
     }
