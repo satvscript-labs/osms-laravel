@@ -71,6 +71,23 @@ class BillingController extends Controller
             'plans' => $plans,
             'invoices' => $invoices,
             'configured' => $billing->isConfigured(),
+            /*
+             * ISS-02 (decision N-b) — tell them, once, when money they were
+             * charged has been taken back.
+             *
+             * Only RECENT reversals: this is a notice, not a permanent scar on
+             * the page. The row itself stays marked forever in the history
+             * below, which is where an old reversal belongs.
+             *
+             * Deliberately not an email. Most reversals are our own keying
+             * error, and mailing a customer about our typo alarms more than it
+             * informs — but anyone who opens this page should not have to spot
+             * it for themselves.
+             */
+            'recentReversals' => $invoices
+                ->filter(fn ($i) => $i->isReversed() && $i->reversed_at->gt(now()->subDays(30)))
+                ->sortByDesc('reversed_at')
+                ->values(),
         ]);
     }
 
@@ -243,6 +260,11 @@ class BillingController extends Controller
         $date = optional($invoice->paid_at ?? $invoice->created_at)->format('Y-m-d');
         $kind = config('saas.gst_registered') ? 'invoice' : 'receipt';
 
-        return $pdf->download("OSMS-{$kind}-{$date}.pdf");
+        // ISS-02 — the filename says it too. A folder of receipts is scanned by
+        // name, not opened one by one, so a cancelled one must be identifiable
+        // without being read.
+        $suffix = $invoice->isReversed() ? '-REVERSED' : '';
+
+        return $pdf->download("OSMS-{$kind}-{$date}{$suffix}.pdf");
     }
 }

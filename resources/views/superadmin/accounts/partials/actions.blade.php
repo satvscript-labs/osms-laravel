@@ -281,10 +281,31 @@
         <label class="form-label" for="rv-{{ $row->id }}">Why <span style="color:var(--tone-red);">*</span></label>
         <input id="rv-{{ $row->id }}" name="reason" type="text" required maxlength="500"
                class="form-control" placeholder="e.g. entered twice by mistake">
-        <p class="text-muted-foreground text-xs mt-3 mb-0">
-            <i class="bi bi-info-circle me-1"></i>
-            This does not change their access. Use <strong>Suspend</strong> or <strong>Cancel</strong> for that.
-        </p>
+        {{-- ISS-02 — when the money being reversed is what is currently paying
+             for their access, say so with the actual date. "This does not
+             change their access" is true but easy to skim past; naming the day
+             they keep access until makes the consequence concrete, and points
+             at the lever that would actually cut it. --}}
+        @if ($subscription
+            && $row->period_end
+            && $subscription->current_period_end
+            && $row->period_end->gte(now()->startOfDay()))
+            <div class="mt-3 p-3 rounded-3" style="background:var(--tone-amber-bg);">
+                <p class="text-sm mb-0" style="color:var(--tone-amber);">
+                    <i class="bi bi-exclamation-triangle me-1"></i>
+                    This payment is what currently covers their access, through
+                    <strong>{{ $row->period_end->format('d M Y') }}</strong>.
+                    Reversing it takes the money off the books but
+                    <strong>leaves that access in place</strong> — use
+                    <strong>Suspend</strong> or <strong>End access now</strong> if that is what you mean.
+                </p>
+            </div>
+        @else
+            <p class="text-muted-foreground text-xs mt-3 mb-0">
+                <i class="bi bi-info-circle me-1"></i>
+                This does not change their access. Use <strong>Suspend</strong> or <strong>Cancel</strong> for that.
+            </p>
+        @endif
     </x-operator-modal>
 @endforeach
 

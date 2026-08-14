@@ -13,6 +13,17 @@
     $isTaxInvoice = (bool) config('saas.gst_registered');
     $tax = $isTaxInvoice ? $invoice->taxBreakdown() : null;
 
+    /**
+     * ISS-02 (decision R-b) — a reversed payment's document is STAMPED, not
+     * withheld.
+     *
+     * Blocking the download would not un-file the copy a customer already
+     * saved, and it leaves them holding an unmarked receipt for money that was
+     * taken back. Accounting documents are superseded, never deleted — so this
+     * one still renders, and says loudly that it is void.
+     */
+    $reversed = $invoice->isReversed();
+
     // BUG-P10 — never render a labelled-but-empty legal field. Blank values make
     // the whole line disappear rather than leaving "GSTIN:" hanging.
     $legalEntity = trim((string) config('saas.legal_entity'));
@@ -41,9 +52,31 @@
         .totals .grand { border-top: 2px solid #004f75; font-weight: bold; font-size: 14px; }
         .label { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: #6b7785; }
         .foot { margin-top: 36px; font-size: 10px; color: #9aa5b1; text-align: center; }
+
+        /* ISS-02 — the void stamp. Deliberately loud: this document's whole job
+           is now to stop somebody treating it as proof of payment. */
+        .void-stamp {
+            position: absolute;
+            top: 300px; left: 0; right: 0;
+            text-align: center;
+            font-size: 68px; font-weight: bold;
+            color: #d92d20;
+            opacity: 0.16;
+            letter-spacing: 12px;
+        }
+        .void-notice {
+            margin-top: 20px; padding: 12px 14px;
+            border: 2px solid #d92d20; border-radius: 6px;
+            color: #d92d20;
+        }
+        .void-notice .t { font-weight: bold; font-size: 13px; }
     </style>
 </head>
 <body>
+    @if ($reversed)
+        <div class="void-stamp">REVERSED</div>
+    @endif
+
     <table class="row">
         <tr>
             <td style="width:60%;">
@@ -101,9 +134,23 @@
             <tr class="grand"><td>Total ({{ $invoice->currency }})</td><td class="right">₹ {{ number_format($tax['total'], 2) }}</td></tr>
         @else
             {{-- No tax lines: none was charged. A single honest total. --}}
-            <tr class="grand"><td>Total paid ({{ $invoice->currency }})</td><td class="right">₹ {{ number_format($invoice->amount, 2) }}</td></tr>
+            <tr class="grand">
+                <td>{{ $reversed ? 'Total reversed' : 'Total paid' }} ({{ $invoice->currency }})</td>
+                <td class="right">₹ {{ number_format($invoice->amount, 2) }}</td>
+            </tr>
         @endif
     </table>
+
+    @if ($reversed)
+        <div class="void-notice">
+            <div class="t">This receipt has been cancelled.</div>
+            <div style="margin-top:4px;">
+                The payment of ₹ {{ number_format($invoice->amount, 2) }} shown above was reversed on
+                {{ $invoice->reversed_at->format('d M Y') }} and is no longer valid as proof of payment.
+                Any earlier copy of this receipt is superseded by this one.
+            </div>
+        </div>
+    @endif
 
     <div class="foot">
         This is a computer-generated {{ $isTaxInvoice ? 'invoice' : 'receipt' }} and does not require a signature.

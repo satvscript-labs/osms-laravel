@@ -32,6 +32,37 @@
         <div class="alert alert-danger py-2 px-3 small rounded-3">{{ session('error') }}</div>
     @endif
 
+    {{-- ISS-02 (N-b) — a payment was taken back. Say so where they can see it,
+         rather than leaving them to notice a struck-through row. Recent only:
+         a notice, not a permanent mark. --}}
+    @if ($recentReversals->isNotEmpty())
+        <div class="card border-0 shadow-sm rounded-4 mb-4 animate-fade-up"
+             style="border-left:3px solid var(--tone-amber) !important;">
+            <div class="card-body p-4 d-flex align-items-start gap-3">
+                <span class="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
+                      style="width:2.5rem;height:2.5rem;background:var(--tone-amber-bg);color:var(--tone-amber);">
+                    <i class="bi bi-arrow-counterclockwise"></i>
+                </span>
+                <div class="min-w-0">
+                    <p class="fw-semibold mb-1">
+                        {{ $recentReversals->count() === 1 ? 'A payment was reversed' : 'Some payments were reversed' }}
+                    </p>
+                    @foreach ($recentReversals as $reversal)
+                        <p class="text-muted-foreground text-sm mb-1">
+                            <strong>₹ {{ number_format($reversal->amount, 2) }}</strong>
+                            recorded {{ optional($reversal->paid_at ?? $reversal->created_at)->format('d M Y') }}
+                            was reversed on {{ $reversal->reversed_at->format('d M Y') }}.
+                        </p>
+                    @endforeach
+                    <p class="text-muted-foreground text-sm mb-0">
+                        Your access is unaffected. If this looks wrong, please
+                        <a href="{{ route('legal.contact') }}">get in touch</a>.
+                    </p>
+                </div>
+            </div>
+        </div>
+    @endif
+
     @php
         $s = $subscription?->status;
         $state = $subscription?->accessState();
@@ -185,15 +216,45 @@
                             </tr>
                         </thead>
                         <tbody>
+                            {{-- ISS-02 — a reversed payment must never read as a
+                                 green "paid". The customer's view now mirrors
+                                 the operator's exactly: struck through, marked
+                                 Reversed, and never silently removed — they saw
+                                 the payment, so it must not just vanish. --}}
                             @foreach ($invoices as $invoice)
-                                <tr>
+                                @php $reversed = $invoice->isReversed(); @endphp
+                                <tr @class(['text-muted-foreground' => $reversed])>
                                     <td class="ps-4">{{ optional($invoice->paid_at ?? $invoice->created_at)->format('d M Y') }}</td>
-                                    <td>₹ {{ number_format($invoice->amount, 2) }}</td>
-                                    <td><span class="badge text-bg-success">{{ $invoice->status }}</span></td>
+                                    <td @class(['text-decoration-line-through' => $reversed])>
+                                        ₹ {{ number_format($invoice->amount, 2) }}
+                                    </td>
+                                    <td>
+                                        @if ($reversed)
+                                            <span class="osms-badge osms-badge-red">
+                                                <span class="osms-badge-dot"></span>Reversed
+                                            </span>
+                                            <span class="d-block text-2xs text-faint mt-1">
+                                                on {{ $invoice->reversed_at->format('d M Y') }}
+                                            </span>
+                                        @elseif ($invoice->method === 'comp')
+                                            <span class="osms-badge osms-badge-blue">
+                                                <span class="osms-badge-dot"></span>Complimentary
+                                            </span>
+                                        @else
+                                            <span class="osms-badge osms-badge-green">
+                                                <span class="osms-badge-dot"></span>Paid
+                                            </span>
+                                        @endif
+                                    </td>
                                     <td class="text-end pe-4">
+                                        {{-- The receipt stays downloadable on purpose — it is
+                                             stamped REVERSED rather than withheld, because a
+                                             customer who already filed the original needs a
+                                             document that supersedes it. --}}
                                         <a href="{{ route('tenant.billing.invoices.pdf', $invoice) }}"
                                            class="btn btn-sm btn-light">
-                                            <i class="bi bi-download me-1"></i> PDF
+                                            <i class="bi bi-download me-1"></i>
+                                            {{ $reversed ? 'Cancelled receipt' : 'PDF' }}
                                         </a>
                                     </td>
                                 </tr>
