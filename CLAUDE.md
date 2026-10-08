@@ -61,6 +61,11 @@ exactly **one** subscription (one clock, one renewal date). Design and status:
 7. **Assert what the customer can do**, not which column changed: billing tests assert
    `accessState()`, rupees owed and rupees collected. Any `now()` touching a billing date uses
    `config('billing.timezone')`.
+8. **Customer data is never lost to a code change.** Production holds real customers' records
+   (patients, prescriptions, revenue history). Migrations are additive (new tables, nullable columns;
+   no dropped columns or tables without an explicit decision and a verified backup), every `down()`
+   works, backfills are idempotent and dry-run first, and a backup is taken before every migration.
+   Purging a store never touches billing rows. Details: `_artifacts/platform/feat-billing/04_PROPOSED_PLAN.md` §1.3.
 
 ## Conventions
 
