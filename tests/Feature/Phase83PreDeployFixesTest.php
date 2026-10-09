@@ -328,8 +328,14 @@ class Phase83PreDeployFixesTest extends TestCase
         $before = $this->moneyRows($account);
         $hq = $this->closeAndAge($hq);
 
-        // Simulate the regression: put the old ON DELETE CASCADE back.
-        (require database_path('migrations/2026_10_09_000001_money_survives_store_deletion.php'))->down();
+        // Simulate the regression WITHOUT touching the schema (schema changes are not
+        // transactional on MariaDB, so they cannot be done inside a test): something deletes
+        // the account's ledger as a side effect of the store being deleted - exactly what the
+        // old ON DELETE CASCADE did. The listener fires inside the purge's own transaction.
+        \Illuminate\Support\Facades\Event::listen('eloquent.deleted: ' . Tenant::class, function ($deleted) {
+            \Illuminate\Support\Facades\DB::table('subscription_invoices')
+                ->where('account_id', $deleted->account_id)->delete();
+        });
 
         try {
             app(StoreClosure::class)->purge($hq, 'test');
@@ -347,8 +353,23 @@ class Phase83PreDeployFixesTest extends TestCase
     // P.1 - S-4: the migration loses nothing, in either direction
     // ------------------------------------------------------------------
 
+    /**
+     * These two tests run a migration's down()/up() INSIDE the test. On SQLite that is
+     * transactional and rolls back with the test; on MySQL/MariaDB DDL commits implicitly,
+     * which breaks the test's transaction and can leak rows into later tests. They run on
+     * SQLite only. The same round-trip was verified by hand on real MariaDB 10.11
+     * (apply -> rollback -> re-apply, content fingerprints identical, 2026-10-09).
+     */
+    private function requireTransactionalDdl(): void
+    {
+        if (\Illuminate\Support\Facades\DB::getDriverName() !== 'sqlite') {
+            $this->markTestSkipped('DDL commits implicitly on MySQL/MariaDB; verified there manually (see docblock).');
+        }
+    }
+
     public function test_the_migration_keeps_every_row_through_down_and_up(): void
     {
+        $this->requireTransactionalDdl();
         $hq = $this->payingAccount('HQ');
         $before = $this->moneyRows($hq->account);
         $migration = require database_path('migrations/2026_10_09_000001_money_survives_store_deletion.php');
@@ -365,6 +386,8 @@ class Phase83PreDeployFixesTest extends TestCase
 
     public function test_the_ledgers_uniqueness_guarantees_survive_the_migration(): void
     {
+        $this->requireTransactionalDdl();
+
         // The unique indexes are what make webhook retries idempotent and receipt
         // numbers unique. A table rebuild must not drop them.
         (require database_path('migrations/2026_10_09_000001_money_survives_store_deletion.php'))->down();
