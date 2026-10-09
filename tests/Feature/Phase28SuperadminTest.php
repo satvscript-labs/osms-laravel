@@ -136,23 +136,8 @@ class Phase28SuperadminTest extends TestCase
         $this->assertDatabaseHas('admin_audit_logs', ['action' => 'subscription.comp', 'tenant_id' => $this->tenant->id]);
     }
 
-    public function test_raw_update_persists_with_before_after_audit(): void
-    {
-        $this->asAdmin()->patch(route('superadmin.subscription.update', $this->tenant), [
-            'status' => 'past_due', 'tier' => 'basic', 'interval' => 'monthly',
-            'current_period_end' => now()->addDays(5)->format('Y-m-d'),
-            'reason' => 'audit: legacy path test',
-        ])->assertRedirect()->assertSessionHas('status');
-
-        $sub = $this->tenant->subscription->fresh();
-        $this->assertSame('past_due', $sub->status);
-        $this->assertTrue($sub->manual);
-
-        $log = AdminAuditLog::where('action', 'subscription.updated')->first();
-        $this->assertNotNull($log);
-        $this->assertArrayHasKey('before', $log->meta);
-        $this->assertArrayHasKey('after', $log->meta);
-    }
+    // feat-billing P.3 - test_raw_update_persists_with_before_after_audit() lived here. The raw
+    // editor it exercised was removed; Phase83PreDeployFixesTest asserts it is gone.
 
     public function test_cancel_sets_canceled_and_logs(): void
     {

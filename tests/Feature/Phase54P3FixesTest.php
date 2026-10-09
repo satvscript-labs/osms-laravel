@@ -167,28 +167,10 @@ class Phase54P3FixesTest extends TestCase
     }
 
     // ---------------- DATA-06 — superadmin edit must not null billing fields ----------------
-
-    public function test_updating_a_subscription_without_period_fields_preserves_them(): void
-    {
-        $superadmin = User::factory()->create(['role' => 'superadmin', 'tenant_id' => null]);
-        $sub = $this->tenant->subscription;
-        $end = now()->addDays(20)->startOfDay();
-        $sub->update(['status' => 'active', 'tier' => 'basic', 'interval' => 'yearly', 'current_period_end' => $end]);
-
-        // Post WITHOUT interval / current_period_end — the DATA-06 foot-gun.
-        $this->actingAs($superadmin)
-            ->withSession(['auth.password_confirmed_at' => time()])
-            ->patch(route('superadmin.subscription.update', $this->tenant), [
-                'status' => 'active',
-                'tier' => 'basic',
-            'reason' => 'audit: legacy path test',
-        ])->assertRedirect();
-
-        $fresh = $sub->fresh();
-        $this->assertSame('yearly', $fresh->interval, 'interval must not be silently cleared');
-        $this->assertNotNull($fresh->current_period_end, 'period end must not be silently cleared');
-        $this->assertSame($end->toDateString(), $fresh->current_period_end->toDateString());
-    }
+    //
+    // feat-billing P.3 - the raw "edit status / period end" endpoint this guarded was REMOVED, so the
+    // foot-gun it protected against (a post without the period fields clearing the billing period)
+    // no longer exists. Phase83PreDeployFixesTest asserts the endpoint is gone.
 
     // ---------------- PERF-05 — low-stock count is a COUNT, not a full load ----------------
 

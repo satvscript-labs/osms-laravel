@@ -71,8 +71,8 @@ class Tenant extends Model
             // A second branch joins the payer's EXISTING clock; it does not start
             // its own. Minting one per store would give a single customer several
             // drifting renewal dates — exactly what the account layer exists to
-            // prevent, and what PR-13 (co-termination) would then have to undo.
-            // Adding a branch mid-cycle bills from the next renewal (decision A3).
+            // prevent. (The part period a joining branch owes is charged by
+            // StoreProvisioner::billNewBranch() - REQ-15 - not deferred to renewal.)
             if ($tenant->account_id
                 && Subscription::withoutGlobalScopes()->where('account_id', $tenant->account_id)->exists()) {
                 return;
@@ -81,6 +81,32 @@ class Tenant extends Model
             // Trial end is a calendar date measured in the billing timezone, so
             // create it there too (avoids a UTC/IST off-by-one at day boundaries).
             $tz = config('billing.timezone', 'Asia/Kolkata');
+
+            // feat-billing P.2 - ONE free trial per ACCOUNT, recorded on the account
+            // itself so it survives anything that happens to a subscription row.
+            // Reaching here for an account that has already had its trial means its
+            // subscription is gone, which P.1 makes impossible by ordinary means.
+            // The one thing we must not do is hand out a second free fortnight: the
+            // subscription is created LOCKED, and an operator decides what the
+            // customer is owed.
+            $account = $tenant->account_id ? Account::find($tenant->account_id) : null;
+
+            if ($account?->trial_used_at) {
+                $tenant->subscription()->create([
+                    'status' => 'canceled',
+                    'tier' => 'basic',
+                    'account_id' => $tenant->account_id,
+                    'plan_id' => Plan::query()->where('code', 'basic')->value('id'),
+                    'current_period_end' => now($tz)->subDay(),
+                ]);
+
+                \Illuminate\Support\Facades\Log::warning(
+                    'A store was added to an account that has already used its free trial and has no subscription; created it locked rather than minting a second trial.',
+                    ['account_id' => $tenant->account_id, 'tenant_id' => $tenant->id],
+                );
+
+                return;
+            }
 
             $tenant->subscription()->create([
                 'status' => 'trialing',
@@ -95,6 +121,11 @@ class Tenant extends Model
                 'plan_id' => Plan::query()->where('code', 'basic')->value('id'),
                 'current_period_end' => now($tz)->addDays((int) config('billing.trial_days', 14)),
             ]);
+
+            // Stamp it once; never overwrite an earlier date.
+            if ($account && ! $account->trial_used_at) {
+                Account::whereKey($account->id)->whereNull('trial_used_at')->update(['trial_used_at' => now()]);
+            }
         });
     }
 

@@ -59,66 +59,16 @@ class SubscriptionController extends Controller
         return back()->with('status', $ok);
     }
 
-    /** Directly edit status / tier / interval / period end — the escape hatch. */
-    public function update(Request $request, Tenant $tenant): RedirectResponse
-    {
-        $validated = $request->validate([
-            'status' => ['required', 'in:active,trialing,past_due,canceled'],
-            'tier' => ['required', 'in:basic,pro,enterprise'],
-            'interval' => ['nullable', 'in:monthly,yearly'],
-            'current_period_end' => ['nullable', 'date'],
-            'cancel_at_period_end' => ['nullable', 'boolean'],
-            'reason' => ['required', 'string', 'max:500'],
-        ]);
-
-        $subscription = $this->subscriptionFor($tenant);
-
-        if (! $subscription) {
-            return back()->with('error', 'This store has no subscription.');
-        }
-
-        $before = $subscription->only([
-            'status', 'tier', 'interval', 'current_period_end', 'cancel_at_period_end',
-        ]);
-
-        // A raw edit has no lifecycle equivalent — it IS the escape hatch — but
-        // it must still be sticky and audited like every other decision.
-        //
-        // DATA-06 — PRESERVE any field absent from the post. These previously
-        // fell back to null, so submitting without them silently cleared the
-        // billing period: status=active + current_period_end=null means
-        // accessState() has no boundary to check, i.e. access forever.
-        $subscription->update([
-            'status' => $validated['status'],
-            'tier' => $validated['tier'],
-            'interval' => $validated['interval'] ?? $subscription->interval,
-            'current_period_end' => $validated['current_period_end'] ?? $subscription->current_period_end,
-            'cancel_at_period_end' => $request->boolean('cancel_at_period_end'),
-            'manual' => true,
-        ]);
-
-        $subscription->applyOverride(
-            kind: $validated['status'] === 'canceled' ? 'cancellation' : 'manual_edit',
-            until: $validated['status'] === 'canceled' ? null : $subscription->current_period_end,
-            reason: $validated['reason'],
-        );
-        $subscription->save();
-
-        AdminAuditLog::record(
-            'subscription.updated',
-            "Manually edited {$tenant->store_name}'s subscription",
-            $tenant->id,
-            [
-                'reason' => $validated['reason'],
-                'before' => $before,
-                'after' => $subscription->refresh()->only([
-                    'status', 'tier', 'interval', 'current_period_end', 'cancel_at_period_end',
-                ]),
-            ],
-        );
-
-        return back()->with('status', 'Subscription updated.');
-    }
+    /*
+     * feat-billing P.3 - there used to be an `update()` here: a raw "edit status / tier /
+     * interval / period end" form that assigned those fields directly. Removed. It was the
+     * one path that wrote entitlement without going through SubscriptionLifecycle
+     * (CLAUDE.md billing rule 1), and every lever it offered exists on the Customer 360,
+     * previewed, reason-gated and audited. The three actions below stay: each is a thin
+     * wrapper over the lifecycle, and `cancel()` is currently the only operator path that
+     * also cancels the Razorpay mandate. They retire with the legacy screens once that
+     * behaviour lives inside the lifecycle itself (phase E3).
+     */
 
     /** Grant or extend a free trial by N days. */
     public function extendTrial(Request $request, Tenant $tenant): RedirectResponse

@@ -109,54 +109,9 @@
                         </div>
                     </div>
 
-                    {{-- Advanced edit --}}
-                    <details class="mt-4">
-                        <summary class="fw-semibold" style="font-size:var(--text-sm);cursor:pointer;">Advanced: edit raw subscription</summary>
-                        <form method="POST" action="{{ route('superadmin.subscription.update', $tenant) }}" class="row g-3 mt-1">
-                            @csrf @method('PATCH')
-                            <div class="col-md-4">
-                                <label class="form-label small fw-medium">Status</label>
-                                <select name="status" class="form-select">
-                                    @foreach (['trialing','active','past_due','canceled'] as $opt)
-                                        <option value="{{ $opt }}" @selected($s?->status === $opt)>{{ $opt }}</option>
-                                    @endforeach
-                                </select>
-                            </div>
-                            <div class="col-md-4">
-                                <label class="form-label small fw-medium">Tier</label>
-                                <select name="tier" class="form-select">
-                                    @foreach (['basic','pro','enterprise'] as $opt)
-                                        <option value="{{ $opt }}" @selected($s?->tier === $opt)>{{ $opt }}</option>
-                                    @endforeach
-                                </select>
-                            </div>
-                            <div class="col-md-4">
-                                <label class="form-label small fw-medium">Interval</label>
-                                <select name="interval" class="form-select">
-                                    <option value="">—</option>
-                                    <option value="monthly" @selected($s?->interval === 'monthly')>monthly</option>
-                                    <option value="yearly" @selected($s?->interval === 'yearly')>yearly</option>
-                                </select>
-                            </div>
-                            <div class="col-md-4">
-                                <label class="form-label small fw-medium">Period ends</label>
-                                <input type="date" name="current_period_end" value="{{ $s?->current_period_end?->format('Y-m-d') }}" class="form-control">
-                            </div>
-                            <div class="col-md-4 d-flex align-items-end">
-                                <div class="form-check">
-                                    <input type="checkbox" name="cancel_at_period_end" value="1" class="form-check-input" id="cape" @checked($s?->cancel_at_period_end)>
-                                    <label class="form-check-label small" for="cape">Cancel at period end</label>
-                                </div>
-                            </div>
-                            <div class="col-md-8">
-                                <label class="form-label small fw-medium">Why <span style="color:var(--tone-red);">*</span></label>
-                                <input type="text" name="reason" class="form-control" required maxlength="500">
-                            </div>
-                            <div class="col-12">
-                                <button class="btn btn-secondary">Save changes</button>
-                            </div>
-                        </form>
-                    </details>
+                    {{-- The raw "edit status / tier / period end" form was removed (feat-billing P.3):
+                         it assigned entitlement directly instead of going through SubscriptionLifecycle.
+                         Every lever it offered exists on the Customer 360, previewed and reason-gated. --}}
 
                     <hr class="my-4">
 

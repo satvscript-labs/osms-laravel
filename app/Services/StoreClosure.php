@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\AdminAuditLog;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Support\BackupStatus;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use InvalidArgumentException;
@@ -32,13 +33,26 @@ use InvalidArgumentException;
  */
 class StoreClosure
 {
-    /** Every table that hangs off a tenant, for the before/after inventory. */
+    /**
+     * Every table whose rows a purge DESTROYS, for the before/after inventory.
+     *
+     * Billing is deliberately not here (feat-billing P.1 / FB-22): the subscription
+     * and the payment ledger belong to the ACCOUNT, not to whichever store they
+     * happened to be tagged with first. Counting them as "owned" is what made the
+     * operator's "N rows will be destroyed" figure - and the post-delete check -
+     * treat the deletion of money as normal.
+     */
     public const OWNED_TABLES = [
         'customers', 'eye_records', 'patients', 'orders', 'order_items', 'payments',
-        'inventory', 'stock_movements', 'tax_invoices', 'subscriptions',
-        'subscription_invoices', 'staff_invitations', 'activity_logs',
-        'whatsapp_configs', 'whatsapp_messages',
+        'inventory', 'stock_movements', 'tax_invoices', 'staff_invitations',
+        'activity_logs', 'whatsapp_configs', 'whatsapp_messages',
     ];
+
+    /**
+     * The account's money. A purge must never delete a row from these tables;
+     * deleting a store only clears the row's link to it (`tenant_id` -> NULL).
+     */
+    public const MONEY_TABLES = ['subscriptions', 'subscription_invoices'];
 
     /**
      * Shut a store. Access stops immediately; nothing is destroyed.
@@ -115,6 +129,11 @@ class StoreClosure
      */
     public function purge(Tenant $tenant, string $reason, bool $force = false): array
     {
+        // S-6 - the way back must exist before the door is closed. Applies to the CLI's
+        // --force path too: skipping the retention window is a convenience, not a
+        // reason to also skip the backup.
+        $this->assertRecentBackup($tenant);
+
         if (! $force) {
             if (! $tenant->isClosed()) {
                 throw new InvalidArgumentException('Close the store first. Deleting a live store is never a single step.');
@@ -132,6 +151,10 @@ class StoreClosure
         $accountId = $tenant->account_id;
         $counts = $this->inventory($tenantId);
 
+        // S-7 - remember exactly which billing rows exist, so that inside the
+        // transaction we can prove none of them went with the store.
+        $money = $this->moneyRowIds($tenantId, $accountId);
+
         /*
          * AUD-A06 — never delete an operator.
          *
@@ -148,7 +171,7 @@ class StoreClosure
         $users = User::withoutGlobalScopes()
             ->where('tenant_id', $tenantId)->where('role', '!=', 'superadmin')->get();
 
-        DB::transaction(function () use ($tenant, $users, $operators) {
+        DB::transaction(function () use ($tenant, $users, $operators, $money) {
             foreach ($operators as $operator) {
                 $operator->forceFill(['tenant_id' => null])->save();
             }
@@ -159,6 +182,13 @@ class StoreClosure
             }
 
             $tenant->delete();
+
+            // S-7 - THE guard, independent of how the foreign keys happen to be set.
+            // If the delete took any billing row with it (a cascade somebody
+            // re-introduced, a new money table), this throws and the whole
+            // transaction - users, operators, the store - rolls back. Money is
+            // never an acceptable side effect of tidying up a shop.
+            $this->assertMoneyIntact($money);
         });
 
         // Verify rather than assume — the incident this logic came from was a
@@ -175,6 +205,8 @@ class StoreClosure
                 'store_name' => $name,
                 'reason' => $reason,
                 'rows_destroyed' => $counts,
+                // The other half of the record: what was deliberately KEPT.
+                'billing_rows_kept' => array_map('count', $money),
                 'users_destroyed' => $users->pluck('email')->all(),
                 'verified_clean' => $verification['clean'],
                 'leftovers' => $verification['leftovers'],
@@ -206,6 +238,76 @@ class StoreClosure
         }
 
         return $counts;
+    }
+
+    /** S-6: refuse to destroy anything unless a recent, plausible database backup exists. */
+    private function assertRecentBackup(Tenant $tenant): void
+    {
+        if (! config('saas.purge_requires_backup', true)) {
+            return;
+        }
+
+        if ($problem = BackupStatus::problem()) {
+            throw new InvalidArgumentException(
+                "Refusing to permanently delete {$tenant->store_name}: {$problem} "
+                . 'A purge cannot be undone, so a recent backup has to exist first (scripts/backup-db.sh), then try again.'
+            );
+        }
+    }
+
+    /**
+     * The ids of every billing row this store touches - tagged to it directly, or
+     * belonging to its account (a row may be tagged with a DIFFERENT branch than the
+     * one being purged, and rows from before the account backfill have no account yet).
+     *
+     * @return array<string, list<string>> table => ids
+     */
+    private function moneyRowIds(string $tenantId, ?string $accountId): array
+    {
+        $ids = [];
+
+        foreach (self::MONEY_TABLES as $table) {
+            $ids[$table] = DB::table($table)
+                ->where(function ($w) use ($table, $tenantId, $accountId) {
+                    $w->where('tenant_id', $tenantId);
+
+                    if ($accountId && Schema::hasColumn($table, 'account_id')) {
+                        $w->orWhere('account_id', $accountId);
+                    }
+                })
+                ->pluck('id')
+                ->all();
+        }
+
+        return $ids;
+    }
+
+    /**
+     * S-7: every billing row that existed before the delete must still exist after it.
+     * Throws (and so rolls the transaction back) if even one is gone.
+     *
+     * @param array<string, list<string>> $before table => ids, from moneyRowIds()
+     */
+    private function assertMoneyIntact(array $before): void
+    {
+        foreach ($before as $table => $ids) {
+            $remaining = 0;
+
+            // Chunked: an account with a long history must not hit the driver's
+            // bound-parameter limit.
+            foreach (array_chunk($ids, 500) as $chunk) {
+                $remaining += DB::table($table)->whereIn('id', $chunk)->count();
+            }
+
+            if ($remaining !== count($ids)) {
+                throw new InvalidArgumentException(sprintf(
+                    'Refused: deleting this store would have destroyed %d billing record(s) in %s. '
+                    . 'Nothing was deleted. Billing records must outlive a store.',
+                    count($ids) - $remaining,
+                    $table,
+                ));
+            }
+        }
     }
 
     /**

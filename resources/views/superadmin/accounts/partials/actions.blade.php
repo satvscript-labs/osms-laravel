@@ -387,7 +387,7 @@
                 label="Delete everything" dismiss="Keep it" icon="bi-trash3" tone="danger"
                 :confirm="$store->store_name"
                 confirmLabel="Type the store name exactly to confirm"
-                intro="This destroys every customer record, prescription, order and login belonging to this store. It cannot be undone and there is no copy.">
+                intro="This destroys every customer record, prescription, order and login belonging to this store. It cannot be undone from the panel: the only copy is the most recent database backup, which the system checks exists before it will go ahead.">
                 <div class="p-3 rounded-3 mb-1" style="background:var(--tone-red-bg);">
                     <p class="text-sm mb-0" style="color:var(--tone-red);">
                         <strong>{{ number_format($storeRowCounts[$store->id] ?? 0) }} rows</strong> and
@@ -395,6 +395,10 @@
                         will be destroyed.
                     </p>
                 </div>
+                <p class="text-xs mt-2 mb-0" style="color:var(--tone-green);">
+                    <i class="bi bi-shield-check me-1"></i>
+                    The customer's subscription and payment history are <strong>not</strong> touched.
+                </p>
                 <label class="form-label mt-2" for="pg-{{ $store->id }}">Why <span style="color:var(--tone-red);">*</span></label>
                 <input id="pg-{{ $store->id }}" name="reason" type="text" required maxlength="500" class="form-control">
             </x-operator-modal>
