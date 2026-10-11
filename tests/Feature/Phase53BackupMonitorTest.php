@@ -127,8 +127,10 @@ class Phase53BackupMonitorTest extends TestCase
 
     public function test_it_is_registered_on_the_scheduler(): void
     {
+        // E0 — scheduled tasks run in-process (Schedule::call), so they carry a name rather
+        // than a `command` string. See Phase82SchedulerInProcessTest for why.
         $events = app(\Illuminate\Console\Scheduling\Schedule::class)->events();
-        $found = collect($events)->contains(fn ($e) => str_contains($e->command ?? '', 'osms:monitor-backups'));
+        $found = collect($events)->contains(fn ($e) => $e->description === 'monitor-backups');
 
         $this->assertTrue($found, 'osms:monitor-backups must be scheduled or it will never run.');
     }

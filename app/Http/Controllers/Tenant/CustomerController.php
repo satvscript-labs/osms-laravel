@@ -23,12 +23,7 @@ class CustomerController extends Controller
 
         $customers = Customer::query()
             ->withCount('eyeRecords') // powers the "Patient" badge without an N+1
-            ->when($search !== '', function ($query) use ($search) {
-                $query->where(function ($q) use ($search) {
-                    $q->where('name', 'like', "%{$search}%")
-                      ->orWhere('phone', 'like', "%{$search}%");
-                });
-            })
+            ->when($search !== '', fn ($query) => $query->searchBy(['name', 'phone'], $search))
             ->when($filter === 'patients', fn ($query) => $query->patients())
             // PRIV-02 — the birthdays view is a marketing-outreach list, so minors
             // are excluded (bornAdult) per DPDP's ban on marketing to children.
@@ -225,10 +220,7 @@ class CustomerController extends Controller
         $search = trim((string) $request->query('search', ''));
 
         $customers = Customer::onlyTrashed()
-            ->when($search !== '', fn ($query) => $query->where(function ($q) use ($search) {
-                $q->where('name', 'like', "%{$search}%")
-                  ->orWhere('phone', 'like', "%{$search}%");
-            }))
+            ->when($search !== '', fn ($query) => $query->searchBy(['name', 'phone'], $search))
             ->latest('deleted_at')
             ->paginate(50)
             ->withQueryString();

@@ -140,7 +140,16 @@ class AnalyticsController extends Controller
             ->mapWithKeys(fn ($m) => [$m => (float) ($paid[$m] ?? 0)]);
         $collectedTotal = (float) $collectedByMethod->sum();
 
-        $stats = compact('revenue', 'discounts', 'cogs', 'profit', 'margin', 'ordersCount', 'uncostedLines');
+        $isStoreAdmin = $request->user()->isStoreAdmin() || $request->user()->isSuperadmin();
+        $stats = [
+            'revenue' => $revenue,
+            'discounts' => $discounts,
+            'ordersCount' => $ordersCount,
+            'uncostedLines' => $uncostedLines,
+            'cogs' => $isStoreAdmin ? $cogs : null,
+            'profit' => $isStoreAdmin ? $profit : null,
+            'margin' => $isStoreAdmin ? $margin : null,
+        ];
         $fromStr = $from->format('Y-m-d');
         $toStr = $to->format('Y-m-d');
 

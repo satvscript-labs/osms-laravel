@@ -73,7 +73,14 @@
     </div>
 
     {{-- Pricing & stock --}}
-    <div class="row g-3">
+    <div class="row g-3" x-data="{ isTracked: {{ old('is_tracked', $item->is_tracked ?? true) ? 'true' : 'false' }} }">
+        <div class="col-12 mb-1">
+            <div class="form-check form-switch">
+                <input type="hidden" name="is_tracked" value="0">
+                <input class="form-check-input" type="checkbox" role="switch" id="is_tracked" name="is_tracked" value="1" x-model="isTracked">
+                <label class="form-check-label small fw-medium" for="is_tracked">Track stock quantity (uncheck for non-stocked or made-to-order items)</label>
+            </div>
+        </div>
         <div class="col-6 col-lg-3">
             <label for="cost_price" class="form-label small fw-medium mb-1">Cost price (₹) *</label>
             <input id="cost_price" name="cost_price" type="number" step="0.01" min="0" max="99999999" inputmode="decimal" required
@@ -89,14 +96,14 @@
             </div>
         </div>
         <div class="col-6 col-lg-3">
-            <label for="stock_qty" class="form-label small fw-medium mb-1">Stock quantity</label>
+            <label for="stock_qty" class="form-label small fw-medium mb-1" :class="!isTracked && 'text-muted'">Stock quantity</label>
             <input id="stock_qty" name="stock_qty" type="number" min="0" max="1000000" inputmode="numeric"
-                   value="{{ $val('stock_qty', 0) }}" class="form-control">
+                   value="{{ $val('stock_qty', 0) }}" class="form-control" :disabled="!isTracked">
         </div>
         <div class="col-6 col-lg-3">
-            <label for="min_alert_qty" class="form-label small fw-medium mb-1">Low-stock threshold</label>
+            <label for="min_alert_qty" class="form-label small fw-medium mb-1" :class="!isTracked && 'text-muted'">Low-stock threshold</label>
             <input id="min_alert_qty" name="min_alert_qty" type="number" min="0" max="1000000" inputmode="numeric"
-                   value="{{ $val('min_alert_qty', 5) }}" class="form-control">
+                   value="{{ $val('min_alert_qty', 5) }}" class="form-control" :disabled="!isTracked">
         </div>
     </div>
 

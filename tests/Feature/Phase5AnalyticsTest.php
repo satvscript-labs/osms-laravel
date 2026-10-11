@@ -38,11 +38,13 @@ class Phase5AnalyticsTest extends TestCase
         return $order;
     }
 
-    public function test_analytics_requires_store_admin(): void
+    public function test_analytics_allows_staff_but_redacts_sensitive_data(): void
     {
         $staffTenant = Tenant::create(['store_name' => 'Staff Store']);
         $staff = User::factory()->create(['tenant_id' => $staffTenant->id, 'role' => 'staff']);
-        $this->actingAs($staff)->get(route('tenant.analytics.index'))->assertForbidden();
+        $this->actingAs($staff)->get(route('tenant.analytics.index'))->assertOk()->assertViewHas('stats', function ($stats) {
+            return $stats['cogs'] === null && $stats['profit'] === null;
+        });
     }
 
     public function test_revenue_cogs_profit_computed(): void

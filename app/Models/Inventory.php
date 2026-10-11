@@ -17,7 +17,7 @@ class Inventory extends Model
 
     protected $fillable = [
         'tenant_id', 'sku', 'barcode', 'item_type', 'brand', 'model_name',
-        'cost_price', 'selling_price', 'stock_qty', 'min_alert_qty',
+        'cost_price', 'selling_price', 'stock_qty', 'min_alert_qty', 'is_tracked',
     ];
 
     protected $casts = [
@@ -25,6 +25,7 @@ class Inventory extends Model
         'selling_price' => 'decimal:2',
         'stock_qty' => 'integer',
         'min_alert_qty' => 'integer',
+        'is_tracked' => 'boolean',
     ];
 
     public function orderItems(): HasMany
@@ -39,6 +40,9 @@ class Inventory extends Model
 
     public function isLowStock(): bool
     {
+        if (! $this->is_tracked) {
+            return false;
+        }
         return $this->stock_qty <= $this->min_alert_qty;
     }
 
