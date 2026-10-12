@@ -155,6 +155,9 @@ class PriceResolver
             ? max(1, $subscription->account->billableStoreCount())
             : null;
 
+        // E1.4 — the next period runs at the PENDING interval when one is set.
+        $interval ??= $subscription->pending_interval ?: null;
+
         return $this->effectivePrice($subscription, $interval, $quantity);
     }
 

@@ -303,6 +303,8 @@ function operatorModal(config) {
                 cancel_at_period_end: 'Cancels at period end',
                 negotiated_price: 'Negotiated price',
                 negotiated_interval: 'Negotiated per',
+                pending_interval: 'From next renewal',
+                current_period_start: 'Period starts',
                 quantity: 'Branches billed',
                 effective_price: 'They pay',
                 override_kind: 'Operator override',

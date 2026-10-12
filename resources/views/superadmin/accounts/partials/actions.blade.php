@@ -78,7 +78,8 @@
     intro="Records the payment AND moves the renewal date. Manual wins for this cycle.">
     {{-- QA-05 — priced like the renewal will be: the branches billed AFTER it
          re-counts them, at the period chosen here. --}}
-    @php($rnInterval = $subscription?->interval === 'yearly' ? 'yearly' : 'monthly')
+    {{-- E1.4 — a renewal starts the next period: default to a pending switch, if any. --}}
+    @php($rnInterval = ($subscription?->pending_interval ?? $subscription?->interval) === 'yearly' ? 'yearly' : 'monthly')
     <div class="row g-3" x-data="renewField(@js($renewPrices ?? ['monthly' => 0, 'yearly' => 0]), @js($rnInterval))">
         <div class="col-6">
             <label class="form-label" for="rn-amount">Amount</label>
@@ -207,12 +208,16 @@
 @endif
 
 {{-- ── Row 13 · Interval ────────────────────────────────────────── --}}
+{{-- E1.4 / FB-19 — from the NEXT period. Switching mid-cycle re-priced a period
+     they had already paid for; the running period is now left exactly as it is. --}}
+@php($ivNext = $subscription?->pending_interval ?? $subscription?->interval)
 <x-operator-modal id="m-interval" title="Switch billing period" :action="$act" preview="switch_interval" :account="$account"
-    label="Switch" icon="bi-calendar3">
-    <label class="form-label" for="iv-interval">Bill</label>
+    label="Switch" icon="bi-calendar3"
+    intro="Takes effect at their next renewal. The period they are in now, and what they paid for it, stay as they are.">
+    <label class="form-label" for="iv-interval">Bill from the next renewal</label>
     <select id="iv-interval" name="interval" class="form-select">
-        <option value="monthly" @selected($subscription?->interval === 'monthly')>Monthly</option>
-        <option value="yearly" @selected($subscription?->interval === 'yearly')>Yearly</option>
+        <option value="monthly" @selected($ivNext === 'monthly')>Monthly</option>
+        <option value="yearly" @selected($ivNext === 'yearly')>Yearly</option>
     </select>
 </x-operator-modal>
 
@@ -228,7 +233,7 @@
                 <span class="input-group-text">₹</span>
                 {{-- AUDIT-03 — the cycle this pays for, priced like a renewal. --}}
                 <input id="mp-amount" name="amount" type="number" step="0.01" min="0"
-                       value="{{ ($renewPrices ?? [])[$subscription?->interval === 'yearly' ? 'yearly' : 'monthly'] ?? ($price['effective'] ?? '') }}" class="form-control">
+                       value="{{ ($renewPrices ?? [])[($subscription?->pending_interval ?? $subscription?->interval) === 'yearly' ? 'yearly' : 'monthly'] ?? ($price['effective'] ?? '') }}" class="form-control">
             </div>
         </div>
         <div class="col-6">

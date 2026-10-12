@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Mail\TrialStatusMail;
 use App\Models\Subscription;
+use App\Services\SubscriptionLifecycle;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Mail;
 
@@ -32,13 +33,13 @@ class ReconcileSubscriptions extends Command
      */
     private const GRACE_TO_CANCEL_DAYS = 30;
 
-    public function handle(): int
+    public function handle(SubscriptionLifecycle $lifecycle): int
     {
         // Runs unauthenticated → bypass the tenant scope to see every store.
         $trials = Subscription::withoutGlobalScopes()
             ->where('status', 'trialing')
             ->whereNotNull('current_period_end')
-            ->with('tenant.users')
+            ->with(['tenant.users', 'account.owner'])
             ->get();
 
         $expired = 0;
@@ -64,10 +65,13 @@ class ReconcileSubscriptions extends Command
             }
 
             if ($sub->accessState() === 'locked') {
-                $sub->status = 'canceled';
-                $sub->save();
-                $this->notifyAdmins($sub, 0); // trial ended
-                $expired++;
+                // E1.3 (W6) — through the engine: re-checked under a row lock (an
+                // operator may have acted since this list was read) and audited.
+                if ($lifecycle->expireTrial($sub)) {
+                    $this->notifyAdmins($sub, 0); // trial ended
+                    $expired++;
+                }
+
                 continue;
             }
 
@@ -81,7 +85,7 @@ class ReconcileSubscriptions extends Command
             $this->line("Skipped {$suppressed} subscription(s) under an operator override.");
         }
 
-        $lapsed = $this->lapsePaidSubscriptions();
+        $lapsed = $this->lapsePaidSubscriptions($lifecycle);
 
         $this->info("Reconciled {$expired} expired trial(s); sent {$reminded} reminder(s); lapsed {$lapsed} paid subscription(s).");
 
@@ -104,7 +108,7 @@ class ReconcileSubscriptions extends Command
      * manually-renewed subscription is a human decision, and this job
      * reconciles — it does not overrule people (playbook §5.2 rule 2).
      */
-    private function lapsePaidSubscriptions(): int
+    private function lapsePaidSubscriptions(SubscriptionLifecycle $lifecycle): int
     {
         $changed = 0;
 
@@ -114,33 +118,18 @@ class ReconcileSubscriptions extends Command
             ->get();
 
         foreach ($candidates as $sub) {
-            if ($sub->hasActiveOverride()) {
-                continue; // a human decided this; leave it alone
+            // A cheap pre-filter only. The engine re-checks every condition on the
+            // LOCKED row before changing anything, audits it as `system`, and tells
+            // the gateway on churn (E1.3 / E1.10).
+            if ($sub->hasActiveOverride() || $sub->accessState() !== 'locked') {
+                continue; // a human decided this, or still inside period + grace
             }
 
-            if ($sub->accessState() !== 'locked') {
-                continue; // still inside its period or its grace window
-            }
-
-            if ($sub->status === 'active') {
-                $sub->status = 'past_due';
-                $sub->save();
-                $changed++;
-
-                continue;
-            }
-
-            // Already past_due and locked — cancel once it has been unpaid long
-            // enough that this is churn rather than a late payment.
-            $deadline = $sub->current_period_end
-                ->copy()
-                ->addDays($this->graceDays() + self::GRACE_TO_CANCEL_DAYS);
-
-            if (now()->greaterThan($deadline->endOfDay())) {
-                $sub->status = 'canceled';
-                $sub->save();
-                $changed++;
-            }
+            $changed += $sub->status === 'active'
+                ? (int) $lifecycle->lapse($sub)
+                // Already past_due and locked — churn once unpaid long enough
+                // that this is no longer a late payment.
+                : (int) $lifecycle->lapseToChurn($sub, $this->graceDays(), self::GRACE_TO_CANCEL_DAYS);
         }
 
         return $changed;
@@ -151,19 +140,36 @@ class ReconcileSubscriptions extends Command
         return (int) config('billing.grace_days', 7);
     }
 
-    /** Queue a trial-status email to the store's admin(s). */
+    /**
+     * Queue a trial-status email to the PAYER.
+     *
+     * E1.9 / FB-26 — the account's owner (and its billing address) hears about
+     * the account's trial; the stores' admins are the fallback. It used to go via
+     * `$sub->tenant` alone, so an account whose original store had been purged
+     * (tenant_id NULL, by design since P.1) got no reminder at all.
+     */
     private function notifyAdmins(Subscription $sub, int $daysLeft): void
     {
-        $tenant = $sub->tenant;
+        $account = $sub->account;
+        $tenant = $sub->tenant ?? $account?->openStores()->orderBy('created_at')->first();
+
         if (! $tenant) {
             return;
         }
 
-        $emails = $tenant->users
-            ->where('role', 'store_admin')
-            ->pluck('email')
+        $emails = collect([$account?->owner?->email, $account?->billing_email])
             ->filter()
+            ->unique()
+            ->values()
             ->all();
+
+        if ($emails === []) {
+            $emails = $tenant->users
+                ->where('role', 'store_admin')
+                ->pluck('email')
+                ->filter()
+                ->all();
+        }
 
         if ($emails === []) {
             return;

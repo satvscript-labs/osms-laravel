@@ -3,9 +3,7 @@
 namespace App\Http\Controllers\Superadmin;
 
 use App\Http\Controllers\Controller;
-use App\Models\AdminAuditLog;
 use App\Models\Tenant;
-use App\Services\BillingService;
 use App\Services\SubscriptionLifecycle;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -94,40 +92,14 @@ class SubscriptionController extends Controller
     }
 
     /** Cancel access. Also best-effort cancels the live Razorpay subscription. */
-    public function cancel(Request $request, Tenant $tenant, BillingService $billing): RedirectResponse
+    public function cancel(Request $request, Tenant $tenant): RedirectResponse
     {
         $validated = $request->validate([
             'reason' => ['required', 'string', 'max:500'],
         ]);
 
-        $subscription = $this->subscriptionFor($tenant);
-        $razorpayNote = null;
-
-        // Prevent the double-charge loophole: if a live Razorpay subscription
-        // exists, cancel it too, so we don't keep billing a store we have
-        // cancelled locally.
-        if ($subscription?->razorpay_subscription_id && $billing->isConfigured()) {
-            try {
-                $billing->cancelSubscription($subscription->razorpay_subscription_id);
-                $razorpayNote = 'Razorpay subscription canceled at cycle end.';
-            } catch (\Throwable $e) {
-                $razorpayNote = 'Razorpay cancel failed: ' . $e->getMessage();
-            }
-        }
-
-        $result = $this->run(
-            $tenant,
-            'cancel',
-            $validated,
-            'Subscription canceled.' . ($razorpayNote ? " ($razorpayNote)" : ''),
-        );
-
-        if ($razorpayNote) {
-            AdminAuditLog::record('subscription.razorpay_cancel', $razorpayNote, $tenant->id, [
-                'reason' => $validated['reason'],
-            ]);
-        }
-
-        return $result;
+        // E1.10 — the engine cancels the gateway subscription after the commit and
+        // audits the outcome; calling Razorpay here as well cancelled it twice.
+        return $this->run($tenant, 'cancel', $validated, 'Subscription canceled.');
     }
 }
