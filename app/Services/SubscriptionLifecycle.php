@@ -974,6 +974,19 @@ class SubscriptionLifecycle
                 . '. From their next renewal, on a different billing period, they revert to the list price until you agree a new one.';
         }
 
+        // E1.10 — an ending now reaches the gateway, and a cancelled Razorpay
+        // subscription cannot be revived. Say both BEFORE the operator commits.
+        if ($s->razorpay_subscription_id) {
+            if (in_array($action, ['cancel', 'force_expire'], true)) {
+                $out[] = 'This also cancels their Razorpay autopay. It cannot be restarted from here: to pay online again they would subscribe afresh.';
+            }
+
+            if (in_array($action, ['reactivate', 'renew', 'extend', 'comp', 'mark_paid', 'waive'], true)
+                && $s->override_kind === 'cancellation') {
+                $out[] = 'Their Razorpay autopay was cancelled with the cancellation and does not restart: bill them by hand, or they subscribe again online.';
+            }
+        }
+
         return $out;
     }
 

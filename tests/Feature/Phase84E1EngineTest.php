@@ -349,6 +349,21 @@ class Phase84E1EngineTest extends TestCase
         $this->assertSame([['sub_end', true], ['sub_now', false], ['sub_legacy', false]], $this->gateway->cancelled);
     }
 
+    public function test_the_preview_says_autopay_ends_with_a_cancellation_and_does_not_come_back(): void
+    {
+        $hq = $this->paying('Autopay');
+        $this->sub($hq)->forceFill(['razorpay_subscription_id' => 'sub_auto'])->save();
+
+        $cancel = $this->lifecycle()->preview($this->sub($hq), 'cancel', ['reason' => 'x', 'at_period_end' => true]);
+        $this->assertTrue(collect($cancel['warnings'])->contains(fn ($w) => str_contains($w, 'cancels their Razorpay autopay')));
+
+        $this->lifecycle()->commit($this->sub($hq), 'cancel', ['reason' => 'moving on', 'at_period_end' => true]);
+
+        $back = $this->lifecycle()->preview($this->sub($hq), 'reactivate', ['reason' => 'changed their mind']);
+        $this->assertTrue(collect($back['warnings'])->contains(fn ($w) => str_contains($w, 'does not restart')),
+            'reactivating restores access, but the operator must know autopay is gone');
+    }
+
     public function test_a_gateway_failure_never_blocks_or_undoes_the_operator(): void
     {
         $hq = $this->paying('Gateway Down');
