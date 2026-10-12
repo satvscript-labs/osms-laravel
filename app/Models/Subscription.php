@@ -4,6 +4,8 @@ namespace App\Models;
 
 use App\Models\Concerns\BelongsToTenant;
 use App\Models\Concerns\HasUuid;
+use App\Services\EntitlementWriteRefused;
+use App\Services\SubscriptionLifecycle;
 use App\Support\Mrr;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -50,6 +52,17 @@ class Subscription extends Model
      */
     protected static function booted(): void
     {
+        // E1.5 — the write guard (billing rule 1). Registered FIRST, so nothing
+        // else runs for a write that is about to be refused. `increment()` and
+        // `decrement()` fire `updating`, so they are caught too.
+        //
+        // What model events cannot see — query-builder mass updates,
+        // DB::table('subscriptions'), saveQuietly(), withoutEvents() — is banned in
+        // app/ by a static test instead (Phase84E1GuardTest, E1.6).
+        static::creating(fn () => static::guardWrite('create'));
+        static::updating(fn () => static::guardWrite('update'));
+        static::deleting(fn () => static::guardWrite('delete'));
+
         static::saving(function (Subscription $subscription) {
             if (! $subscription->isDirty('status')) {
                 return;
@@ -256,6 +269,52 @@ class Subscription extends Model
             ->where(fn ($q) => $q->whereNull('override_kind')
                 ->orWhere('override_kind', '!=', 'suspension')
                 ->orWhere(fn ($e) => $e->whereNotNull('override_until')->whereDate('override_until', '<', $today)));
+    }
+
+    /**
+     * E1.5 — refuse a subscription write unless the billing engine is making it.
+     *
+     * Test fixtures: in the test runner ONLY, a write whose nearest caller
+     * outside the framework is a file under tests/ is the test arranging a
+     * scenario, and is allowed. A write reached from app/ code is refused exactly
+     * as in production — so a hidden writer still fails the suite. There is no
+     * global off-switch: that would hide exactly the writers this exists to find.
+     */
+    private static function guardWrite(string $what): void
+    {
+        if (SubscriptionLifecycle::isWriting()) {
+            return;
+        }
+
+        $caller = static::writerFile();
+
+        if (app()->runningUnitTests() && $caller !== null
+            && str_starts_with($caller, str_replace('\\', '/', base_path('tests')) . '/')) {
+            return;
+        }
+
+        throw new EntitlementWriteRefused(sprintf(
+            'A subscription may only be written through %s; a %s was attempted from %s.',
+            SubscriptionLifecycle::class,
+            $what,
+            $caller ?? 'unknown code',
+        ));
+    }
+
+    /** The nearest file in the call stack that is neither the framework nor this model. */
+    private static function writerFile(): ?string
+    {
+        foreach (debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 80) as $frame) {
+            $file = isset($frame['file']) ? str_replace('\\', '/', $frame['file']) : null;
+
+            if ($file === null || str_contains($file, '/vendor/') || str_ends_with($file, '/app/Models/Subscription.php')) {
+                continue;
+            }
+
+            return $file;
+        }
+
+        return null;
     }
 
     public function isPastDue(): bool
