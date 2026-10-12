@@ -106,17 +106,24 @@
 
             @if ($s === 'active' && ! $subscription?->cancel_at_period_end)
                 <div class="d-flex flex-wrap gap-2">
-                    @unless ($subscription?->pending_interval)
-                        @if (empty($supervised))
-                    <form method="POST" action="{{ route('tenant.billing.change-interval') }}">
-                            @csrf
-                            <input type="hidden" name="interval" value="{{ $otherInterval }}">
-                            <button type="submit" class="btn btn-light">
-                                Switch to {{ ucfirst($otherInterval) }}@if ($otherInterval === 'yearly' && $yearlySave > 0)<span class="badge text-bg-success ms-1">Save {{ $yearlySave }}%</span>@endif
-                            </button>
-                        </form>
+                    @if (empty($supervised))
+                        @if ($subscription?->pending_interval)
+                            {{-- E1 audit — a pending switch can be undone, not only waited out. --}}
+                            <form method="POST" action="{{ route('tenant.billing.change-interval') }}">
+                                @csrf
+                                <input type="hidden" name="interval" value="{{ $interval }}">
+                                <button type="submit" class="btn btn-light">Keep {{ ucfirst($interval) }}</button>
+                            </form>
+                        @else
+                            <form method="POST" action="{{ route('tenant.billing.change-interval') }}">
+                                @csrf
+                                <input type="hidden" name="interval" value="{{ $otherInterval }}">
+                                <button type="submit" class="btn btn-light">
+                                    Switch to {{ ucfirst($otherInterval) }}@if ($otherInterval === 'yearly' && $yearlySave > 0)<span class="badge text-bg-success ms-1">Save {{ $yearlySave }}%</span>@endif
+                                </button>
+                            </form>
+                        @endif
                     @endif
-                    @endunless
                     @if (empty($supervised))
                     <form method="POST" action="{{ route('tenant.billing.cancel') }}">
                         @csrf

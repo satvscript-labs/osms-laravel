@@ -210,8 +210,15 @@ class BillingController extends Controller
             return back()->with('error', 'You can change your billing cycle once your subscription is active.');
         }
 
-        if ($validated['interval'] === $subscription->interval) {
+        // Choosing the period they are on is an error only when nothing is pending;
+        // with a switch pending it CANCELS the switch (the operator can set one too,
+        // and the owner must be able to undo it).
+        if ($validated['interval'] === $subscription->interval && ! $subscription->pending_interval) {
             return back()->with('error', "You're already on the {$validated['interval']} billing cycle.");
+        }
+
+        if ($validated['interval'] === $subscription->pending_interval) {
+            return back()->with('error', "You're already switching to {$validated['interval']} at your next renewal.");
         }
 
         if ($billing->isConfigured() && $subscription->razorpay_subscription_id) {

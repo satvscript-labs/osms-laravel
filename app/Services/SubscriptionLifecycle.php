@@ -136,11 +136,15 @@ class SubscriptionLifecycle
         $error = null;
 
         try {
-            DB::transaction(function () use ($subscription, $action, $input, &$after, &$ledgerAfter) {
+            DB::transaction(function () use ($subscription, $action, $input, &$before, &$warnings, &$after, &$ledgerAfter) {
                 // The same locked row and write scope as a commit (E1.2), so the
-                // dry run exercises exactly the path the commit will take.
-                $row = self::writing(function () use ($subscription, $action, $input) {
+                // dry run exercises exactly the path the commit will take — and
+                // "before" and the warnings are read from that SAME fresh row, not
+                // from the caller's copy, which a webhook may have overtaken.
+                $row = self::writing(function () use ($subscription, $action, $input, &$before, &$warnings, &$after) {
                     $row = $this->lockRow($subscription);
+                    $before = $after = $this->snapshot($row);
+                    $warnings = $this->warningsFor($row, $action);
                     $this->apply($row, $action, $input, audit: false);
 
                     return $row;
@@ -896,6 +900,13 @@ class SubscriptionLifecycle
      */
     public function stopGatewayCharging(Subscription $subscription, bool $immediately, string $why): void
     {
+        // Only once the decision is durable: immediately when no transaction is
+        // open, otherwise after the OUTERMOST commit — and never if it rolls back.
+        DB::afterCommit(fn () => $this->callGatewayStop($subscription, $immediately, $why));
+    }
+
+    private function callGatewayStop(Subscription $subscription, bool $immediately, string $why): void
+    {
         $gatewayId = $subscription->razorpay_subscription_id;
 
         if (! $gatewayId) {
@@ -977,6 +988,10 @@ class SubscriptionLifecycle
         // E1.10 — an ending now reaches the gateway, and a cancelled Razorpay
         // subscription cannot be revived. Say both BEFORE the operator commits.
         if ($s->razorpay_subscription_id) {
+            if ($action === 'switch_interval') {
+                $out[] = 'They pay by Razorpay autopay, which stays on its current plan: this switch applies to renewals you take by hand. To change what autopay charges, they switch from their own billing page.';
+            }
+
             if (in_array($action, ['cancel', 'force_expire'], true)) {
                 $out[] = 'This also cancels their Razorpay autopay. It cannot be restarted from here: to pay online again they would subscribe afresh.';
             }

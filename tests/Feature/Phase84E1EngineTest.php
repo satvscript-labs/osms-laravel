@@ -443,6 +443,72 @@ class Phase84E1EngineTest extends TestCase
             ->where('account_id', $hq->account_id)->where('reason', 'paid yearly')->value('amount'));
     }
 
+    // ------------------------------------------------------------------
+    // E1 audit — found while auditing the build
+    // ------------------------------------------------------------------
+
+    public function test_a_pending_switch_is_visible_to_the_operator_and_undoable_by_the_owner(): void
+    {
+        $hq = $this->paying('Visible');
+        $this->lifecycle()->commit($this->sub($hq), 'switch_interval', ['interval' => 'yearly']);
+
+        // The operator sees it on the customer page, not only in the audit trail.
+        $this->withSession(['auth.password_confirmed_at' => time()])
+            ->get(route('superadmin.accounts.show', $hq->account_id))
+            ->assertSee('monthly → yearly from next renewal');
+
+        // The owner sees it and can undo it (choosing the period they are on).
+        $owner = $this->ownerOf($hq);
+        $this->actingAs($owner)->get(route('tenant.billing.index'))
+            ->assertSee('Switching to Yearly at your next renewal')
+            ->assertSee('Keep Monthly');
+
+        $this->actingAs($owner)->post(route('tenant.billing.change-interval'), ['interval' => 'monthly'])
+            ->assertSessionHas('status');
+
+        $this->assertNull($this->sub($hq)->pending_interval);
+        $this->assertSame('monthly', $this->sub($hq)->interval);
+    }
+
+    public function test_the_operator_is_told_autopay_does_not_follow_their_switch(): void
+    {
+        $hq = $this->paying('Autopay Switch');
+        $this->sub($hq)->forceFill(['razorpay_subscription_id' => 'sub_auto2'])->save();
+
+        $preview = $this->lifecycle()->preview($this->sub($hq), 'switch_interval', ['interval' => 'yearly']);
+
+        $this->assertTrue(collect($preview['warnings'])->contains(fn ($w) => str_contains($w, 'autopay')));
+    }
+
+    public function test_the_preview_reads_the_fresh_row_not_a_stale_copy(): void
+    {
+        $hq = $this->paying('Stale Copy');
+        $stale = $this->sub($hq);   // read at page load…
+        $this->sub($hq)->forceFill(['status' => 'past_due'])->save();   // …then a webhook moved it
+
+        $preview = $this->lifecycle()->preview($stale, 'switch_interval', ['interval' => 'yearly']);
+
+        $this->assertSame('past_due', $preview['before']['status'], 'before is the current state');
+        $this->assertArrayNotHasKey('status', $preview['changes'], 'no phantom status change');
+    }
+
+    public function test_a_rolled_back_decision_never_reaches_the_gateway(): void
+    {
+        $hq = $this->paying('Rolled Back');
+        $this->sub($hq)->forceFill(['razorpay_subscription_id' => 'sub_rb'])->save();
+
+        try {
+            DB::transaction(function () use ($hq) {
+                $this->lifecycle()->commit($this->sub($hq), 'force_expire', ['reason' => 'x']);
+                throw new \RuntimeException('something later failed');
+            });
+        } catch (\RuntimeException) {
+        }
+
+        $this->assertSame('active', $this->sub($hq)->status, 'the ending rolled back…');
+        $this->assertSame([], $this->gateway->cancelled, '…so Razorpay was never told to stop');
+    }
+
     public function test_the_switch_preview_says_from_next_renewal_and_changes_nothing_now(): void
     {
         $hq = $this->paying('Preview');
