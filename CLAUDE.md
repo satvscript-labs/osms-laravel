@@ -46,6 +46,11 @@ exactly **one** subscription (one clock, one renewal date). Design and status:
 1. **Only `App\Services\SubscriptionLifecycle` writes entitlement.** No controller, command, model hook
    or job assigns `status`, `current_period_end`/`_start`, `interval`, `pending_interval`, `quantity`,
    `cancel_at_period_end`, overrides or the negotiated price. Add a lifecycle method instead.
+   **Enforced (E1):** `Subscription` throws `EntitlementWriteRefused` on any create/update/delete outside
+   `SubscriptionLifecycle::writing()`, and `Phase84E1GuardTest` bans event-less writes in `app/` (bulk
+   `->update()`, `DB::table('subscriptions')`, `saveQuietly`, `withoutEvents`). Every engine write is
+   row-locked. Tests may set up a subscription directly from a file under `tests/`; app code never can.
+   A period switch (`switch_interval`, owner change) sets `pending_interval` and lands at the next renewal.
 2. **An unpaid action never changes entitlement.** Opening a checkout, raising a charge or creating a
    gateway order changes nothing about access until money is confirmed and settled.
 3. **The engine prices; surfaces display.** Every price (operator panel, owner page, gateway amount)
