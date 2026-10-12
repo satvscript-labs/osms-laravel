@@ -243,8 +243,37 @@ function operatorModal(config) {
                     headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
                     body: new FormData(form),
                 });
-                const data = await res.json();
                 if (mine !== this.seq) return; // a newer keystroke already won
+
+                // QA-01 — 423: the password confirmation has lapsed. Ask for it
+                // here and quote again; never read the refusal as "no change".
+                if (res.status === 423) {
+                    const confirmed = await (window.osmsConfirmPassword?.() ?? Promise.resolve(false));
+                    if (mine !== this.seq) return;
+                    if (confirmed) {
+                        this.loading = false;
+                        return this.refresh();
+                    }
+                    this.error = 'Confirm your password to see what this will do.';
+                    this.settled = true;
+                    return;
+                }
+
+                const data = await res.json().catch(() => ({}));
+                if (mine !== this.seq) return;
+
+                // Any other refusal (expired page, throttled, server error) is an
+                // error too: an empty answer must not render as "Nothing would change".
+                if (!res.ok && !data.error) {
+                    this.error = res.status === 419
+                        ? 'This page has been open too long. Reload it to continue.'
+                        : 'Could not calculate the outcome.';
+                    this.warnings = [];
+                    this.rows = [];
+                    this.ledger = 0;
+                    this.settled = true;
+                    return;
+                }
 
                 this.error = data.error || null;
                 this.warnings = data.warnings || [];
@@ -273,10 +302,12 @@ function operatorModal(config) {
                 current_period_end: 'Covered until',
                 cancel_at_period_end: 'Cancels at period end',
                 negotiated_price: 'Negotiated price',
+                negotiated_interval: 'Negotiated per',
+                quantity: 'Branches billed',
                 effective_price: 'They pay',
                 override_kind: 'Operator override',
                 override_until: 'Override until',
-            })[key] || key.replace(/_/g, ' ');
+            })[key] || (key.charAt(0).toUpperCase() + key.slice(1)).replace(/_/g, ' ');
         },
 
         format(key, v) {

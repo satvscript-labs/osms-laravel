@@ -7,6 +7,15 @@
         This is a secure area. Please confirm your password to continue.
     </p>
 
+    @if (session(\App\Http\Middleware\RequirePasswordConfirmation::UNSAVED))
+        {{-- QA-02 — they pressed save; it has not happened. Never let them assume it did. --}}
+        <div class="alert py-2 px-3 small rounded-3 mb-3" role="alert"
+             style="background:var(--tone-amber-bg);color:var(--tone-amber);border:0;">
+            <i class="bi bi-exclamation-triangle me-1"></i>
+            <strong>Your change has not been saved.</strong> Confirm your password, then do it again.
+        </div>
+    @endif
+
     @if ($errors->any())
         <div class="alert alert-danger py-2 px-3 small rounded-3">{{ $errors->first() }}</div>
     @endif

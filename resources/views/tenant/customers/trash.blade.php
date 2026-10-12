@@ -29,7 +29,7 @@
             <i class="bi bi-search text-muted-foreground"></i>
         </span>
         <input type="search" x-model="query" @input.debounce.220ms="refresh()"
-               class="form-control border-start-0"
+               class="form-control border-start-0 no-native-clear"
                placeholder="Search archived customers…" autocomplete="off" aria-label="Search archived customers">
         <span class="input-group-text bg-white border-start-0" x-show="loading" x-cloak>
             <span class="spinner-border spinner-border-sm text-primary" role="status" aria-hidden="true"></span>

@@ -183,7 +183,7 @@
                                         <input id="store_name" type="text" name="store_name"
                                                value="{{ old('store_name', $tenant->store_name) }}"
                                                class="form-control @error('store_name') is-invalid @enderror"
-                                               required placeholder="Sahaj Optical">
+                                               required placeholder="e.g. Clear Vision Opticals">
                                         @error('store_name')<div class="invalid-feedback">{{ $message }}</div>@enderror
                                     </div>
                                     <div class="col-sm-6">

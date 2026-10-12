@@ -91,11 +91,11 @@ function superadminList(config) {
            would have the operator chasing somebody who still has access. */
         pillLabel(r) {
             if (r.access === 'grace') return 'In grace';
-            return { active: 'Active', trialing: 'Trial', past_due: 'Past due', canceled: 'Cancelled' }[r.status] || 'No subscription';
+            return { active: 'Active', trialing: 'Trial', past_due: 'Past due', suspended: 'Suspended', canceled: 'Cancelled' }[r.status] || 'No subscription';
         },
         pillTone(r) {
             if (r.access === 'grace') return 'osms-badge-amber';
-            return { active: 'osms-badge-green', trialing: 'osms-badge-blue', past_due: 'osms-badge-amber' }[r.status] || '';
+            return { active: 'osms-badge-green', trialing: 'osms-badge-blue', past_due: 'osms-badge-amber', suspended: 'osms-badge-red' }[r.status] || '';
         },
     };
 }

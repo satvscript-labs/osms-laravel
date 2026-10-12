@@ -127,8 +127,10 @@
         </div>
         <div class="col-6 col-lg-2">
             <a href="{{ route('superadmin.accounts.index', ['filter' => 'lapsed']) }}" class="text-decoration-none">
+                {{-- QA-06 — owed money only; anyone you suspended is named, not counted. --}}
                 <x-metric-card label="Past due" value="{{ $stats['past_due'] }}" icon="bi-exclamation-circle"
-                               tone="{{ $stats['past_due'] > 0 ? 'amber' : 'default' }}" />
+                               tone="{{ $stats['past_due'] > 0 ? 'amber' : 'default' }}"
+                               :hint="$stats['suspended'] > 0 ? $stats['suspended'] . ' suspended by you, not counted' : null" />
             </a>
         </div>
         <div class="col-6 col-lg-2">
@@ -200,7 +202,7 @@
         @forelse ($worklist as $row)
             <a href="{{ $row['url'] }}" class="person-row">
                 <span class="person-avatar">
-                    <i class="bi {{ $row['status'] === 'past_due' ? 'bi-exclamation-circle' : 'bi-hourglass-split' }}"></i>
+                    <i class="bi {{ match ($row['status']) { 'past_due' => 'bi-exclamation-circle', 'suspended' => 'bi-pause-circle', default => 'bi-hourglass-split' } }}"></i>
                 </span>
                 <div class="flex-grow-1 min-w-0">
                     <div class="d-flex align-items-center gap-2 flex-wrap">
@@ -211,14 +213,21 @@
                         {{ $row['why'] }}
                         @if ($row['ends'])
                             ·
-                            @if ($row['days_left'] !== null && $row['days_left'] < 0)
+                            @if ($row['status'] === 'suspended')
+                                {{-- QA-06 — their date is what they have PAID to, not a deadline. --}}
+                                paid to
+                            @elseif ($row['days_left'] !== null && $row['days_left'] < 0)
                                 <span style="color:var(--tone-red);">expired {{ abs($row['days_left']) }} {{ Str::plural('day', abs($row['days_left'])) }} ago</span>
                             @elseif ($row['days_left'] === 0)
                                 <span style="color:var(--tone-amber);">today</span>
                             @else
                                 in {{ $row['days_left'] }} {{ Str::plural('day', $row['days_left']) }}
                             @endif
-                            <span class="text-faint">({{ $row['ends'] }})</span>
+                            @if ($row['status'] === 'suspended')
+                                <span>{{ $row['ends'] }}</span>
+                            @else
+                                <span class="text-faint">({{ $row['ends'] }})</span>
+                            @endif
                         @endif
                     </div>
                 </div>
@@ -246,7 +255,7 @@
                         <div class="d-flex align-items-center gap-2 flex-wrap">
                             <span class="fw-semibold text-truncate">{{ $account->displayName() }}</span>
                             @include('superadmin.partials.status-pill', [
-                                'status' => $account->subscription?->status ?? 'none',
+                                'status' => $account->subscription?->displayStatus() ?? 'none',
                                 'access' => $account->subscription?->accessState(),
                             ])
                         </div>

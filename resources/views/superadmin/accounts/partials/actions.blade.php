@@ -76,19 +76,23 @@
 <x-operator-modal id="m-renew" title="Renew now" :action="$act" preview="renew" :account="$account"
     label="Take payment & renew" icon="bi-arrow-repeat"
     intro="Records the payment AND moves the renewal date. Manual wins for this cycle.">
-    <div class="row g-3" x-data="bargainField({{ (float) ($price['effective'] ?? 0) }})">
+    {{-- QA-05 — priced like the renewal will be: the branches billed AFTER it
+         re-counts them, at the period chosen here. --}}
+    @php($rnInterval = $subscription?->interval === 'yearly' ? 'yearly' : 'monthly')
+    <div class="row g-3" x-data="renewField(@js($renewPrices ?? ['monthly' => 0, 'yearly' => 0]), @js($rnInterval))">
         <div class="col-6">
             <label class="form-label" for="rn-amount">Amount</label>
             <div class="input-group">
                 <span class="input-group-text">₹</span>
                 <input id="rn-amount" name="amount" type="number" step="0.01" min="0"
-                       x-model.number="amount" value="{{ $price['effective'] ?? '' }}"
+                       x-model.number="amount" @input="touched = true"
+                       value="{{ ($renewPrices ?? [])[$rnInterval] ?? '' }}"
                        class="form-control" inputmode="decimal">
             </div>
         </div>
         <div class="col-6">
             <label class="form-label" for="rn-interval">Period</label>
-            <select id="rn-interval" name="interval" class="form-select">
+            <select id="rn-interval" name="interval" class="form-select" x-model="interval">
                 <option value="monthly" @selected($subscription?->interval === 'monthly')>1 month</option>
                 <option value="yearly" @selected($subscription?->interval === 'yearly')>1 year</option>
             </select>
@@ -112,7 +116,8 @@
             <div class="rounded-3 p-3" style="background:var(--tone-green-bg);">
                 <p class="text-sm mb-2" style="color:var(--tone-green);">
                     <i class="bi bi-tag me-1"></i>
-                    <strong>₹ <span x-text="saved"></span></strong> below their price —
+                    <strong>₹ <span x-text="saved"></span></strong> below their price of
+                    ₹ <span x-text="listLabel"></span> —
                     recorded as a discount on this renewal only.
                 </p>
                 <label class="form-label" for="rn-discount-why">Why the discount
@@ -121,6 +126,16 @@
                        class="form-control" maxlength="500"
                        placeholder="e.g. bargained at renewal">
             </div>
+        </div>
+
+        {{-- QA-05 — more than they owe is almost always a stale default or a
+             typo. Said out loud; the full warn-and-confirm step is D-4 (E2). --}}
+        <div class="col-12" x-show="over" x-cloak x-transition.opacity>
+            <p class="text-sm mb-0 rounded-3 p-3" style="background:var(--tone-amber-bg);color:var(--tone-amber);">
+                <i class="bi bi-exclamation-triangle me-1"></i>
+                <strong>₹ <span x-text="excess"></span></strong> MORE than their price of
+                ₹ <span x-text="listLabel"></span> for this period. Check the amount before you take it.
+            </p>
         </div>
     </div>
 </x-operator-modal>
@@ -479,6 +494,38 @@ function bargainField(list) {
                 minimumFractionDigits: 2, maximumFractionDigits: 2,
             });
         },
+    };
+}
+
+/**
+ * QA-05 — Renew now's amount, priced per period.
+ *
+ * Follows the Period select until the operator types an amount of their own;
+ * after that it is theirs and is never overwritten. `list` is what the renewal
+ * will price the period at, so the discount panel (below it) and the warning
+ * (above it) compare against the same number the server will.
+ */
+function renewField(prices, interval) {
+    const money = (n) => Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    return {
+        prices,
+        interval,
+        touched: false,
+        amount: Number(prices[interval]) || 0,
+        init() {
+            this.$watch('interval', (value) => {
+                if (!this.touched) this.amount = Number(this.prices[value]) || 0;
+            });
+        },
+        get list() { return Number(this.prices[this.interval]) || 0; },
+        get listLabel() { return money(this.list); },
+        get discounted() {
+            return this.list > 0 && Number(this.amount) >= 0 && Number(this.amount) < this.list;
+        },
+        get over() { return this.list > 0 && Number(this.amount) > this.list; },
+        get saved() { return money(this.list - Number(this.amount)); },
+        get excess() { return money(Number(this.amount) - this.list); },
     };
 }
 </script>

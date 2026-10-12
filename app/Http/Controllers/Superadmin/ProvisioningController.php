@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Superadmin;
 use App\Http\Controllers\Controller;
 use App\Models\Account;
 use App\Models\Plan;
+use App\Services\Proration;
 use App\Services\StoreProvisioner;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -35,8 +36,14 @@ class ProvisioningController extends Controller
             ? Account::with('stores')->find($request->string('account')->toString())
             : null;
 
+        // UI-03 — what joining TODAY will charge, worked out by the very call the
+        // save makes, so the page cannot promise one thing and the ledger do another.
+        $subscription = $account?->subscription;
+        $joinCost = $subscription ? app(Proration::class)->forNewBranch($subscription) : null;
+
         return view('superadmin.accounts.create', [
             'account' => $account,
+            'joinCost' => $joinCost,
             'plans' => Plan::query()->orderBy('sort_order')->get(),
             'defaultTrialDays' => (int) config('billing.trial_days', 14),
         ]);

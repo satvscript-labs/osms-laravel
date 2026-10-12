@@ -68,7 +68,10 @@ class DashboardController extends Controller
             'stores' => Tenant::count(),
             'active' => (int) ($byStatus['active'] ?? 0),
             'trialing' => (int) ($byStatus['trialing'] ?? 0),
-            'past_due' => (int) ($byStatus['past_due'] ?? 0),
+            // QA-06 — owed money only. A suspension is stored as past_due but is
+            // our own pause of a paid-up customer, so it is counted on its own.
+            'past_due' => Subscription::withoutGlobalScopes()->whereNotNull('account_id')->overdue()->count(),
+            'suspended' => Subscription::withoutGlobalScopes()->whereNotNull('account_id')->suspended()->where('status', 'past_due')->count(),
             'canceled' => (int) ($byStatus['canceled'] ?? 0),
         ];
 
@@ -96,13 +99,17 @@ class DashboardController extends Controller
                 return [
                     'account' => $s->account?->displayName() ?? '—',
                     'email' => $s->account?->billing_email,
-                    'status' => $s->status,
+                    'status' => $s->displayStatus(),
                     'access' => $s->accessState(),
                     'ends' => $end?->format('d M Y'),
                     'days_left' => $end ? (int) $today->diffInDays($end->startOfDay(), false) : null,
-                    'why' => $s->status === 'past_due'
-                        ? 'Payment overdue'
-                        : ($s->status === 'trialing' ? 'Trial ending' : 'Renewal due'),
+                    // QA-06 — a suspension needs a decision, not a payment chase.
+                    'why' => match (true) {
+                        $s->isSuspended() => 'Suspended by you',
+                        $s->status === 'past_due' => 'Payment overdue',
+                        $s->status === 'trialing' => 'Trial ending',
+                        default => 'Renewal due',
+                    },
                     'url' => $s->account ? route('superadmin.accounts.show', $s->account_id) : null,
                 ];
             })

@@ -36,8 +36,7 @@ class BillingController extends Controller
                         ->orWhereHas('account', fn ($a) => $a->where('name', 'like', $like));
                 });
             })
-            ->orderByDesc('paid_at')
-            ->orderByDesc('created_at')
+            ->newestFirst()
             ->paginate(self::PER_PAGE)
             ->withQueryString();
 

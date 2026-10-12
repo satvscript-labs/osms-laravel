@@ -139,6 +139,24 @@ class PriceResolver
     }
 
     /**
+     * QA-05 — what the NEXT period costs: the branches that will be billed once
+     * the renewal re-counts them, at the chosen interval.
+     *
+     * A renewal re-syncs the branch count (a branch closed mid-cycle stops being
+     * charged from here, decision D4), so "what they pay now" is the wrong
+     * default for it. The renewal itself and the operator's form both ask THIS,
+     * so the pre-filled amount and the server can never disagree again.
+     */
+    public function renewalPrice(Subscription $subscription, ?string $interval = null): float
+    {
+        $quantity = $subscription->account
+            ? max(1, $subscription->account->billableStores()->count())
+            : null;
+
+        return $this->effectivePrice($subscription, $interval, $quantity);
+    }
+
+    /**
      * The rate for ONE branch — what a proration multiplies by, and what the
      * per-branch line on a receipt shows.
      */

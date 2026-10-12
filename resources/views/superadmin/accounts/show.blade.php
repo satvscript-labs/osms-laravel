@@ -64,7 +64,9 @@
                     <li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#m-extend"><i class="bi bi-hourglass-split me-2"></i>Extend</button></li>
                     <li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#m-comp"><i class="bi bi-gift me-2"></i>Grant free access</button></li>
 
-                    @if ($subscription->status === 'past_due')
+                    {{-- QA-06 — a suspended customer is not overdue; these levers are
+                         for money that is owed. (Still possible deliberately: warned.) --}}
+                    @if ($subscription->status === 'past_due' && ! $subscription->isSuspended())
                         <li><hr class="dropdown-divider"></li>
                         <li><h6 class="dropdown-header">Overdue</h6></li>
                         <li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#m-markpaid"><i class="bi bi-check2-circle me-2"></i>Mark as paid</button></li>
@@ -94,7 +96,7 @@
         <div class="min-w-0 flex-grow-1 order-2">
             <h1 class="h4 fw-semibold font-display mb-1 text-truncate">{{ $account->displayName() }}</h1>
             <div class="chip-rail">
-                @include('superadmin.partials.status-pill', ['status' => $s?->status ?? 'none', 'access' => $access])
+                @include('superadmin.partials.status-pill', ['status' => $s?->displayStatus() ?? 'none', 'access' => $access])
                 @if ($s?->hasNegotiatedPrice())
                     <span class="meta-chip" title="On a hand-agreed price">⚑ bespoke</span>
                 @endif
@@ -389,7 +391,13 @@
                                      so a preview can never disagree with what is charged. --}}
                                 @foreach ($price['steps'] as $step)
                                     <div class="d-flex justify-content-between py-2 border-bottom text-sm">
-                                        <span class="text-muted-foreground">{{ $step['label'] }}</span>
+                                        <span class="text-muted-foreground">
+                                            {{ $step['label'] }}
+                                            {{-- UI-05 — e.g. "per branch · 3–4 branches rate": which band applies, said. --}}
+                                            @if (! empty($step['detail']))
+                                                <span class="d-block text-2xs text-faint">{{ $step['detail'] }}</span>
+                                            @endif
+                                        </span>
                                         <span class="fw-medium">₹ {{ number_format($step['amount'], 2) }}</span>
                                     </div>
                                 @endforeach

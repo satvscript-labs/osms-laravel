@@ -27,8 +27,16 @@
         </h1>
         <p class="text-muted-foreground mb-0 text-md">
             @if ($account)
-                This branch joins their existing subscription — it does not start a second clock,
-                and it starts counting toward the bill at their next renewal.
+                This branch joins their existing subscription — it does not start a second clock.
+                {{-- UI-03 — said as it will actually happen, for THIS customer. --}}
+                @if ($joinCost && $joinCost['applicable'])
+                    Adding it today charges a part period of
+                    <strong>₹ {{ number_format($joinCost['amount'], 2) }}</strong>
+                    ({{ $joinCost['days_charged'] }} of {{ $joinCost['days_in_period'] }} days), with the working
+                    on their ledger and receipt; from their next renewal it is part of the full bill.
+                @elseif ($joinCost)
+                    No part-period charge today: {{ lcfirst($joinCost['reason']) }}
+                @endif
             @else
                 Creates the customer, their first store and the owner's login. You will be shown
                 the password once, to give them.
@@ -53,7 +61,7 @@
                         <label class="form-label" for="owner_name">Name <span style="color:var(--tone-red);">*</span></label>
                         <input id="owner_name" name="owner_name" type="text" required maxlength="120"
                                class="form-control @error('owner_name') is-invalid @enderror"
-                               value="{{ old('owner_name') }}" placeholder="e.g. Rushi Patel">
+                               value="{{ old('owner_name') }}" placeholder="e.g. Anil Mehta">
                         @error('owner_name') <div class="invalid-feedback">{{ $message }}</div> @enderror
                     </div>
                     <div class="col-md-6">
@@ -100,7 +108,7 @@
                         <label class="form-label" for="store_name">Store name <span style="color:var(--tone-red);">*</span></label>
                         <input id="store_name" name="store_name" type="text" required maxlength="150"
                                class="form-control @error('store_name') is-invalid @enderror"
-                               value="{{ old('store_name') }}" placeholder="e.g. Sahaj Optical">
+                               value="{{ old('store_name') }}" placeholder="e.g. Clear Vision Opticals">
                         @error('store_name') <div class="invalid-feedback">{{ $message }}</div> @enderror
                     </div>
                     <div class="col-md-6">

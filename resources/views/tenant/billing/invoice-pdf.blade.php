@@ -61,6 +61,7 @@
         .right { text-align: right; }
         .totals { width: 45%; margin-left: 55%; margin-top: 16px; }
         .totals td { padding: 5px 10px; }
+        .totals td.right { white-space: nowrap; }   /* UI-05 — never "₹" on one line, the figure on the next */
         .totals .grand { border-top: 2px solid #004f75; font-weight: bold; font-size: 14px; }
         .label { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: #6b7785; }
         .foot { margin-top: 36px; font-size: 10px; color: #9aa5b1; text-align: center; }
@@ -114,7 +115,9 @@
                     {{ $isTaxInvoice ? 'TAX INVOICE' : 'PAYMENT RECEIPT' }}
                 </div>
                 <div class="muted" style="margin-top:6px;">
-                    No: {{ strtoupper(substr($invoice->id, 0, 8)) }}<br>
+                    {{-- QA-03 — the same number the operator sees on the ledger; a customer
+                         quoting it must be findable. Older rows without one fall back. --}}
+                    No: {{ $invoice->receipt_no ?: strtoupper(substr($invoice->id, 0, 8)) }}<br>
                     Date: {{ optional($invoice->paid_at ?? $invoice->created_at)->format('d M Y') }}
                 </div>
             </td>
@@ -144,7 +147,9 @@
                     @endif
                 </td>
                 <td class="right">
-                    ₹ {{ number_format($isTaxInvoice ? $tax['base'] : $invoice->amount, 2) }}
+                    {{-- UI-05 — on a bargain the line shows the full price, so line,
+                         subtotal, discount and total read down as one sum. --}}
+                    ₹ {{ number_format($isTaxInvoice ? $tax['base'] : ($invoice->hasDiscount() ? $invoice->list_amount : $invoice->amount), 2) }}
                 </td>
             </tr>
         </tbody>

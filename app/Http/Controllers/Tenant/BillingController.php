@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\Subscription;
 use App\Models\SubscriptionInvoice;
 use App\Services\BillingService;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -56,6 +58,31 @@ class BillingController extends Controller
             ?? 'Your account is managed directly by our team. Please contact us to make changes.';
     }
 
+    /**
+     * QA-08 — the receipts of the PAYER, not of this one store.
+     *
+     * Money lives on the account (REQ-12): one subscription, one ledger. The
+     * history used to be read through the tenant scope, so a second branch never
+     * saw the payments recorded against the first, and once a store was purged its
+     * rows — kept on purpose (FB-22), now tagged to no store — vanished from every
+     * remaining branch: "No payments yet", and no way to download a receipt the
+     * customer had paid for. Same payer, same ledger, wherever they sign in.
+     *
+     * Pre-backfill (no account yet) it is the store's own rows, exactly as before.
+     */
+    private function ledger(Request $request): Builder|HasMany
+    {
+        $tenant = $request->user()?->tenant;
+
+        if (! $tenant) {
+            return SubscriptionInvoice::query()->whereRaw('1 = 0');
+        }
+
+        return $tenant->account
+            ? $tenant->account->invoices()
+            : SubscriptionInvoice::query();
+    }
+
     public function index(Request $request, BillingService $billing): View
     {
         $subscription = $this->subscription($request);
@@ -63,7 +90,7 @@ class BillingController extends Controller
         // Single-plan launch: only the Basic plan is offered.
         $plans = ['basic' => config('billing.plans.basic')];
 
-        $invoices = SubscriptionInvoice::latest('paid_at')->get();
+        $invoices = $this->ledger($request)->with('tenant')->newestFirst()->get();
 
         return view('tenant.billing.index', [
             'subscription' => $subscription,
@@ -248,13 +275,17 @@ class BillingController extends Controller
      * otherwise it is a plain payment receipt. The filename follows, so a customer
      * filing it away is not told it is an invoice when it is not.
      */
-    public function invoicePdf(Request $request, SubscriptionInvoice $invoice): Response
+    public function invoicePdf(Request $request, string $invoice): Response
     {
-        $tenant = $request->user()->tenant;
+        // QA-08 — resolved through the payer's ledger, so a branch can download
+        // any receipt of its own account and nothing of anyone else's (404).
+        $invoice = $this->ledger($request)->whereKey($invoice)->firstOrFail();
 
         $pdf = Pdf::loadView('tenant.billing.invoice-pdf', [
             'invoice' => $invoice,
-            'tenant' => $tenant,
+            // Received from: the store the payment was recorded against; if that
+            // store has since been purged, the branch asking for it (same payer).
+            'tenant' => $invoice->tenant ?? $request->user()->tenant,
         ]);
 
         $date = optional($invoice->paid_at ?? $invoice->created_at)->format('Y-m-d');

@@ -225,7 +225,8 @@ class SubscriptionLifecycle
         // until this moment).
         $this->syncQuantity($s);
 
-        $list = $this->prices->effectivePrice($s, $interval);
+        // The same question the operator's form asks for its default (QA-05).
+        $list = $this->prices->renewalPrice($s, $interval);
         $amount = ($input['amount'] ?? null) !== null && $input['amount'] !== ''
             ? (float) $input['amount']
             : $list;
