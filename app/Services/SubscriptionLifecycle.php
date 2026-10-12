@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\AdminAuditLog;
 use App\Models\Subscription;
 use App\Models\SubscriptionInvoice;
+use Closure;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
@@ -42,6 +43,72 @@ class SubscriptionLifecycle
     ) {}
 
     // ---------------------------------------------------------------
+    // E1.2 — the only door, and the lock behind it
+    // ---------------------------------------------------------------
+
+    /** How deep we are inside writing(). Re-entrant; always unwound by `finally`. */
+    private static int $writing = 0;
+
+    /**
+     * Is a subscription write happening on the engine's behalf right now?
+     * `Subscription`'s write guard (E1.5) refuses every write when this is false.
+     */
+    public static function isWriting(): bool
+    {
+        return self::$writing > 0;
+    }
+
+    /**
+     * Run $fn with subscription writes allowed. Only the engine — and the one-off
+     * BackfillAccounts bootstrap — may call this; an architecture test enforces
+     * the list (Phase84E1GuardTest). The counter is unwound in `finally`, so an
+     * exception can never leave the door open in a long-running queue worker.
+     */
+    public static function writing(Closure $fn): mixed
+    {
+        self::$writing++;
+
+        try {
+            return $fn();
+        } finally {
+            self::$writing--;
+        }
+    }
+
+    /**
+     * E1.2 / FB-15 — act on the subscription's row LOCKED for this transaction.
+     *
+     * The caller's instance may be stale (read at page load, or by a webhook a
+     * moment ago). The row is re-read FOR UPDATE, so an operator action and a
+     * webhook for the same customer are serialised and each sees the other's
+     * result. The caller's instance is refreshed only AFTER the commit, so it can
+     * never hold values that were rolled back.
+     *
+     * @template T
+     * @param  Closure(Subscription): T  $fn
+     * @return T
+     */
+    private function locked(Subscription $subscription, Closure $fn): mixed
+    {
+        [$row, $result] = DB::transaction(fn () => self::writing(function () use ($subscription, $fn) {
+            $row = $this->lockRow($subscription);
+
+            return [$row, $fn($row)];
+        }));
+
+        $subscription->setRawAttributes($row->getAttributes(), true);
+
+        return $result;
+    }
+
+    private function lockRow(Subscription $subscription): Subscription
+    {
+        return Subscription::withoutGlobalScopes()
+            ->whereKey($subscription->getKey())
+            ->lockForUpdate()
+            ->firstOrFail();
+    }
+    // ---------------------------------------------------------------
     // Preview — the "quote before charge" contract
     // ---------------------------------------------------------------
 
@@ -66,9 +133,16 @@ class SubscriptionLifecycle
 
         try {
             DB::transaction(function () use ($subscription, $action, $input, &$after, &$ledgerAfter) {
-                $this->apply($subscription, $action, $input, audit: false);
+                // The same locked row and write scope as a commit (E1.2), so the
+                // dry run exercises exactly the path the commit will take.
+                $row = self::writing(function () use ($subscription, $action, $input) {
+                    $row = $this->lockRow($subscription);
+                    $this->apply($row, $action, $input, audit: false);
 
-                $after = $this->snapshot($subscription->refresh());
+                    return $row;
+                });
+
+                $after = $this->snapshot($row->refresh());
                 $ledgerAfter = SubscriptionInvoice::withoutGlobalScopes()
                     ->where('account_id', $subscription->account_id)->count();
 
@@ -105,9 +179,9 @@ class SubscriptionLifecycle
     /** Execute for real, audited. */
     public function commit(Subscription $subscription, string $action, array $input = []): Subscription
     {
-        return DB::transaction(function () use ($subscription, $action, $input) {
-            return $this->apply($subscription, $action, $input, audit: true);
-        });
+        $this->locked($subscription, fn (Subscription $row) => $this->apply($row, $action, $input, audit: true));
+
+        return $subscription;
     }
 
     // ---------------------------------------------------------------

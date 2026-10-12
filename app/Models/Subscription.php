@@ -16,7 +16,7 @@ class Subscription extends Model
     protected $fillable = [
         'tenant_id', 'account_id', 'razorpay_subscription_id', 'razorpay_customer_id',
         'status', 'tier', 'plan_id', 'interval', 'pending_interval', 'quantity',
-        'current_period_end', 'cancel_at_period_end', 'manual',
+        'current_period_end', 'current_period_start', 'cancel_at_period_end', 'manual',
         'negotiated_price', 'negotiated_interval', 'negotiated_reason', 'negotiated_by', 'negotiated_at',
         'override_kind', 'override_until', 'override_reason', 'override_by', 'override_at',
         'churned_at', 'churned_mrr', 'churned_from',
@@ -24,6 +24,9 @@ class Subscription extends Model
 
     protected $casts = [
         'current_period_end' => 'date',
+        // E1.1 — written by the engine on every period change; NULL on rows that
+        // predate it (no history is invented). See periodStart().
+        'current_period_start' => 'date',
         'cancel_at_period_end' => 'boolean',
         'manual' => 'boolean',
         'quantity' => 'integer',
