@@ -29,8 +29,11 @@ use Illuminate\Http\Request;
  */
 class RequirePasswordConfirmation extends RequirePassword
 {
-    /** Session key: a write was refused for confirmation and has not been redone. */
+    /** Session key: WHEN a write was refused for confirmation (unix time). */
     public const UNSAVED = 'password_confirm.unsaved_write';
+
+    /** How long that refusal still describes "your last change" (seconds). */
+    public const UNSAVED_TTL = 900;
 
     /**
      * Laravel binds ITS RequirePassword with `auth.password_timeout`; a subclass is
@@ -57,7 +60,7 @@ class RequirePasswordConfirmation extends RequirePassword
 
         if ($this->isWrite($request)) {
             $request->session()->put('url.intended', $this->returnTo($request));
-            $request->session()->put(self::UNSAVED, true);
+            $request->session()->put(self::UNSAVED, time());
 
             return $this->responseFactory->redirectTo(
                 $this->urlGenerator->route($redirectToRoute ?: 'password.confirm')

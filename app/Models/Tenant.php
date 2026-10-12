@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Concerns\HasUuid;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
@@ -169,6 +170,16 @@ class Tenant extends Model
         }
 
         return (bool) $this->governingSubscription()?->hasAccess();
+    }
+
+    /**
+     * The ONE rule for "this store is paid for": billable and not closed. Used by
+     * Account::billableStores() and by Metrics' grouped count, so a renewal and a
+     * forecast can never disagree about who is billed.
+     */
+    public function scopeBillable(Builder $query): Builder
+    {
+        return $query->where('is_billable', true)->where('store_status', '!=', 'closed');
     }
 
     /**

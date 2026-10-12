@@ -55,6 +55,10 @@ class DashboardController extends Controller
             ->groupBy('status')
             ->pluck('c', 'status');
 
+        // QA-06 — a suspension is stored as past_due; counted over the SAME rows as
+        // $byStatus so the subtraction below is exact (one query, not two).
+        $suspended = Subscription::withoutGlobalScopes()->where('status', 'past_due')->suspended()->count();
+
         $stats = [
             'mrr' => round($mrr, 2),
             'arr' => round($mrr * 12, 2),
@@ -68,10 +72,9 @@ class DashboardController extends Controller
             'stores' => Tenant::count(),
             'active' => (int) ($byStatus['active'] ?? 0),
             'trialing' => (int) ($byStatus['trialing'] ?? 0),
-            // QA-06 — owed money only. A suspension is stored as past_due but is
-            // our own pause of a paid-up customer, so it is counted on its own.
-            'past_due' => Subscription::withoutGlobalScopes()->whereNotNull('account_id')->overdue()->count(),
-            'suspended' => Subscription::withoutGlobalScopes()->whereNotNull('account_id')->suspended()->where('status', 'past_due')->count(),
+            // QA-06 — owed money only; anyone we paused is counted on its own.
+            'past_due' => max(0, (int) ($byStatus['past_due'] ?? 0) - $suspended),
+            'suspended' => $suspended,
             'canceled' => (int) ($byStatus['canceled'] ?? 0),
         ];
 

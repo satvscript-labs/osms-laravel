@@ -156,7 +156,7 @@ class Account extends Model
      */
     public function billableStores(): HasMany
     {
-        return $this->stores()->where('is_billable', true)->where('store_status', '!=', 'closed');
+        return $this->stores()->billable();
     }
 
     /**

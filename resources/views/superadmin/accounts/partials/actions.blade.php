@@ -226,8 +226,9 @@
             <label class="form-label" for="mp-amount">Amount</label>
             <div class="input-group">
                 <span class="input-group-text">₹</span>
+                {{-- AUDIT-03 — the cycle this pays for, priced like a renewal. --}}
                 <input id="mp-amount" name="amount" type="number" step="0.01" min="0"
-                       value="{{ $price['effective'] ?? '' }}" class="form-control">
+                       value="{{ ($renewPrices ?? [])[$subscription?->interval === 'yearly' ? 'yearly' : 'monthly'] ?? ($price['effective'] ?? '') }}" class="form-control">
             </div>
         </div>
         <div class="col-6">

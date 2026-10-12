@@ -46,6 +46,7 @@ class Proration
      *   unit_price: float,
      *   branches: int,
      *   period_start: Carbon,
+ *   charged_from: Carbon,
      *   period_end: Carbon,
      *   days_in_period: int,
      *   days_charged: int,
@@ -107,6 +108,9 @@ class Proration
             'branches' => $branches,
             'period_start' => $periodStart,
             'period_end' => $periodEnd,
+            // AUDIT-02 — the stretch actually charged for; the ledger row records
+            // THIS as its cover, so its dates and its working cannot disagree.
+            'charged_from' => $chargedFrom,
             'days_in_period' => $daysInPeriod,
             'days_charged' => $daysCharged,
             'interval' => $interval,
@@ -163,6 +167,7 @@ class Proration
             'branches' => $branches,
             'period_start' => $today,
             'period_end' => $today,
+            'charged_from' => $today,
             'days_in_period' => 0,
             'days_charged' => 0,
             'interval' => $interval,

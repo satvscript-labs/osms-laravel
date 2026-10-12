@@ -118,6 +118,48 @@ class Phase83QaRunFixesTest extends TestCase
         $this->assertSame($before, $this->ledgerCount($account), 'and still nothing was written behind their back');
     }
 
+    public function test_the_in_page_prompt_never_inherits_a_stale_not_saved_warning(): void
+    {
+        // AUDIT-01 — a refusal the operator walked away from must not surface after
+        // the prompt's OWN change succeeds: they would enter the money twice.
+        $this->withSession([
+            \App\Http\Middleware\RequirePasswordConfirmation::UNSAVED => time(),
+            'url.intended' => route('superadmin.dashboard'),
+        ]);
+
+        $this->postJson(route('password.confirm'), ['password' => 'password'])
+            ->assertOk()
+            ->assertJson(['confirmed' => true]);
+
+        $this->assertNull(session('error'));
+        $this->assertFalse(session()->has(\App\Http\Middleware\RequirePasswordConfirmation::UNSAVED));
+        $this->assertFalse(session()->has('url.intended'));
+    }
+
+    public function test_an_old_abandoned_refusal_is_not_reported_as_the_last_change(): void
+    {
+        $this->withSession([\App\Http\Middleware\RequirePasswordConfirmation::UNSAVED => time() - 3600]);
+
+        $this->get(route('password.confirm'))->assertDontSee('Your change has not been saved');
+        $this->post(route('password.confirm'), ['password' => 'password'])->assertSessionMissing('error');
+    }
+
+    public function test_a_store_owner_disabling_two_factor_on_a_lapsed_confirmation_is_told_it_was_not_saved(): void
+    {
+        // The one store-side route behind password.confirm. No browser guard there,
+        // so the server safety net is what the owner meets.
+        $owner = $this->ownerOf($this->store('2FA Shop'));
+        $page = route('profile.edit');
+
+        $this->actingAs($owner)->from($page)->delete(route('two-factor.disable'))
+            ->assertRedirect(route('password.confirm'));
+        $this->assertSame($page, session('url.intended'));
+
+        $this->post(route('password.confirm'), ['password' => 'password'])
+            ->assertRedirect($page)
+            ->assertSessionHas('error', fn ($m) => str_contains($m, 'NOT saved'));
+    }
+
     public function test_an_ordinary_confirmation_carries_no_unsaved_warning(): void
     {
         $this->post(route('password.confirm'), ['password' => 'password'])->assertSessionMissing('error');
@@ -239,6 +281,31 @@ class Phase83QaRunFixesTest extends TestCase
             ->where('account_id', $hq->account_id)->whereNotNull('calculation')->firstOrFail();
 
         $this->assertEquals(499.0, (float) $row->amount);
+
+        // AUDIT-02 — the row's cover is the stretch charged: the paid period, not the trial before it.
+        $sub = $hq->account->subscription()->first();
+        $this->assertSame($sub->current_period_end->copy()->subMonth()->toDateString(), $row->period_start->toDateString());
+        $this->assertSame($sub->current_period_end->toDateString(), $row->period_end->toDateString());
+    }
+
+    public function test_a_branch_booked_inside_prepaid_cover_records_cover_from_its_join_date(): void
+    {
+        $hq = $this->store('Prepaid Booked');
+        $hq->account->subscription->forceFill([
+            'status' => 'active', 'interval' => 'monthly', 'current_period_end' => $this->today(),
+        ])->save();
+        $life = app(SubscriptionLifecycle::class);
+        $life->commit($hq->account->subscription->fresh(), 'renew', ['amount' => 499, 'method' => 'cash']);
+        $life->commit($hq->account->subscription->fresh(), 'renew', ['amount' => 499, 'method' => 'cash']);
+
+        $this->store('Prepaid Booked — Branch 2', $hq->account->fresh());
+
+        $row = SubscriptionInvoice::withoutGlobalScopes()
+            ->where('account_id', $hq->account_id)->whereNotNull('calculation')->firstOrFail();
+
+        // Charged from today across two prepaid periods — and the row says exactly that.
+        $this->assertSame($this->today()->toDateString(), $row->period_start->toDateString());
+        $this->assertGreaterThan(499.0, (float) $row->amount);
     }
 
     // ------------------------------------------------------------------
@@ -265,9 +332,46 @@ class Phase83QaRunFixesTest extends TestCase
             ->assertViewHas('renewPrices', fn ($p) => $p['monthly'] == 499.0 && $p['yearly'] == 4999.0);
 
         // And a renewal left at the default charges the same number.
+        // The NEW row, found by elimination: every row here shares one second.
+        $before = SubscriptionInvoice::withoutGlobalScopes()->where('account_id', $account->id)->pluck('id');
         app(SubscriptionLifecycle::class)->commit($sub->fresh(), 'renew', ['amount' => '', 'method' => 'cash']);
         $this->assertEquals(499.0, (float) SubscriptionInvoice::withoutGlobalScopes()
-            ->where('account_id', $account->id)->newestFirst()->value('amount'));
+            ->where('account_id', $account->id)->whereNotIn('id', $before)->value('amount'));
+    }
+
+    public function test_mark_as_paid_after_a_branch_closes_defaults_to_the_branches_left(): void
+    {
+        // AUDIT-03 — Mark as paid starts a new cycle like a renewal, so it is
+        // priced like one; its default used to be worked out before the re-count.
+        $hq = $this->payingAccount();
+        $account = $hq->account;
+        $b2 = $this->store('Branch 2', $account->fresh());
+        app(StoreClosure::class)->close($b2->fresh(), 'test');
+
+        $sub = $account->subscription()->first();
+        $sub->forceFill(['status' => 'past_due', 'current_period_end' => $this->today()->subDays(3)])->save();
+
+        app(SubscriptionLifecycle::class)->commit($sub->fresh(), 'mark_paid', ['reason' => 'paid at counter', 'amount' => '']);
+
+        // Picked by its reason, not by "newest": every row here shares one second.
+        $row = SubscriptionInvoice::withoutGlobalScopes()->where('account_id', $account->id)
+            ->where('reason', 'paid at counter')->firstOrFail();
+        $this->assertEquals(499.0, (float) $row->amount);
+        $this->assertNull($row->list_amount, 'and it is the full price, not a bargain');
+    }
+
+    public function test_expected_in_30_days_does_not_expect_a_closed_branch_again(): void
+    {
+        $hq = $this->payingAccount();
+        $account = $hq->account;
+        $b2 = $this->store('Branch 2', $account->fresh());
+        app(StoreClosure::class)->close($b2->fresh(), 'test');
+        $account->subscription()->first()->forceFill(['current_period_end' => $this->today()->addDays(5)])->save();
+
+        $collection = app(\App\Support\Metrics::class)->collection();
+
+        $this->assertSame(1, $collection['due_soon_count']);
+        $this->assertEquals(499.0, $collection['due_soon_amount'], 'one branch renews, not two');
     }
 
     // ------------------------------------------------------------------
@@ -393,6 +497,35 @@ class Phase83QaRunFixesTest extends TestCase
         $this->app['auth']->forgetGuards();
         $this->get(route('tenant.dashboard'))->assertRedirect(route('login'));
         $this->assertGuest();
+    }
+
+    public function test_view_as_store_survives_session_authentication_with_a_real_sign_in(): void
+    {
+        // AUDIT-04 — AuthenticateSession compares each session's stored password
+        // hash with the signed-in user's. "View as" switches the user inside the
+        // session; with a real sign-in (not actingAs) every hop must keep working.
+        $shop = $this->store('Viewed');
+        $owner = $this->ownerOf($shop);
+        auth()->logout();
+
+        $this->post(route('login'), ['email' => $this->admin->email, 'password' => 'password'])->assertRedirect();
+        $this->app['auth']->forgetGuards();
+
+        $this->withSession(['auth.password_confirmed_at' => time()])
+            ->post(route('superadmin.accounts.impersonate', [$shop->account_id, $owner]), ['reason' => 'support'])
+            ->assertRedirect();
+
+        foreach ([route('tenant.dashboard'), route('tenant.customers.index')] as $page) {
+            $this->app['auth']->forgetGuards();
+            $this->get($page)->assertOk()->assertSee('impersonation-band', false);
+        }
+
+        $this->app['auth']->forgetGuards();
+        $this->post(route('impersonation.stop'))->assertRedirect();
+
+        $this->app['auth']->forgetGuards();
+        $this->get(route('superadmin.dashboard'))->assertOk();
+        $this->assertAuthenticatedAs($this->admin->fresh());
     }
 
     public function test_changing_your_own_password_keeps_you_signed_in(): void

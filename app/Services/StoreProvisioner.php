@@ -122,7 +122,9 @@ class StoreProvisioner
             [
                 'tenant_id' => $tenant->id,          // the branch that caused it
                 'reason' => "Part period for {$tenant->store_name}",
-                'period_start' => $proration['period_start'],
+                // AUDIT-02 — cover = what was charged for (from the join date when
+                // that falls inside prepaid cover), not just the current period.
+                'period_start' => $proration['charged_from'],
                 'period_end' => $proration['period_end'],
                 'calculation' => [
                     'kind' => 'proration',

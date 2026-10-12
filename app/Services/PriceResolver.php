@@ -149,8 +149,10 @@ class PriceResolver
      */
     public function renewalPrice(Subscription $subscription, ?string $interval = null): float
     {
+        // billableStoreCount(): the same rule as billableStores(), but it reuses an
+        // eager-loaded `stores` relation — so a list priced in a loop is not N queries.
         $quantity = $subscription->account
-            ? max(1, $subscription->account->billableStores()->count())
+            ? max(1, $subscription->account->billableStoreCount())
             : null;
 
         return $this->effectivePrice($subscription, $interval, $quantity);

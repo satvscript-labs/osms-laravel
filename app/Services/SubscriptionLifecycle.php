@@ -225,8 +225,10 @@ class SubscriptionLifecycle
         // until this moment).
         $this->syncQuantity($s);
 
-        // The same question the operator's form asks for its default (QA-05).
-        $list = $this->prices->renewalPrice($s, $interval);
+        // Priced AFTER the fresh re-count above — the same answer the operator's
+        // form gets from PriceResolver::renewalPrice() (QA-05), but never from a
+        // store list loaded earlier in the request.
+        $list = $this->prices->effectivePrice($s, $interval);
         $amount = ($input['amount'] ?? null) !== null && $input['amount'] !== ''
             ? (float) $input['amount']
             : $list;
@@ -385,6 +387,12 @@ class SubscriptionLifecycle
      */
     private function doMarkPaid(Subscription $s, array $input, string $reason): void
     {
+        // AUDIT-03 — like a renewal this starts a new cycle, so it is priced for
+        // the branches billed FROM here: re-count FIRST. The default used to be
+        // worked out before the re-count and the bargain check after it, so after
+        // a branch closed the default overcharged with no flag.
+        $this->syncQuantity($s);
+
         $given = $input['amount'] ?? null;   // AUD-A03 — the key may be absent
         $amount = ($given !== null && $given !== '')
             ? (float) $given
@@ -394,7 +402,6 @@ class SubscriptionLifecycle
             throw new InvalidArgumentException('Marking a payment as received needs an amount. To give them the cycle for free, use Waive instead.');
         }
 
-        $this->syncQuantity($s);
         $end = $this->advanceOneCycle($s);
         $list = $this->prices->effectivePrice($s);
 
