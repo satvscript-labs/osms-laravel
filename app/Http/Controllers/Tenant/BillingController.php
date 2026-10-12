@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Subscription;
 use App\Models\SubscriptionInvoice;
 use App\Services\BillingService;
+use App\Services\SubscriptionLifecycle;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Barryvdh\DomPDF\Facade\Pdf;
@@ -136,7 +137,15 @@ class BillingController extends Controller
         // Block only a genuinely paid (active) subscription — a trialing store
         // must be able to convert to paid.
         $existing = $this->subscription($request);
-        if ($existing && $existing->status === 'active') {
+
+        // E1.3 (W7) — every account has its one subscription from birth. If it is
+        // somehow missing, refuse BEFORE opening anything at the gateway; never
+        // mint a second clock here (L-3).
+        if (! $existing) {
+            return back()->with('error', 'We could not find your subscription. Please contact us and we will sort it out.');
+        }
+
+        if ($existing->status === 'active') {
             return back()->with('error', 'You already have an active subscription. Manage it from billing.');
         }
 
@@ -166,18 +175,15 @@ class BillingController extends Controller
             return back()->with('error', 'Could not start checkout: ' . $e->getMessage());
         }
 
-        // Persist the pending subscription reference (keeps trial state until the
-        // webhook activates it).
-        Subscription::updateOrCreate(
-            ['tenant_id' => $tenant->id],
-            [
-                'razorpay_subscription_id' => $result['subscription_id'],
-                'tier' => $validated['tier'],
-                'interval' => $validated['interval'],
-                'pending_interval' => null,
-                'status' => 'trialing',
-                'cancel_at_period_end' => false,
-            ],
+        // E1.3 (W7) — link the gateway reference to the ACCOUNT's one subscription.
+        // Rule 2: nothing about access changes until the webhook confirms the money
+        // (this used to set status = trialing before any payment, and was keyed on
+        // tenant_id, so a second branch minted a second clock — L-3, L-4).
+        app(SubscriptionLifecycle::class)->linkCheckout(
+            $existing,
+            $result['subscription_id'],
+            $validated['interval'],
+            $validated['tier'],
         );
 
         return view('tenant.billing.checkout', [
@@ -204,8 +210,15 @@ class BillingController extends Controller
             return back()->with('error', 'You can change your billing cycle once your subscription is active.');
         }
 
-        if ($validated['interval'] === $subscription->interval) {
+        // Choosing the period they are on is an error only when nothing is pending;
+        // with a switch pending it CANCELS the switch (the operator can set one too,
+        // and the owner must be able to undo it).
+        if ($validated['interval'] === $subscription->interval && ! $subscription->pending_interval) {
             return back()->with('error', "You're already on the {$validated['interval']} billing cycle.");
+        }
+
+        if ($validated['interval'] === $subscription->pending_interval) {
+            return back()->with('error', "You're already switching to {$validated['interval']} at your next renewal.");
         }
 
         if ($billing->isConfigured() && $subscription->razorpay_subscription_id) {
@@ -228,7 +241,13 @@ class BillingController extends Controller
             }
         }
 
-        $subscription->update(['pending_interval' => $validated['interval']]);
+        // E1.3 (W8) — through the engine, audited as the owner.
+        app(SubscriptionLifecycle::class)->ownerRequestInterval($subscription, $validated['interval']);
+
+        // Choosing the period they are on undid a pending switch — say that, not "will switch".
+        if ($validated['interval'] === $subscription->interval) {
+            return back()->with('status', "You'll stay on {$validated['interval']} billing. The switch is cancelled.");
+        }
 
         return back()->with('status', "Your billing cycle will switch to {$validated['interval']} at your next renewal.");
     }
@@ -254,7 +273,8 @@ class BillingController extends Controller
             }
         }
 
-        $subscription->update(['cancel_at_period_end' => true]);
+        // E1.3 (W8) — through the engine, audited as the owner.
+        app(SubscriptionLifecycle::class)->ownerCancelAtPeriodEnd($subscription);
 
         return back()->with('status', 'Your subscription will cancel at the end of the current billing period.');
     }

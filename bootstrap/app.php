@@ -39,6 +39,8 @@ return Application::configure(basePath: dirname(__DIR__))
             // QA-02 — Laravel's own drops a form submission silently when the
             // confirmation has lapsed; this one says so (see the class).
             'password.confirm' => \App\Http\Middleware\RequirePasswordConfirmation::class,
+            // E1.11 — a money form is acted on once, never twice (double-click, re-send).
+            'once' => \App\Http\Middleware\OncePerSubmission::class,
         ]);
 
         // Razorpay posts webhooks without a CSRF token.

@@ -168,9 +168,10 @@ Route::middleware(['auth', 'superadmin', 'throttle:120,1'])
             | commit, undone.
             */
             Route::post('/customers/{account}/preview', [SuperadminAccountAction::class, 'preview'])->name('accounts.preview');
-            Route::post('/customers/{account}/action', [SuperadminAccountAction::class, 'commit'])->name('accounts.action');
-            Route::post('/customers/{account}/payment', [SuperadminAccountAction::class, 'recordPayment'])->name('accounts.payment');
-            Route::post('/customers/{account}/payment/{invoice}/reverse', [SuperadminAccountAction::class, 'reversePayment'])->name('accounts.payment.reverse');
+            // E1.11 — the three money doors accept each submitted form once.
+            Route::post('/customers/{account}/action', [SuperadminAccountAction::class, 'commit'])->middleware('once')->name('accounts.action');
+            Route::post('/customers/{account}/payment', [SuperadminAccountAction::class, 'recordPayment'])->middleware('once')->name('accounts.payment');
+            Route::post('/customers/{account}/payment/{invoice}/reverse', [SuperadminAccountAction::class, 'reversePayment'])->middleware('once')->name('accounts.payment.reverse');
             Route::patch('/customers/{account}/stores/{tenant}/status', [SuperadminAccountAction::class, 'storeStatus'])->name('accounts.store.status');
             Route::patch('/customers/{account}/stores/{tenant}/billable', [SuperadminAccountAction::class, 'storeBillable'])->name('accounts.store.billable');
             Route::patch('/customers/{account}/notes', [SuperadminAccountAction::class, 'updateNotes'])->name('accounts.notes');

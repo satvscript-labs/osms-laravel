@@ -28,7 +28,7 @@
                                 <div class="fw-medium">{{ $log->created_at?->format('d M Y, H:i') }}</div>
                                 <div class="text-muted-foreground" style="font-size:var(--text-xs);">{{ $log->created_at?->diffForHumans() }}</div>
                             </td>
-                            <td style="font-size:var(--text-sm);">{{ $log->admin_email ?? '—' }}</td>
+                            <td style="font-size:var(--text-sm);">{{ $log->actorLabel() }}</td>
                             <td style="font-size:var(--text-sm);">
                                 <div class="fw-medium">{{ $log->description }}</div>
                                 <code class="text-muted-foreground" style="font-size:var(--text-xs);">{{ $log->action }}</code>

@@ -2,11 +2,16 @@
 
 namespace App\Services;
 
+use App\Models\Account;
 use App\Models\AdminAuditLog;
+use App\Models\Plan;
 use App\Models\Subscription;
 use App\Models\SubscriptionInvoice;
+use App\Models\Tenant;
+use Closure;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
 
 /**
@@ -42,6 +47,72 @@ class SubscriptionLifecycle
     ) {}
 
     // ---------------------------------------------------------------
+    // E1.2 — the only door, and the lock behind it
+    // ---------------------------------------------------------------
+
+    /** How deep we are inside writing(). Re-entrant; always unwound by `finally`. */
+    private static int $writing = 0;
+
+    /**
+     * Is a subscription write happening on the engine's behalf right now?
+     * `Subscription`'s write guard (E1.5) refuses every write when this is false.
+     */
+    public static function isWriting(): bool
+    {
+        return self::$writing > 0;
+    }
+
+    /**
+     * Run $fn with subscription writes allowed. Only the engine — and the one-off
+     * BackfillAccounts bootstrap — may call this; an architecture test enforces
+     * the list (Phase84E1GuardTest). The counter is unwound in `finally`, so an
+     * exception can never leave the door open in a long-running queue worker.
+     */
+    public static function writing(Closure $fn): mixed
+    {
+        self::$writing++;
+
+        try {
+            return $fn();
+        } finally {
+            self::$writing--;
+        }
+    }
+
+    /**
+     * E1.2 / FB-15 — act on the subscription's row LOCKED for this transaction.
+     *
+     * The caller's instance may be stale (read at page load, or by a webhook a
+     * moment ago). The row is re-read FOR UPDATE, so an operator action and a
+     * webhook for the same customer are serialised and each sees the other's
+     * result. The caller's instance is refreshed only AFTER the commit, so it can
+     * never hold values that were rolled back.
+     *
+     * @template T
+     * @param  Closure(Subscription): T  $fn
+     * @return T
+     */
+    private function locked(Subscription $subscription, Closure $fn): mixed
+    {
+        [$row, $result] = DB::transaction(fn () => self::writing(function () use ($subscription, $fn) {
+            $row = $this->lockRow($subscription);
+
+            return [$row, $fn($row)];
+        }));
+
+        $subscription->setRawAttributes($row->getAttributes(), true);
+
+        return $result;
+    }
+
+    private function lockRow(Subscription $subscription): Subscription
+    {
+        return Subscription::withoutGlobalScopes()
+            ->whereKey($subscription->getKey())
+            ->lockForUpdate()
+            ->firstOrFail();
+    }
+    // ---------------------------------------------------------------
     // Preview — the "quote before charge" contract
     // ---------------------------------------------------------------
 
@@ -65,10 +136,21 @@ class SubscriptionLifecycle
         $error = null;
 
         try {
-            DB::transaction(function () use ($subscription, $action, $input, &$after, &$ledgerAfter) {
-                $this->apply($subscription, $action, $input, audit: false);
+            DB::transaction(function () use ($subscription, $action, $input, &$before, &$warnings, &$after, &$ledgerAfter) {
+                // The same locked row and write scope as a commit (E1.2), so the
+                // dry run exercises exactly the path the commit will take — and
+                // "before" and the warnings are read from that SAME fresh row, not
+                // from the caller's copy, which a webhook may have overtaken.
+                $row = self::writing(function () use ($subscription, $action, $input, &$before, &$warnings, &$after) {
+                    $row = $this->lockRow($subscription);
+                    $before = $after = $this->snapshot($row);
+                    $warnings = $this->warningsFor($row, $action);
+                    $this->apply($row, $action, $input, audit: false);
 
-                $after = $this->snapshot($subscription->refresh());
+                    return $row;
+                });
+
+                $after = $this->snapshot($row->refresh());
                 $ledgerAfter = SubscriptionInvoice::withoutGlobalScopes()
                     ->where('account_id', $subscription->account_id)->count();
 
@@ -105,9 +187,17 @@ class SubscriptionLifecycle
     /** Execute for real, audited. */
     public function commit(Subscription $subscription, string $action, array $input = []): Subscription
     {
-        return DB::transaction(function () use ($subscription, $action, $input) {
-            return $this->apply($subscription, $action, $input, audit: true);
-        });
+        $this->locked($subscription, fn (Subscription $row) => $this->apply($row, $action, $input, audit: true));
+
+        // E1.10 / rule 5 — an ending reaches the gateway, AFTER the commit: the
+        // operator's decision is never blocked or undone by a gateway hiccup.
+        if ($action === 'cancel') {
+            $this->stopGatewayCharging($subscription, immediately: ! (bool) ($input['at_period_end'] ?? false), why: 'cancelled by the operator');
+        } elseif ($action === 'force_expire') {
+            $this->stopGatewayCharging($subscription, immediately: true, why: 'access ended by the operator');
+        }
+
+        return $subscription;
     }
 
     // ---------------------------------------------------------------
@@ -200,8 +290,10 @@ class SubscriptionLifecycle
         // existing one stands.
         if (in_array($interval, ['monthly', 'yearly'], true)) {
             $s->interval = $interval;
+            $s->pending_interval = null;
         }
 
+        $s->current_period_start = $base->toDateString();
         $s->current_period_end = $base->copy()->addMonths($months);
         $s->cancel_at_period_end = false;
         $s->applyOverride('comp', $s->current_period_end, $reason);
@@ -216,7 +308,9 @@ class SubscriptionLifecycle
     private function doRenew(Subscription $s, array $input): void
     {
         $method = (string) ($input['method'] ?? 'cash');
-        $interval = (string) ($input['interval'] ?? $s->interval ?? 'monthly');
+        // E1.4 — a renewal starts a new period, so a pending switch lands here
+        // unless the operator chose a period explicitly.
+        $interval = (string) ($input['interval'] ?? $s->pending_interval ?? $s->interval ?? 'monthly');
 
         // REQ-15 — a renewal is the moment the branch count is reconciled.
         // Branches added mid-cycle were charged pro rata at the time; from here
@@ -253,6 +347,8 @@ class SubscriptionLifecycle
 
         $s->status = 'active';
         $s->interval = $interval;
+        $s->pending_interval = null;
+        $s->current_period_start = $base->toDateString();
         $s->current_period_end = $end;
         $s->cancel_at_period_end = false;
 
@@ -361,8 +457,20 @@ class SubscriptionLifecycle
             throw new InvalidArgumentException('Interval must be monthly or yearly.');
         }
 
-        $s->interval = $interval;
-        $s->pending_interval = null;
+        // E1.4 / FB-19 — from the NEXT period, from both doors. `interval` keeps
+        // meaning the period now running; switching it mid-cycle re-priced a
+        // period the customer had already paid for (and made MRR jump). Choosing
+        // the period they are already on simply cancels a pending switch.
+        $s->pending_interval = $interval === ($s->interval ?: 'monthly') ? null : $interval;
+    }
+
+    /** E1.4 — at the start of a new period, a pending switch becomes the period's interval. */
+    private function landPendingInterval(Subscription $s): void
+    {
+        if ($s->pending_interval) {
+            $s->interval = $s->pending_interval;
+            $s->pending_interval = null;
+        }
     }
 
     // ---- Row 8 · Failed payment --------------------------------------
@@ -392,6 +500,7 @@ class SubscriptionLifecycle
         // worked out before the re-count and the bargain check after it, so after
         // a branch closed the default overcharged with no flag.
         $this->syncQuantity($s);
+        $this->landPendingInterval($s);   // E1.4 — the new cycle is priced at the period it will run
 
         $given = $input['amount'] ?? null;   // AUD-A03 — the key may be absent
         $amount = ($given !== null && $given !== '')
@@ -413,6 +522,7 @@ class SubscriptionLifecycle
         ] + $this->bargain($list, $amount, $input));
 
         $s->status = 'active';
+        $s->current_period_start = $this->clockBase($s)->toDateString();
         $s->current_period_end = $end;
         $s->cancel_at_period_end = false;
 
@@ -431,10 +541,12 @@ class SubscriptionLifecycle
      */
     private function doWaive(Subscription $s, string $reason): void
     {
+        $this->landPendingInterval($s);   // E1.4
         $start = $this->clockBase($s);
         $end = $this->advanceOneCycle($s);
 
         $s->status = 'active';
+        $s->current_period_start = $start->toDateString();
         $s->current_period_end = $end;
         $s->cancel_at_period_end = false;
         $s->applyOverride('comp', $end, $reason);
@@ -477,35 +589,371 @@ class SubscriptionLifecycle
         ?Carbon $periodEnd,
         ?string $interval,
     ): bool {
-        if ($subscription->hasActiveOverride()) {
-            $this->auditSuppression($subscription, $status, $periodEnd);
+        // E1.2 — locked like every other write: a webhook and an operator action
+        // for the same customer must not interleave (FB-15).
+        return $this->locked($subscription, function (Subscription $s) use ($status, $periodEnd, $interval) {
+            if ($s->hasActiveOverride()) {
+                $this->auditSuppression($s, $status, $periodEnd);
 
-            return false;
-        }
-
-        if ($status) {
-            $subscription->status = $status;
-
-            if ($status === 'canceled') {
-                $subscription->cancel_at_period_end = false;
+                return false;
             }
-        }
 
-        if ($periodEnd) {
-            $subscription->current_period_end = $periodEnd;
-        }
+            $before = $this->snapshot($s);
 
-        if ($interval) {
-            $subscription->interval = $interval;
+            if ($status) {
+                $s->status = $status;
 
-            if ($subscription->pending_interval === $interval) {
-                $subscription->pending_interval = null;
+                if ($status === 'canceled') {
+                    $s->cancel_at_period_end = false;
+                }
             }
+
+            if ($periodEnd) {
+                $old = $s->current_period_end;
+
+                if (! $old || ! $old->isSameDay($periodEnd)) {
+                    // E1.1 — a renewal starts where the old period ended; anything
+                    // else (first payment, early activation) starts today.
+                    $tz = config('billing.timezone', 'Asia/Kolkata');
+                    $today = Carbon::today($tz);
+                    $s->current_period_start = ($old && $old->lte($today) && $old->lt($periodEnd))
+                        ? $old->toDateString()
+                        : $today->toDateString();
+                }
+
+                $s->current_period_end = $periodEnd;
+            }
+
+            if ($interval) {
+                $s->interval = $interval;
+
+                if ($s->pending_interval === $interval) {
+                    $s->pending_interval = null;
+                }
+            }
+
+            if (! $s->isDirty()) {
+                return true;
+            }
+
+            $s->save();
+
+            // FB-23 / W2 — an APPLIED gateway change used to leave no audit row;
+            // only suppressed ones did.
+            $this->auditAs('gateway', 'subscription.gateway_applied', 'Razorpay update applied', $s, $before);
+
+            return true;
+        });
+    }
+
+    // ---------------------------------------------------------------
+    // E1.3 — the writers that used to live outside the engine
+    // ---------------------------------------------------------------
+
+    /**
+     * W3 — the subscription a new store's ACCOUNT starts with (Tenant::booted()).
+     *
+     * L-2: the ACCOUNT row is locked first and "does it already have a clock?"
+     * re-asked under that lock, so two stores created for one customer at the
+     * same instant can no longer both mint a trial (two clocks, two renewal dates).
+     *
+     * P.2 kept: an account that has already had its trial gets a LOCKED
+     * subscription and a warning, never a second free fortnight.
+     */
+    public function startTrial(Tenant $tenant): ?Subscription
+    {
+        return DB::transaction(fn () => self::writing(function () use ($tenant) {
+            $account = $tenant->account_id
+                ? Account::query()->whereKey($tenant->account_id)->lockForUpdate()->first()
+                : null;
+
+            if ($tenant->account_id
+                && Subscription::withoutGlobalScopes()->where('account_id', $tenant->account_id)->exists()) {
+                return null;   // a branch joins its payer's existing clock (REQ-12)
+            }
+
+            $tz = config('billing.timezone', 'Asia/Kolkata');
+            $planId = Plan::query()->where('code', 'basic')->value('id');
+
+            if ($account?->trial_used_at) {
+                $locked = $tenant->subscription()->create([
+                    'status' => 'canceled',
+                    'tier' => 'basic',
+                    'account_id' => $tenant->account_id,
+                    'plan_id' => $planId,
+                    'current_period_start' => now($tz)->subDay()->toDateString(),
+                    'current_period_end' => now($tz)->subDay(),
+                ]);
+
+                Log::warning(
+                    'A store was added to an account that has already used its free trial and has no subscription; created it locked rather than minting a second trial.',
+                    ['account_id' => $tenant->account_id, 'tenant_id' => $tenant->id],
+                );
+
+                return $locked;
+            }
+
+            $trial = $tenant->subscription()->create([
+                'status' => 'trialing',
+                'tier' => 'basic',
+                // Account-bound from birth when the tenant knows its account
+                // (StoreProvisioner sets it before create). Pre-backfill tenants
+                // pass null; osms:backfill-accounts fills those in.
+                'account_id' => $tenant->account_id,
+                'plan_id' => $planId,
+                'current_period_start' => now($tz)->toDateString(),
+                'current_period_end' => now($tz)->addDays((int) config('billing.trial_days', 14)),
+            ]);
+
+            // Stamp it once; never overwrite an earlier date.
+            if ($account && ! $account->trial_used_at) {
+                Account::query()->whereKey($account->id)->whereNull('trial_used_at')->update(['trial_used_at' => now()]);
+            }
+
+            return $trial;
+        }));
+    }
+
+    /**
+     * W5 — the terms an operator provisions a customer on: plan, trial length.
+     * Zero trial days is a real choice (they paid on the spot), not "unset".
+     */
+    public function applyProvisionTerms(Subscription $subscription, ?string $planCode, ?int $trialDays): void
+    {
+        $this->locked($subscription, function (Subscription $s) use ($planCode, $trialDays) {
+            if ($planCode !== null && $planCode !== '') {
+                $plan = Plan::query()->where('code', $planCode)->first();
+
+                if ($plan) {
+                    $s->plan_id = $plan->id;
+                    $s->tier = $plan->code;
+                }
+            }
+
+            if ($trialDays !== null) {
+                $tz = config('billing.timezone', 'Asia/Kolkata');
+                $s->current_period_start = now($tz)->toDateString();
+                $s->current_period_end = now($tz)->addDays($trialDays);
+            }
+
+            if ($s->isDirty()) {
+                $s->save();
+            }
+        });
+    }
+
+    /**
+     * W4 — one more branch on the account's clock. Returns the new quantity.
+     * The part-period charge is still recorded by StoreProvisioner (FB-18 → E2).
+     */
+    public function addBranch(Subscription $subscription): int
+    {
+        return $this->locked($subscription, function (Subscription $s) {
+            $s->quantity = (int) ($s->quantity ?: 1) + 1;
+            $s->save();
+
+            return $s->quantity;
+        });
+    }
+
+    /**
+     * W6 — the nightly clock. Each change is re-checked on the LOCKED row: the
+     * candidate list was read moments (or minutes) earlier, and an operator may
+     * have renewed, comped or suspended the customer since. An operator override
+     * is never touched (playbook §5.2 rule 2). Every change is audited as
+     * `system` (FB-23) — the trail used to have no record of these at all.
+     */
+    public function expireTrial(Subscription $subscription): bool
+    {
+        return $this->locked($subscription, function (Subscription $s) {
+            if ($s->status !== 'trialing' || $s->hasActiveOverride() || $s->accessState() !== 'locked') {
+                return false;
+            }
+
+            $before = $this->snapshot($s);
+            $s->status = 'canceled';
+            $s->save();
+
+            $this->auditAs('system', 'subscription.trial_expired', 'Trial ended without a payment', $s, $before);
+
+            return true;
+        });
+    }
+
+    /** W6 — a paying customer past their period and grace: active → past_due. */
+    public function lapse(Subscription $subscription): bool
+    {
+        return $this->locked($subscription, function (Subscription $s) {
+            if ($s->status !== 'active' || $s->hasActiveOverride() || $s->accessState() !== 'locked') {
+                return false;
+            }
+
+            $before = $this->snapshot($s);
+            $s->status = 'past_due';
+            $s->save();
+
+            $this->auditAs('system', 'subscription.lapsed', 'Not renewed by the end of the grace window', $s, $before);
+
+            return true;
+        });
+    }
+
+    /**
+     * W6 — unpaid long enough to be churn: past_due → canceled, and the gateway
+     * is told to stop (rule 5; it was never told before).
+     */
+    public function lapseToChurn(Subscription $subscription, int $graceDays, int $graceToCancelDays): bool
+    {
+        $changed = $this->locked($subscription, function (Subscription $s) use ($graceDays, $graceToCancelDays) {
+            if ($s->status !== 'past_due' || $s->hasActiveOverride()
+                || $s->accessState() !== 'locked' || ! $s->current_period_end) {
+                return false;
+            }
+
+            $tz = config('billing.timezone', 'Asia/Kolkata');
+            $deadline = Carbon::parse($s->current_period_end->toDateString(), $tz)
+                ->addDays($graceDays + $graceToCancelDays)
+                ->endOfDay();
+
+            if (! now($tz)->greaterThan($deadline)) {
+                return false;
+            }
+
+            $before = $this->snapshot($s);
+            $s->status = 'canceled';
+            $s->save();
+
+            $this->auditAs('system', 'subscription.churned', 'Unpaid past the grace window and '
+                . $graceToCancelDays . ' days more — treated as churn', $s, $before);
+
+            return true;
+        });
+
+        if ($changed) {
+            $this->stopGatewayCharging($subscription, immediately: true, why: 'lapsed to churn');
         }
 
-        $subscription->save();
+        return $changed;
+    }
 
-        return true;
+    /**
+     * W7 — the owner opened an online checkout. Rule 2: an unpaid action changes
+     * NOTHING about access. Only the gateway reference and the period they asked
+     * for (as pending) are recorded; status, dates and price move only when the
+     * webhook confirms the money.
+     *
+     * L-3: always the ACCOUNT's one subscription — the old updateOrCreate keyed on
+     * tenant_id minted a second clock for a second branch or after a purge.
+     */
+    public function linkCheckout(Subscription $subscription, string $gatewaySubscriptionId, string $interval, ?string $tier = null): void
+    {
+        $this->locked($subscription, function (Subscription $s) use ($gatewaySubscriptionId, $interval, $tier) {
+            $before = $this->snapshot($s);
+
+            $s->razorpay_subscription_id = $gatewaySubscriptionId;
+            $s->pending_interval = $interval === ($s->interval ?: 'monthly') ? null : $interval;
+
+            if ($tier) {
+                $s->tier = $tier;
+            }
+
+            $s->save();
+
+            $this->auditAs('owner', 'subscription.checkout_started', 'Owner opened an online checkout ('
+                . $interval . ') — nothing changes until the payment is confirmed', $s, $before,
+                ['gateway_subscription_id' => $gatewaySubscriptionId]);
+        });
+    }
+
+    /** W8 — the owner asked to switch billing period, from their next renewal (E1.4). */
+    public function ownerRequestInterval(Subscription $subscription, string $interval): void
+    {
+        if (! in_array($interval, ['monthly', 'yearly'], true)) {
+            throw new InvalidArgumentException('Interval must be monthly or yearly.');
+        }
+
+        $this->locked($subscription, function (Subscription $s) use ($interval) {
+            $before = $this->snapshot($s);
+            $keep = $interval === ($s->interval ?: 'monthly');
+            $s->pending_interval = $keep ? null : $interval;
+            $s->save();
+
+            $this->auditAs('owner', 'subscription.owner_interval', $keep
+                ? "Owner cancelled the pending switch and stays on {$interval} billing"
+                : "Owner switched to {$interval} billing from their next renewal", $s, $before);
+        });
+    }
+
+    /** W8 — the owner cancelled; access continues to the end of what they paid for. */
+    public function ownerCancelAtPeriodEnd(Subscription $subscription): void
+    {
+        $this->locked($subscription, function (Subscription $s) {
+            $before = $this->snapshot($s);
+            $s->cancel_at_period_end = true;
+            $s->save();
+
+            $this->auditAs('owner', 'subscription.owner_cancel', 'Owner cancelled at the end of the current period', $s, $before);
+        });
+    }
+
+    /**
+     * E1.10 / rule 5 — stop automated charging at the gateway. Best effort, AFTER
+     * the local decision has committed; a failure is logged and audited (never
+     * thrown), so a gateway outage can neither block nor undo an operator.
+     */
+    public function stopGatewayCharging(Subscription $subscription, bool $immediately, string $why): void
+    {
+        // Only once the decision is durable: immediately when no transaction is
+        // open, otherwise after the OUTERMOST commit — and never if it rolls back.
+        DB::afterCommit(fn () => $this->callGatewayStop($subscription, $immediately, $why));
+    }
+
+    private function callGatewayStop(Subscription $subscription, bool $immediately, string $why): void
+    {
+        $gatewayId = $subscription->razorpay_subscription_id;
+
+        if (! $gatewayId) {
+            return;
+        }
+
+        $billing = app(BillingService::class);
+
+        if (! $billing->isConfigured()) {
+            return;
+        }
+
+        try {
+            $billing->cancelSubscription($gatewayId, atCycleEnd: ! $immediately);
+
+            AdminAuditLog::record('subscription.gateway_cancelled', 'Razorpay subscription cancelled '
+                . ($immediately ? 'immediately' : 'at the end of the cycle') . " — {$why}", $subscription->tenant_id, [
+                    'account_id' => $subscription->account_id,
+                    'gateway_subscription_id' => $gatewayId,
+                ]);
+        } catch (\Throwable $e) {
+            Log::warning('Could not cancel the Razorpay subscription after an ending.', [
+                'account_id' => $subscription->account_id,
+                'gateway_subscription_id' => $gatewayId,
+                'error' => $e->getMessage(),
+            ]);
+
+            AdminAuditLog::record('subscription.gateway_cancel_failed', "Razorpay did not confirm the cancellation — {$why}. Cancel it in the Razorpay dashboard.", $subscription->tenant_id, [
+                'account_id' => $subscription->account_id,
+                'gateway_subscription_id' => $gatewayId,
+                'error' => mb_substr($e->getMessage(), 0, 300),
+            ]);
+        }
+    }
+
+    /** An audit row for a change nobody in the panel made: `system`, `gateway` or `owner`. */
+    private function auditAs(string $actor, string $action, string $description, Subscription $s, array $before, array $extra = []): void
+    {
+        AdminAuditLog::record($action, $description, $s->tenant_id, [
+            'account_id' => $s->account_id,
+            'actor' => $actor,
+            'before' => $before,
+            'after' => $this->snapshot($s),
+        ] + $extra);
     }
 
     // ---------------------------------------------------------------
@@ -537,7 +985,24 @@ class SubscriptionLifecycle
         if ($action === 'switch_interval' && $s->hasNegotiatedPrice()) {
             $out[] = 'Their negotiated price of Rs ' . number_format((float) $s->negotiated_price, 2)
                 . ' was agreed per ' . $s->negotiatedInterval()
-                . '. On a different billing period they revert to the list price until you agree a new one.';
+                . '. From their next renewal, on a different billing period, they revert to the list price until you agree a new one.';
+        }
+
+        // E1.10 — an ending now reaches the gateway, and a cancelled Razorpay
+        // subscription cannot be revived. Say both BEFORE the operator commits.
+        if ($s->razorpay_subscription_id) {
+            if ($action === 'switch_interval') {
+                $out[] = 'They pay by Razorpay autopay, which stays on its current plan: this switch applies to renewals you take by hand. To change what autopay charges, they switch from their own billing page.';
+            }
+
+            if (in_array($action, ['cancel', 'force_expire'], true)) {
+                $out[] = 'This also cancels their Razorpay autopay. It cannot be restarted from here: to pay online again they would subscribe afresh.';
+            }
+
+            if (in_array($action, ['reactivate', 'renew', 'extend', 'comp', 'mark_paid', 'waive'], true)
+                && $s->override_kind === 'cancellation') {
+                $out[] = 'Their Razorpay autopay was cancelled with the cancellation and does not restart: bill them by hand, or they subscribe again online.';
+            }
         }
 
         return $out;
@@ -615,6 +1080,8 @@ class SubscriptionLifecycle
             'status' => $s->status,
             'access' => $s->accessState(),
             'interval' => $s->interval,
+            'pending_interval' => $s->pending_interval,
+            'current_period_start' => $s->current_period_start?->toDateString(),
             'current_period_end' => $s->current_period_end?->toDateString(),
             'cancel_at_period_end' => (bool) $s->cancel_at_period_end,
             'negotiated_price' => $s->negotiated_price !== null ? (float) $s->negotiated_price : null,
@@ -653,7 +1120,7 @@ class SubscriptionLifecycle
             'reactivate' => "Reactivated {$who}",
             'cancel' => "Cancelled {$who}",
             'force_expire' => "Force-expired {$who}",
-            'switch_interval' => "Switched {$who} to {$input['interval']} billing",
+            'switch_interval' => "Set {$who} to switch to {$input['interval']} billing from their next renewal",
             'mark_paid' => "Marked {$who}'s payment as received",
             'waive' => "Waived {$who}'s outstanding payment",
             default => "{$action} on {$who}",

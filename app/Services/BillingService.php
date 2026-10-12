@@ -89,12 +89,14 @@ class BillingService
     }
 
     /**
-     * Cancel a Razorpay subscription at the end of the current billing cycle
-     * (access continues until then; the webhook flips status when it ends).
+     * Cancel a Razorpay subscription — at the end of the current billing cycle by
+     * default (access continues until then; the webhook flips status when it
+     * ends), or immediately when access has already ended (E1.10: "End access
+     * now" and churn must not leave one more charge queued).
      */
-    public function cancelSubscription(string $razorpaySubscriptionId): void
+    public function cancelSubscription(string $razorpaySubscriptionId, bool $atCycleEnd = true): void
     {
-        $this->api()->subscription->fetch($razorpaySubscriptionId)->cancel(['cancel_at_cycle_end' => 1]);
+        $this->api()->subscription->fetch($razorpaySubscriptionId)->cancel(['cancel_at_cycle_end' => $atCycleEnd ? 1 : 0]);
     }
 
     /** Verify a Razorpay webhook signature. */

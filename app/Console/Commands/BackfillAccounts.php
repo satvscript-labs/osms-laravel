@@ -7,6 +7,7 @@ use App\Models\Plan;
 use App\Models\Subscription;
 use App\Models\SubscriptionInvoice;
 use App\Models\Tenant;
+use App\Services\SubscriptionLifecycle;
 use App\Models\User;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
@@ -106,8 +107,6 @@ class BackfillAccounts extends Command
                 $account = Account::create([
                     'name' => $p['account_name'],
                     'billing_email' => $p['owner']?->email,
-                    // Presentational label, synced from the real (derived) state.
-                    'status' => $p['subscription']?->status ?? 'trialing',
                     'internal_notes' => $tenant->internal_notes, // moves up (06 §4.2)
                     'owner_user_id' => $p['owner']?->id,
                     // P.2 - every store began with a trial; its first subscription row dates it.
@@ -116,11 +115,13 @@ class BackfillAccounts extends Command
 
                 $tenant->forceFill(['account_id' => $account->id])->save();
 
-                $p['subscription']?->forceFill([
+                // E1.5 — the backfill is engine bootstrap (it binds existing clocks to
+                // their payer), so it is one of the two places allowed the write scope.
+                SubscriptionLifecycle::writing(fn () => $p['subscription']?->forceFill([
                     'account_id' => $account->id,
                     // Bind the loose tier enum to its plan row while we're here.
                     'plan_id' => $p['subscription']->plan_id ?? $basicPlanId,
-                ])->save();
+                ])->save());
 
                 SubscriptionInvoice::withoutGlobalScopes()
                     ->where('tenant_id', $tenant->id)

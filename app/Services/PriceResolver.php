@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Plan;
 use App\Models\Subscription;
+use Illuminate\Support\Facades\Log;
 
 /**
  * P1 / REQ-4 — the ONE place a price is computed.
@@ -155,6 +156,9 @@ class PriceResolver
             ? max(1, $subscription->account->billableStoreCount())
             : null;
 
+        // E1.4 — the next period runs at the PENDING interval when one is set.
+        $interval ??= $subscription->pending_interval ?: null;
+
         return $this->effectivePrice($subscription, $interval, $quantity);
     }
 
@@ -176,8 +180,30 @@ class PriceResolver
             return [$rate, 'plan', $tier];
         }
 
-        // Safety net for unseeded databases (tests, fresh installs mid-deploy).
-        $plan = config('billing.plans.' . ($subscription->tier ?? 'basic'), []);
+        // E1.7 — prices are DATA. A subscription not yet bound to a plan row is
+        // priced from the row matching its tier code…
+        $code = $subscription->tier ?: 'basic';
+        $byCode = Plan::query()->where('code', $code)->first();
+
+        if ($byCode) {
+            [$rate, $tier] = $byCode->rateFor($interval, $quantity);
+
+            return [$rate, 'plan', $tier];
+        }
+
+        // …and with no row at all, it is REFUSED outside the test runner rather
+        // than priced from config (or at Rs 0 for a tier config does not know).
+        if (! app()->runningUnitTests()) {
+            Log::error('A subscription could not be priced: no plan row.', [
+                'subscription_id' => $subscription->getKey(),
+                'tier' => $code,
+            ]);
+
+            throw new PlanMissing("No plan row for tier [{$code}]. Seed the plans (PlanSeeder) or bind the subscription to a plan.");
+        }
+
+        // Test runner only: most tests do not seed plans, and config mirrors the seeder.
+        $plan = config('billing.plans.' . $code, []);
         $price = $interval === 'yearly'
             ? (float) ($plan['yearly_price'] ?? 0)
             : (float) ($plan['monthly_price'] ?? 0);

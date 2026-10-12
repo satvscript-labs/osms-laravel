@@ -106,17 +106,24 @@
 
             @if ($s === 'active' && ! $subscription?->cancel_at_period_end)
                 <div class="d-flex flex-wrap gap-2">
-                    @unless ($subscription?->pending_interval)
-                        @if (empty($supervised))
-                    <form method="POST" action="{{ route('tenant.billing.change-interval') }}">
-                            @csrf
-                            <input type="hidden" name="interval" value="{{ $otherInterval }}">
-                            <button type="submit" class="btn btn-light">
-                                Switch to {{ ucfirst($otherInterval) }}@if ($otherInterval === 'yearly' && $yearlySave > 0)<span class="badge text-bg-success ms-1">Save {{ $yearlySave }}%</span>@endif
-                            </button>
-                        </form>
+                    @if (empty($supervised))
+                        @if ($subscription?->pending_interval)
+                            {{-- E1 audit — a pending switch can be undone, not only waited out. --}}
+                            <form method="POST" action="{{ route('tenant.billing.change-interval') }}">
+                                @csrf
+                                <input type="hidden" name="interval" value="{{ $interval }}">
+                                <button type="submit" class="btn btn-light">Keep {{ ucfirst($interval) }}</button>
+                            </form>
+                        @else
+                            <form method="POST" action="{{ route('tenant.billing.change-interval') }}">
+                                @csrf
+                                <input type="hidden" name="interval" value="{{ $otherInterval }}">
+                                <button type="submit" class="btn btn-light">
+                                    Switch to {{ ucfirst($otherInterval) }}@if ($otherInterval === 'yearly' && $yearlySave > 0)<span class="badge text-bg-success ms-1">Save {{ $yearlySave }}%</span>@endif
+                                </button>
+                            </form>
+                        @endif
                     @endif
-                    @endunless
                     @if (empty($supervised))
                     <form method="POST" action="{{ route('tenant.billing.cancel') }}">
                         @csrf
@@ -149,7 +156,8 @@
         $basic = $plans['basic'];
         $save = (int) round((1 - $basic['yearly_price'] / ($basic['monthly_price'] * 12)) * 100);
     @endphp
-    <div class="row g-3" x-data="{ interval: 'monthly' }">
+    {{-- Opens on the period they are on, so "Current plan" sits under the price they pay. --}}
+    <div class="row g-3" x-data="{ interval: @js($interval ?: 'monthly') }">
         <div class="col-md-6">
             <div class="card border-0 shadow-sm rounded-4 h-100" style="outline:2px solid var(--osms-primary);">
                 <div class="card-body p-4 d-flex flex-column">

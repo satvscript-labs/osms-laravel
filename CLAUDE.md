@@ -36,6 +36,42 @@ Every store-owned model uses `App\Models\Concerns\BelongsToTenant`, which:
 This is the app-layer replacement for Supabase RLS. **Any new tenant-owned table/model must
 use this trait** and have a `tenant_id` UUID column. Never query tenant data without it.
 
+## Billing engine (CRITICAL)
+
+All SaaS billing (operator panel, owner self-serve, nightly clock, Razorpay webhook) runs through
+**one engine**. The payer is the `Account` (UI: "Customer"); stores are its branches; the account has
+exactly **one** subscription (one clock, one renewal date). Design and status:
+`_artifacts/platform/feat-billing/` (`06_ENGINE_DESIGN.md`). These rules bind every change:
+
+1. **Only `App\Services\SubscriptionLifecycle` writes entitlement.** No controller, command, model hook
+   or job assigns `status`, `current_period_end`/`_start`, `interval`, `pending_interval`, `quantity`,
+   `cancel_at_period_end`, overrides or the negotiated price. Add a lifecycle method instead.
+   **Enforced (E1):** `Subscription` throws `EntitlementWriteRefused` on any create/update/delete outside
+   `SubscriptionLifecycle::writing()`, and `Phase84E1GuardTest` bans event-less writes in `app/` (bulk
+   `->update()`, `DB::table('subscriptions')`, `saveQuietly`, `withoutEvents`). Every engine write is
+   row-locked. Tests may set up a subscription directly from a file under `tests/`; app code never can.
+   A period switch (`switch_interval`, owner change) sets `pending_interval` and lands at the next renewal.
+2. **An unpaid action never changes entitlement.** Opening a checkout, raising a charge or creating a
+   gateway order changes nothing about access until money is confirmed and settled.
+3. **The engine prices; surfaces display.** Every price (operator panel, owner page, gateway amount)
+   comes from `App\Services\PriceResolver` (+ `Proration`). Never read `config('billing.plans')` or a
+   gateway plan for a price, and never let the browser send an amount the server trusts.
+4. **Money that lands and buys nothing is recorded *and* alerted.** A webhook never returns 200 having
+   silently dropped a payment, and never throws (Razorpay would retry forever).
+5. **Operator decisions reach the gateway.** Anything that ends or pauses access also stops automated
+   charging and cancels open gateway orders/links.
+6. **Every money action has a preview, and every money row says what it paid for.** Ledger rows are
+   written only through the engine's recorder (`PaymentRecorder`; `Settlement` once charges land).
+   Money rows are never deleted: no `cascadeOnDelete` from stores into billing tables.
+7. **Assert what the customer can do**, not which column changed: billing tests assert
+   `accessState()`, rupees owed and rupees collected. Any `now()` touching a billing date uses
+   `config('billing.timezone')`.
+8. **Customer data is never lost to a code change.** Production holds real customers' records
+   (patients, prescriptions, revenue history). Migrations are additive (new tables, nullable columns;
+   no dropped columns or tables without an explicit decision and a verified backup), every `down()`
+   works, backfills are idempotent and dry-run first, and a backup is taken before every migration.
+   Purging a store never touches billing rows. Details: `_artifacts/platform/feat-billing/04_PROPOSED_PLAN.md` §1.3.
+
 ## Conventions
 
 - Business tables use UUID primary keys (`HasUuid` trait). `users` stays bigint (Breeze).

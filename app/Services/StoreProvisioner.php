@@ -4,7 +4,6 @@ namespace App\Services;
 
 use App\Models\Account;
 use App\Models\AdminAuditLog;
-use App\Models\Plan;
 use App\Models\Tenant;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
@@ -45,7 +44,9 @@ class StoreProvisioner
             $account ??= Account::create([
                 'name' => $owner->name,
                 'billing_email' => $owner->email,
-                'status' => 'trialing',
+                // E1.8 / FB-24 — `accounts.status` is no longer written: it was a
+                // dead copy of the subscription's status, read by nothing, and
+                // bound to drift. The column stays (rule 8); its default stands.
                 'owner_user_id' => $owner->id,
             ]);
 
@@ -97,8 +98,8 @@ class StoreProvisioner
         // The quantity rises either way. Whether we could charge for the part
         // period is a separate question from whether they now have two shops —
         // conflating them is how a branch ends up permanently unbilled.
-        $subscription->quantity = (int) ($subscription->quantity ?: 1) + 1;
-        $subscription->save();
+        // E1.3 (W4) — through the engine, locked and inside its write scope.
+        app(SubscriptionLifecycle::class)->addBranch($subscription);
 
         if (! $proration['applicable'] || $proration['amount'] <= 0) {
             AdminAuditLog::record(
@@ -236,27 +237,12 @@ class StoreProvisioner
             return;
         }
 
-        $changes = [];
-
-        if (! empty($options['plan_code'])) {
-            $plan = Plan::query()->where('code', $options['plan_code'])->first();
-            if ($plan) {
-                $changes['plan_id'] = $plan->id;
-                $changes['tier'] = $plan->code;
-            }
-        }
-
-        if (isset($options['trial_days'])) {
-            $days = (int) $options['trial_days'];
-            $tz = config('billing.timezone', 'Asia/Kolkata');
-
-            // Zero trial days is a real choice — a customer who paid on the spot
-            // should not also get a fortnight free. It is not "unset".
-            $changes['current_period_end'] = now($tz)->addDays($days);
-        }
-
-        if ($changes !== []) {
-            $subscription->forceFill($changes)->save();
-        }
+        // E1.3 (W5) — written by the engine. Zero trial days is a real choice (a
+        // customer who paid on the spot), not "unset".
+        app(SubscriptionLifecycle::class)->applyProvisionTerms(
+            $subscription,
+            $options['plan_code'] ?? null,
+            isset($options['trial_days']) ? (int) $options['trial_days'] : null,
+        );
     }
 }

@@ -258,7 +258,8 @@ class AccountActionController extends Controller
             'reactivate' => 'Reactivated.',
             'cancel' => 'Cancelled.',
             'force_expire' => 'Access ended.',
-            'switch_interval' => 'Billing interval switched.',
+            // E1.4 — it lands at the next renewal; say so, not "switched".
+            'switch_interval' => 'Billing period will switch at their next renewal. The current period is unchanged.',
             'mark_paid' => 'Marked as paid — dunning will not override this.',
             'waive' => 'Waived.',
             default => 'Done.',

@@ -350,7 +350,8 @@
                                     'Status' => $s?->status ?? '—',
                                     'Access' => $access,
                                     'Plan' => $s?->plan?->name ?? ($s?->tier ?? '—'),
-                                    'Interval' => $s?->interval ?? '—',
+                                    // E1.4 — a pending switch is visible here, not only in the audit trail.
+                                    'Interval' => ($s?->interval ?? '—') . ($s?->pending_interval ? ' → ' . $s->pending_interval . ' from next renewal' : ''),
                                     'Period ends' => $s?->current_period_end?->format('d M Y') ?? '—',
                                     'Billable stores' => $account->billableStores()->count(),
                                 ] as $label => $value)
@@ -561,7 +562,7 @@
                                 <div class="py-2 border-bottom text-sm">
                                     <p class="mb-0 fw-medium">{{ $log->description }}</p>
                                     <p class="mb-0 text-muted-foreground text-xs">
-                                        {{ $log->admin_email ?? 'system' }} · {{ $log->created_at?->diffForHumans() }}
+                                        {{ $log->actorLabel() }} · {{ $log->created_at?->diffForHumans() }}
                                     </p>
                                 </div>
                             @empty
