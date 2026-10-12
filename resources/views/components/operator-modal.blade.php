@@ -51,6 +51,9 @@
               style="box-shadow: var(--shadow-overlay);" @submit="submitting = true">
             @csrf
             @if ($method !== 'POST') @method($method) @endif
+            {{-- E1.11 — one-time token: this form is acted on once, never twice. A new
+                 one is rendered with every page, so a corrected re-submit still works. --}}
+            <input type="hidden" name="{{ \App\Http\Middleware\OncePerSubmission::FIELD }}" value="{{ \Illuminate\Support\Str::uuid() }}">
             @if ($preview) <input type="hidden" name="action" value="{{ $preview }}"> @endif
 
             <div class="modal-header border-0 pb-0 px-4 pt-4">

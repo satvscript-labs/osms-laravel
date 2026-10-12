@@ -174,6 +174,10 @@ class Phase84E1EngineTest extends TestCase
         $this->assertSame('system', $row->meta['actor']);
         $this->assertSame('active', $row->meta['before']['status']);
         $this->assertSame('past_due', $row->meta['after']['status']);
+
+        // E1.12 — named as the system, not as whichever operator was signed in.
+        $this->assertSame('System', $row->actorLabel());
+        $this->get(route('superadmin.audit.index'))->assertOk()->assertSee('System');
     }
 
     public function test_churn_is_audited_and_stops_the_gateway_immediately(): void

@@ -45,6 +45,22 @@ class AdminAuditLog extends Model
         ]);
     }
 
+    /**
+     * E1.12 — who did this, in words. The engine records changes nobody in the
+     * panel made with `meta.actor` (system / gateway / owner); those name the
+     * actor rather than showing a dash, or whichever operator happened to be
+     * signed in when a job ran.
+     */
+    public function actorLabel(): string
+    {
+        return match ($this->meta['actor'] ?? null) {
+            'system' => 'System',
+            'gateway' => 'Gateway (Razorpay)',
+            'owner' => 'Owner' . ($this->admin_email ? ' · ' . $this->admin_email : ''),
+            default => $this->admin_email ?? 'System',
+        };
+    }
+
     public function admin(): BelongsTo
     {
         return $this->belongsTo(User::class, 'admin_user_id');

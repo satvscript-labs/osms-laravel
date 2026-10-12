@@ -188,7 +188,7 @@
                         <div class="py-2 border-bottom" style="font-size:var(--text-sm);">
                             <p class="mb-0 fw-medium">{{ $log->description }}</p>
                             <p class="mb-0 text-muted-foreground" style="font-size:var(--text-xs);">
-                                {{ $log->admin_email ?? 'system' }} · {{ $log->created_at?->diffForHumans() }}
+                                {{ $log->actorLabel() }} · {{ $log->created_at?->diffForHumans() }}
                             </p>
                         </div>
                     @empty

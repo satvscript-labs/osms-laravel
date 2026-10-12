@@ -561,7 +561,7 @@
                                 <div class="py-2 border-bottom text-sm">
                                     <p class="mb-0 fw-medium">{{ $log->description }}</p>
                                     <p class="mb-0 text-muted-foreground text-xs">
-                                        {{ $log->admin_email ?? 'system' }} · {{ $log->created_at?->diffForHumans() }}
+                                        {{ $log->actorLabel() }} · {{ $log->created_at?->diffForHumans() }}
                                     </p>
                                 </div>
                             @empty
