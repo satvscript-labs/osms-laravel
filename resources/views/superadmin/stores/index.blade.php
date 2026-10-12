@@ -35,7 +35,7 @@
                 <i class="bi bi-search text-muted-foreground"></i>
             </span>
             <input type="search" x-model="query" @input.debounce.220ms="refresh()"
-                   class="form-control border-start-0"
+                   class="form-control border-start-0 no-native-clear"
                    placeholder="Search store or customer…" autocomplete="off"
                    aria-label="Search stores">
             <span class="input-group-text bg-white border-start-0" x-show="loading" x-cloak>

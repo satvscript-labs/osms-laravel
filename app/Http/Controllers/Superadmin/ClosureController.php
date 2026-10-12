@@ -88,7 +88,8 @@ class ClosureController extends Controller
             return back()->with('error', $e->getMessage());
         }
 
-        $message = "{$name} and " . number_format($result['rows']) . ' rows of its data are gone.';
+        $message = "{$name} and " . number_format($result['rows']) . ' rows of its data are gone.'
+            . " The customer's subscription and payment history were kept.";
 
         if (! $result['clean']) {
             // Say so rather than report success: the incident this logic came

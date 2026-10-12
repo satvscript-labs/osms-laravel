@@ -28,7 +28,7 @@ class DashboardController extends Controller
         // Low stock (compare two columns).
         // PERF-05 — count in SQL and fetch only the 5 shown, instead of loading
         // every low-stock row into PHP just to count it.
-        $lowStockQuery = Inventory::whereColumn('stock_qty', '<=', 'min_alert_qty');
+        $lowStockQuery = Inventory::where('is_tracked', true)->whereColumn('stock_qty', '<=', 'min_alert_qty');
         $lowStockCount = (clone $lowStockQuery)->count();
         $lowStock = $lowStockQuery->orderBy('stock_qty')->limit(5)->get();
 

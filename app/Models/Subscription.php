@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Models\Concerns\BelongsToTenant;
 use App\Models\Concerns\HasUuid;
 use App\Support\Mrr;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 
@@ -206,6 +207,52 @@ class Subscription extends Model
             'override_by' => null,
             'override_at' => null,
         ]);
+    }
+
+    /**
+     * QA-06 — a deliberate operator pause, not a missed payment.
+     *
+     * Suspension is STORED as `past_due` + a suspension override (so access
+     * locks and the paid-through date is kept). Read raw, that labelled a fully
+     * paid customer "Past due / Payment overdue" — an invitation to chase
+     * somebody for money they have paid.
+     */
+    public function isSuspended(): bool
+    {
+        return $this->override_kind === 'suspension' && $this->hasActiveOverride();
+    }
+
+    /** The state to SHOW and COUNT: `suspended` beats the `past_due` it is stored as. */
+    public function displayStatus(): string
+    {
+        return $this->isSuspended() ? 'suspended' : ($this->status ?: 'none');
+    }
+
+    /** SQL twin of isSuspended() — same rule, for counts and filters. */
+    public function scopeSuspended(Builder $query): Builder
+    {
+        $today = Carbon::today(config('billing.timezone', 'Asia/Kolkata'))->toDateString();
+
+        return $query->where('override_kind', 'suspension')
+            ->where(fn ($q) => $q->whereNull('override_until')->orWhereDate('override_until', '>=', $today));
+    }
+
+    /**
+     * Past due in the money sense — owed, not paused by us.
+     *
+     * Spelled out rather than `whereNot(suspended)`: for an ordinary overdue row
+     * `override_kind` is NULL, and SQL's NOT(NULL = 'suspension' …) is NULL, not
+     * true — which silently dropped every genuinely overdue customer. Caught by
+     * Phase83QaRunFixesTest before it shipped.
+     */
+    public function scopeOverdue(Builder $query): Builder
+    {
+        $today = Carbon::today(config('billing.timezone', 'Asia/Kolkata'))->toDateString();
+
+        return $query->where('status', 'past_due')
+            ->where(fn ($q) => $q->whereNull('override_kind')
+                ->orWhere('override_kind', '!=', 'suspension')
+                ->orWhere(fn ($e) => $e->whereNotNull('override_until')->whereDate('override_until', '<', $today)));
     }
 
     public function isPastDue(): bool

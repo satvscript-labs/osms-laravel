@@ -123,6 +123,11 @@
                                                 <i class="bi bi-whatsapp"></i>
                                             </a>
                                         @endif
+                                        @if ($phone)
+                                            <a href="tel:{{ preg_replace('/[^\d+]/', '', $phone) }}" class="call-pill wa-pill-icon" title="Call customer" aria-label="Call customer">
+                                                <i class="bi bi-telephone-fill"></i> <span>Call</span>
+                                            </a>
+                                        @endif
                                     @endif
                                     <a href="{{ route('tenant.orders.pdf', $order) }}" target="_blank"
                                        class="action-icon-btn" title="PDF receipt" aria-label="PDF receipt">

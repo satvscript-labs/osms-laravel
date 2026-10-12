@@ -620,10 +620,17 @@
             },
             filteredCustomers() { return this.customerResults; },
             filteredInventory() {
-                const q = this.itemSearch.trim().toLowerCase();
-                if (!q) return [];
-                return this.inventory.filter(i =>
-                    [i.brand,i.model_name,i.sku,i.barcode].some(v => v && v.toLowerCase().includes(q))).slice(0,6);
+                const query = this.itemSearch.trim().toLowerCase();
+                if (!query) return [];
+                const words = query.split(/\s+/).filter(w => w.length > 0);
+                
+                return this.inventory.filter(i => {
+                    const searchable = [i.brand, i.model_name, i.sku, i.barcode]
+                        .filter(v => v)
+                        .join(' ')
+                        .toLowerCase();
+                    return words.every(word => searchable.includes(word));
+                }).slice(0,6);
             },
             selectCustomer(c) {
                 this.customerId = c.id; this.selectedCustomer = c; this.customerSearch = '';
@@ -662,14 +669,19 @@
             isReady(daysAhead) { return this.estimatedReadyAt === this.localDate(daysAhead); },
             addItem(inv, qty=1) {
                 const ex = this.items.find(i => i.inventory_id === inv.id);
-                if (ex) { ex.quantity = Math.min(ex.max_stock, ex.quantity + qty); return; }
+                if (ex) { 
+                    const cap = ex.max_stock == null ? Infinity : ex.max_stock;
+                    ex.quantity = Math.min(cap, ex.quantity + qty); 
+                    return; 
+                }
                 const price = Number(inv.selling_price);
+                const cap = inv.is_tracked ? inv.stock_qty : Infinity;
                 this.items.push({
                     uid: this.uid(), custom: false,
                     inventory_id: inv.id, description: null,
                     label: (inv.brand||'—') + (inv.model_name ? ' · '+inv.model_name : ''),
                     unit_price: price, list_price: price,
-                    quantity: Math.min(inv.stock_qty, qty), max_stock: inv.stock_qty,
+                    quantity: Math.min(cap, qty), max_stock: inv.is_tracked ? inv.stock_qty : null,
                     taxInvoice: false,
                 });
             },

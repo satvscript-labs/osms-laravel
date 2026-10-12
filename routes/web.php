@@ -194,7 +194,6 @@ Route::middleware(['auth', 'superadmin', 'throttle:120,1'])
             Route::delete('/customers/{account}/stores/{tenant}', [SuperadminClosure::class, 'purge'])->name('accounts.store.purge');
 
             Route::patch('/stores/{tenant}/notes', [SuperadminTenant::class, 'updateNotes'])->name('tenants.notes');
-            Route::patch('/stores/{tenant}/subscription', [SuperadminSubscription::class, 'update'])->name('subscription.update');
             Route::post('/stores/{tenant}/subscription/extend-trial', [SuperadminSubscription::class, 'extendTrial'])->name('subscription.extend-trial');
             Route::post('/stores/{tenant}/subscription/activate', [SuperadminSubscription::class, 'activate'])->name('subscription.activate');
             Route::post('/stores/{tenant}/subscription/cancel', [SuperadminSubscription::class, 'cancel'])->name('subscription.cancel');

@@ -2,7 +2,8 @@
     P2 / design §6.1 — ONE pill treatment per lifecycle state, used identically
     on every superadmin surface. Never a raw Bootstrap `text-bg-*` badge.
 
-    @param string      $status  trialing|active|past_due|canceled|none
+    @param string      $status  trialing|active|past_due|suspended|canceled|none
+                                (pass Subscription::displayStatus(), never the raw column)
     @param string|null $access  active|grace|locked  (optional, refines the tone)
 --}}
 @php
@@ -10,6 +11,8 @@
         'active'   => ['tone' => 'green',  'label' => 'Active'],
         'trialing' => ['tone' => 'blue',   'label' => 'Trial'],
         'past_due' => ['tone' => 'amber',  'label' => 'Past due'],
+        // QA-06 — paused by the operator, not owed. Never labelled "Past due".
+        'suspended' => ['tone' => 'red',   'label' => 'Suspended'],
         'canceled' => ['tone' => '',       'label' => 'Cancelled'],
         'none'     => ['tone' => '',       'label' => 'No subscription'],
     ];

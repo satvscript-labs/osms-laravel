@@ -150,6 +150,7 @@ $enable-negative-margins:  true;
   --shadow-raised:  0 6px 20px rgba(16, 24, 40, 0.08), 0 2px 6px rgba(16, 24, 40, 0.05);
   --shadow-overlay: 0 16px 48px rgba(16, 24, 40, 0.16), 0 4px 12px rgba(16, 24, 40, 0.08);
   --shadow-focus:   0 0 0 0.2rem rgba(0, 79, 117, 0.18);
+  --scrim:          rgba(16, 24, 40, 0.5);            // behind modals and the password prompt
 
   // --- Motion contract ---
   --ease-spring:    cubic-bezier(0.16, 1, 0.3, 1);   // overshoot-settle
@@ -1219,7 +1220,7 @@ $wa-green-strong: #0b8043;
 // retains a transform (see the fade-up note above), so the backdrop sits behind
 // the modal as intended — no z-index or pointer-events overrides needed.
 .modal-backdrop {
-  background-color: rgba(16, 24, 40, 0.5);
+  background-color: var(--scrim);
   backdrop-filter: blur(3px);
   -webkit-backdrop-filter: blur(3px);
 }
@@ -1714,6 +1715,65 @@ $wa-green-strong: #0b8043;
   }
   .osms-360-tabs::-webkit-scrollbar { display: none; }
   .osms-360-tabs .nav-item { flex: 0 0 auto; }
+}
+
+// ------------------------------------------------------------
+// UI-01 — a search box with our own clear (×) button must not ALSO show the
+// browser's: two crosses side by side read as a rendering fault. Opt-in, so a
+// search box without our button keeps the browser's.
+// ------------------------------------------------------------
+.no-native-clear::-webkit-search-cancel-button,
+.no-native-clear::-webkit-search-decoration {
+  -webkit-appearance: none;
+  appearance: none;
+  display: none;
+}
+
+// ------------------------------------------------------------
+// QA-01/02 — the in-place password prompt (resources/js/password-confirm.js).
+// Mounted inside the open modal when there is one (its focus trap would steal
+// focus from anything outside), so it is `fixed` and sits above modal content.
+// Enters like every overlay: scrim fades, card scales up and settles.
+// ------------------------------------------------------------
+.pw-prompt {
+  position: fixed;
+  inset: 0;
+  z-index: 1090;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  background: var(--scrim);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  opacity: 0;
+  transition: opacity var(--duration-base) var(--ease-out);
+}
+.pw-prompt.is-open { opacity: 1; }
+
+.pw-prompt-card {
+  width: 100%;
+  max-width: 24rem;
+  background: var(--surface-card);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-overlay);
+  transform: scale(0.95) translateY(-6px);
+  transition: transform var(--duration-base) var(--ease-spring);
+}
+.pw-prompt.is-open .pw-prompt-card { transform: scale(1) translateY(0); }
+
+.pw-prompt-icon {
+  width: 2.75rem;
+  height: 2.75rem;
+  background: var(--osms-primary-soft);
+  color: var(--osms-primary);
+}
+
+// iOS zooms any focused input under 16px and never zooms back out.
+.pw-prompt .form-control { font-size: 16px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pw-prompt, .pw-prompt-card { transition: none; }
 }
 
 // ============================================================

@@ -24,23 +24,18 @@ class SearchController extends Controller
         $customers = Customer::query()
             ->when($isPhoneLike,
                 fn ($query) => $query->where('phone', 'like', "%{$q}%"),
-                fn ($query) => $query->where(fn ($s) =>
-                    $s->where('name', 'like', "%{$q}%")->orWhere('phone', 'like', "%{$q}%")),
+                fn ($query) => $query->searchBy(['name', 'phone'], $q)
             )
             ->limit(8)
             ->get(['id', 'name', 'phone']);
 
         $inventory = Inventory::query()
-            ->where(fn ($s) => $s
-                ->where('brand', 'like', "%{$q}%")
-                ->orWhere('model_name', 'like', "%{$q}%")
-                ->orWhere('sku', 'like', "%{$q}%")
-                ->orWhere('barcode', 'like', "%{$q}%"))
+            ->searchBy(['brand', 'model_name', 'sku', 'barcode'], $q)
             ->limit(8)
             ->get(['id', 'sku', 'barcode', 'brand', 'model_name', 'stock_qty']);
 
         $orders = Order::with('customer:id,name')
-            ->whereHas('customer', fn ($s) => $s->where('name', 'like', "%{$q}%"))
+            ->whereHas('customer', fn ($s) => $s->searchBy(['name', 'phone'], $q))
             ->latest()
             ->limit(6)
             ->get(['id', 'customer_id', 'total_amount', 'balance_due', 'status', 'created_at']);

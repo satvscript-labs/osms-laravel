@@ -3,6 +3,7 @@
 namespace App\Support;
 
 use App\Models\Subscription;
+use App\Models\Tenant;
 use App\Services\PriceResolver;
 
 /**
@@ -25,6 +26,9 @@ use App\Services\PriceResolver;
  */
 class Metrics
 {
+    /** @var array<string, int> billed branches per account, for the lists being priced */
+    private array $billable = [];
+
     /** How far ahead "due soon" looks. Matches a monthly billing rhythm. */
     private const DUE_HORIZON_DAYS = 30;
 
@@ -83,6 +87,14 @@ class Metrics
                 now()->addDays(self::DUE_HORIZON_DAYS)->toDateString(),
             ])
             ->get();
+
+        // AUDIT-03 — billed branches per account, in ONE grouped query for both
+        // lists (not a store list per customer), for pricing their next renewal.
+        $accountIds = $overdue->concat($dueSoon)->pluck('account_id')->filter()->unique()->values();
+        $this->billable = $accountIds->isEmpty() ? [] : Tenant::query()->billable()
+            ->whereIn('account_id', $accountIds)
+            ->selectRaw('account_id, COUNT(*) as c')->groupBy('account_id')
+            ->pluck('c', 'account_id')->all();
 
         return [
             'overdue_count' => $overdue->count(),
@@ -158,6 +170,15 @@ class Metrics
             return 0.0;
         }
 
-        return $prices->effectivePrice($subscription);
+        // AUDIT-03 — their NEXT event is a renewal, priced for the branches billed
+        // from then on: a branch closed mid-cycle is not expected again (D4), the
+        // same reading MRR already takes.
+        // Same reading as PriceResolver::renewalPrice(); no account yet (pre-backfill)
+        // → the subscription's own quantity, as there.
+        $quantity = $subscription->account_id
+            ? max(1, (int) ($this->billable[$subscription->account_id] ?? 1))
+            : null;
+
+        return $prices->effectivePrice($subscription, null, $quantity);
     }
 }

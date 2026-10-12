@@ -78,6 +78,15 @@ exactly **one** subscription (one clock, one renewal date). Design and status:
 - Shared chrome uses `safe_route()` (helper) so links to not-yet-built routes don't throw.
 - Design tokens (deep optical blue `#004f75`, glass, card-lift, print rules) live in
   `resources/sass/app.scss`. Don't hardcode brand colors inline.
+- **Never show `subscriptions.status` raw.** A suspension is stored as `past_due` + an override;
+  labels and counts use `Subscription::displayStatus()` and the `suspended()` / `overdue()` scopes,
+  or a paid-up customer you paused reads as "Payment overdue" (QA-06).
+- **A customer's billing history is the ACCOUNT's ledger** (`Account::invoices()`), never the
+  tenant-scoped `SubscriptionInvoice` query: money is per account, and a purged store's rows are
+  kept with `tenant_id = NULL` (QA-08).
+- **`password.confirm` writes must never be dropped silently.** The alias is
+  `RequirePasswordConfirmation`; panel forms are held back by `resources/js/password-confirm.js`.
+  New fetch() calls to protected routes must treat 423 as "ask for the password" (QA-01/02).
 
 ## Testing
 

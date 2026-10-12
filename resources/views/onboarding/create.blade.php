@@ -28,7 +28,7 @@
             <label for="store_name" class="form-label small fw-medium mb-1">Store name *</label>
             <input id="store_name" type="text" name="store_name" value="{{ old('store_name') }}"
                    class="form-control @error('store_name') is-invalid @enderror"
-                   required autofocus placeholder="Sahaj Optical">
+                   required autofocus placeholder="e.g. Clear Vision Opticals">
         </div>
 
         <div>

@@ -15,7 +15,9 @@ use Illuminate\Console\Command;
  */
 class PurgeTrashedRecords extends Command
 {
-    protected $signature = 'model:purge-trashed {--days=30 : Retention window in days}';
+    protected $signature = 'model:purge-trashed
+        {--days=30 : Retention window in days}
+        {--dry-run : Count what WOULD be deleted, and delete nothing}';
 
     protected $description = 'Permanently delete customers/inventory archived beyond the retention window';
 
@@ -24,27 +26,44 @@ class PurgeTrashedRecords extends Command
         $days = (int) $this->option('days');
         $cutoff = now()->subDays($days);
 
-        $purged = 0;
+        // E0 / S-8 — a look-before-you-leap for the first-ever scheduled run. If the
+        // scheduler has never been able to launch this command (FB-01), the backlog is
+        // every record archived for over $days days; the owner should see it before it goes.
+        $dry = (bool) $this->option('dry-run');
 
         // Customers are safe to purge — archiving is blocked while they have orders.
-        $purged += Customer::withoutGlobalScopes()
+        $customers = Customer::withoutGlobalScopes()
             ->onlyTrashed()
-            ->where('deleted_at', '<=', $cutoff)
-            ->forceDelete();
+            ->where('deleted_at', '<=', $cutoff);
 
         // DATA-07 — soft-deleted eye records past the retention window.
-        $purged += EyeRecord::withoutGlobalScopes()
+        $eyeRecords = EyeRecord::withoutGlobalScopes()
             ->onlyTrashed()
-            ->where('deleted_at', '<=', $cutoff)
-            ->forceDelete();
+            ->where('deleted_at', '<=', $cutoff);
 
         // DATA-03 — never purge an item still referenced by an order; hard-deleting
         // it would rewrite historical receipts to "Custom item". It stays archived.
-        $purged += Inventory::withoutGlobalScopes()
+        $inventory = Inventory::withoutGlobalScopes()
             ->onlyTrashed()
             ->where('deleted_at', '<=', $cutoff)
-            ->whereDoesntHave('orderItems')
-            ->forceDelete();
+            ->whereDoesntHave('orderItems');
+
+        if ($dry) {
+            $counts = [
+                'customers' => $customers->count(),
+                'eye records' => $eyeRecords->count(),
+                'inventory items' => $inventory->count(),
+            ];
+
+            $this->info('Dry run - nothing deleted. Would permanently delete, archived before '
+                . $cutoff->toDateString() . ': '
+                . collect($counts)->map(fn ($n, $what) => "{$n} {$what}")->implode(', ')
+                . '.');
+
+            return self::SUCCESS;
+        }
+
+        $purged = $customers->forceDelete() + $eyeRecords->forceDelete() + $inventory->forceDelete();
 
         $this->info("Purged {$purged} record(s) archived before {$cutoff->toDateString()}.");
 

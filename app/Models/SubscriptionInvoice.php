@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Models\Concerns\BelongsToTenant;
 use App\Models\Concerns\HasUuid;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
 /**
@@ -64,6 +65,18 @@ class SubscriptionInvoice extends Model
     }
 
     /** A reversal is a state, never a delete — both rows stay visible. */
+    /**
+     * UI-05 — the ledger's reading order: by DAY, then by when it was recorded.
+     *
+     * A payment entered with only a "received on" date is stamped at midnight,
+     * so ordering by the full timestamp put the newest entry of the day BELOW
+     * everything recorded earlier that same day.
+     */
+    public function scopeNewestFirst(Builder $query): Builder
+    {
+        return $query->orderByRaw('DATE(paid_at) DESC')->orderByDesc('created_at');
+    }
+
     public function isReversed(): bool
     {
         return $this->reversed_at !== null;

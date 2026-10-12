@@ -71,8 +71,7 @@ class AccountController extends Controller
         $ledger = SubscriptionInvoice::withoutGlobalScopes()
             ->where('account_id', $account->id)
             ->with('tenant:id,store_name')
-            ->orderByDesc('paid_at')
-            ->orderByDesc('created_at')
+            ->newestFirst()
             ->limit(50)
             ->get();
 
@@ -82,6 +81,11 @@ class AccountController extends Controller
             'price' => $subscription
                 ? app(PriceResolver::class)->breakdown($subscription)
                 : null,
+            // QA-05 — Renew now pre-fills the NEXT period's price, per interval.
+            'renewPrices' => $subscription ? [
+                'monthly' => app(PriceResolver::class)->renewalPrice($subscription, 'monthly'),
+                'yearly' => app(PriceResolver::class)->renewalPrice($subscription, 'yearly'),
+            ] : null,
             'mrr' => Mrr::monthlyValue($subscription),
             'ledger' => $ledger,
             // Lifetime value is one SUM over the one ledger — reversed rows excluded.
@@ -143,7 +147,10 @@ class AccountController extends Controller
         match ($filter) {
             'trialing' => $q->where('subscriptions.status', 'trialing'),
             'paid' => $q->where('subscriptions.status', 'active'),
-            'lapsed' => $q->whereIn('subscriptions.status', ['past_due', 'canceled']),
+            // QA-06 — a suspension is ours, not a lapse; it stays under "Needs me".
+            'lapsed' => $q->where(fn ($w) => $w->where('subscriptions.status', 'canceled')
+                ->orWhere(fn ($o) => $o->where('subscriptions.status', 'past_due')
+                    ->whereNotIn('subscriptions.id', Subscription::withoutGlobalScopes()->suspended()->select('id')))),
             'attention' => $q->where(function ($w) {
                 $w->whereIn('subscriptions.status', ['past_due'])
                     ->orWhere('subscriptions.current_period_end', '<=', now()->addDays(14)->toDateString());
@@ -175,7 +182,8 @@ class AccountController extends Controller
             'all' => Account::count(),
             'trialing' => (int) ($byStatus['trialing'] ?? 0),
             'paid' => (int) ($byStatus['active'] ?? 0),
-            'lapsed' => (int) ($byStatus['past_due'] ?? 0) + (int) ($byStatus['canceled'] ?? 0),
+            'lapsed' => (int) ($byStatus['past_due'] ?? 0) + (int) ($byStatus['canceled'] ?? 0)
+                - Subscription::withoutGlobalScopes()->whereNotNull('account_id')->where('status', 'past_due')->suspended()->count(),
         ];
     }
 
@@ -190,7 +198,7 @@ class AccountController extends Controller
             'name' => $account->displayName(),
             'email' => $account->billing_email,
             'stores' => (int) ($account->stores_count ?? 0),
-            'status' => $s?->status ?? 'none',
+            'status' => $s?->displayStatus() ?? 'none',   // QA-06
             'access' => $access,
             'renews' => $s?->current_period_end?->format('d M Y'),
             'days_left' => $s?->current_period_end

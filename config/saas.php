@@ -60,6 +60,16 @@ return [
     'backup_min_bytes' => (int) env('OSMS_BACKUP_MIN_BYTES', 1024),
 
     /*
+    | feat-billing P.1 / S-6 — a store purge is irreversible, so it refuses unless a
+    | recent, plausibly-sized database backup exists (the same files and thresholds as
+    | the monitor above). Default TRUE, and production should leave it so.
+    |
+    | The only reason to set OSMS_PURGE_REQUIRES_BACKUP=false is a local/dev machine that
+    | has no backup cron. Switching it off in production removes the way back.
+    */
+    'purge_requires_backup' => (bool) env('OSMS_PURGE_REQUIRES_BACKUP', true),
+
+    /*
     | P5 / REQ-7 — "view as store" (read-only impersonation).
     |
     | Short on purpose. This is long enough to answer a support call and short

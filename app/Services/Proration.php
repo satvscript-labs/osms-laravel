@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Subscription;
+use App\Models\SubscriptionInvoice;
 use Illuminate\Support\Carbon;
 
 /**
@@ -45,6 +46,7 @@ class Proration
      *   unit_price: float,
      *   branches: int,
      *   period_start: Carbon,
+ *   charged_from: Carbon,
      *   period_end: Carbon,
      *   days_in_period: int,
      *   days_charged: int,
@@ -78,11 +80,23 @@ class Proration
             return $this->notApplicable($blocked, $unit, $branches, $interval, $breakdown['tier_label']);
         }
 
-        // The period this branch is buying INTO. Its start is the day it joined
-        // — nobody should be charged for days before the branch existed.
+        // The period this branch is buying INTO (for the rate's denominator), and
+        // the stretch it is charged for: from the later of the day it joined and
+        // the day the account's PAID cover begins. Nobody pays for days before the
+        // branch existed.
+        //
+        // QA-04 — nor for days nobody paid for. A customer who pays early during
+        // their trial is covered from the trial's end; the gap until then is still
+        // trial, free for every store, this one too. Counting from the join date
+        // alone charged "45 of 31" days for exactly that gap. Where the account has
+        // prepaid more than one period, the join date can sit inside an earlier
+        // PAID period, and those days are rightly charged — which is why the start
+        // comes from the ledger, not from stepping one interval back.
         $periodStart = $this->currentPeriodStart($periodEnd, $interval, $tz);
         $daysInPeriod = max(1, (int) $periodStart->diffInDays($periodEnd));
-        $daysCharged = max(0, (int) $joinedOn->diffInDays($periodEnd));
+        $paidFrom = $this->paidCoverStart($subscription, $joinedOn, $tz) ?? $periodStart;
+        $chargedFrom = $joinedOn->greaterThan($paidFrom) ? $joinedOn->copy() : $paidFrom->copy();
+        $daysCharged = max(0, (int) $chargedFrom->diffInDays($periodEnd));
 
         $amount = round($unit * $branches * $daysCharged / $daysInPeriod, 2);
 
@@ -94,13 +108,16 @@ class Proration
             'branches' => $branches,
             'period_start' => $periodStart,
             'period_end' => $periodEnd,
+            // AUDIT-02 — the stretch actually charged for; the ledger row records
+            // THIS as its cover, so its dates and its working cannot disagree.
+            'charged_from' => $chargedFrom,
             'days_in_period' => $daysInPeriod,
             'days_charged' => $daysCharged,
             'interval' => $interval,
             'tier_label' => $breakdown['tier_label'],
             // The working, in the order a person reads it. Rendered verbatim
             // wherever this charge is shown.
-            'lines' => $this->lines($joinedOn, $periodStart, $periodEnd, $daysInPeriod, $daysCharged,
+            'lines' => $this->lines($joinedOn, $chargedFrom, $periodStart, $periodEnd, $daysInPeriod, $daysCharged,
                 $unit, $branches, $interval, $breakdown['tier_label'], $amount),
             'formula' => $this->formula($unit, $branches, $daysCharged, $daysInPeriod, $amount),
         ];
@@ -150,6 +167,7 @@ class Proration
             'branches' => $branches,
             'period_start' => $today,
             'period_end' => $today,
+            'charged_from' => $today,
             'days_in_period' => 0,
             'days_charged' => 0,
             'interval' => $interval,
@@ -157,6 +175,32 @@ class Proration
             'lines' => [['label' => 'No part-period charge', 'value' => $reason]],
             'formula' => '',
         ];
+    }
+
+    /**
+     * QA-04 — where the account's paid cover that matters to this branch begins:
+     * the earliest coverage start among the account's live (non-reversed) ledger
+     * rows that are still running on the day the branch joins.
+     *
+     * Null when the ledger cannot say (rows from before coverage periods were
+     * recorded, or an extension with no payment behind it); the caller then falls
+     * back to the current period — the reading that can only ever charge less.
+     */
+    private function paidCoverStart(Subscription $s, Carbon $joinedOn, string $tz): ?Carbon
+    {
+        if (! $s->account_id) {
+            return null;
+        }
+
+        $start = SubscriptionInvoice::withoutGlobalScopes()
+            ->where('account_id', $s->account_id)
+            ->whereNull('reversed_at')
+            ->whereNotNull('period_start')
+            ->whereNotNull('period_end')
+            ->where('period_end', '>', $joinedOn->toDateString())
+            ->min('period_start');
+
+        return $start ? Carbon::parse($start, $tz)->startOfDay() : null;
     }
 
     /**
@@ -173,7 +217,7 @@ class Proration
 
     /** @return list<array{label: string, value: string}> */
     private function lines(
-        Carbon $joinedOn, Carbon $periodStart, Carbon $periodEnd,
+        Carbon $joinedOn, Carbon $chargedFrom, Carbon $periodStart, Carbon $periodEnd,
         int $daysInPeriod, int $daysCharged,
         float $unit, int $branches, string $interval, ?string $tierLabel, float $amount,
     ): array {
@@ -186,6 +230,28 @@ class Proration
                 'value' => $periodStart->format('d M Y') . ' → ' . $periodEnd->format('d M Y')
                     . ' (' . $daysInPeriod . ' days)',
             ],
+        ];
+
+        // QA-04 — when the branch joins before the paid period starts, say where
+        // the charge begins and why, or "Branch starts 12 Oct" beside "31 days"
+        // reads as an error.
+        if ($chargedFrom->greaterThan($joinedOn)) {
+            $lines[] = [
+                'label' => 'Charged from',
+                'value' => $chargedFrom->format('d M Y') . ' (their paid cover starts then)',
+            ];
+        }
+
+        // Prepaid more than one period: the days run past one period's length,
+        // which is right, and must not look like an arithmetic slip.
+        if ($daysCharged > $daysInPeriod) {
+            $lines[] = [
+                'label' => 'Note',
+                'value' => 'They have paid ahead, so this covers more than one billing period',
+            ];
+        }
+
+        $lines = [...$lines,
             ['label' => 'Days being charged', 'value' => $daysCharged . ' of ' . $daysInPeriod],
             [
                 'label' => 'Rate',

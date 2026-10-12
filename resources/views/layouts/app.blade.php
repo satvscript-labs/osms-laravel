@@ -4,6 +4,15 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
+    @auth
+        @if (auth()->user()->isSuperadmin())
+            {{-- QA-01/02 — SECONDS REMAINING on the password confirmation, not a
+                 timestamp, so a skewed device clock cannot make a stale one look fresh. --}}
+            @php($pwTimeout = (int) config('auth.password_timeout', 10800))
+            <meta name="osms-password-confirm" data-timeout="{{ $pwTimeout }}"
+                  content="{{ max(0, (int) session('auth.password_confirmed_at', 0) + $pwTimeout - now()->timestamp) }}">
+        @endif
+    @endauth
     <title>@yield('title', 'OSMS') — OSMS</title>
     {{-- SEC-04: Plus Jakarta Sans is self-hosted via @fontsource in the Vite bundle. --}}
     @vite(['resources/sass/app.scss', 'resources/js/app.js'])
@@ -76,6 +85,13 @@
         @unless (auth()->user()->isSuperadmin())
             @include('partials.global-search')
         @endunless
+    @endauth
+
+    {{-- QA-01/02 — operator only: ask for the password before a panel change is sent. --}}
+    @auth
+        @if (auth()->user()->isSuperadmin())
+            @include('partials.password-confirm-prompt')
+        @endif
     @endauth
 
     {{-- Reusable confirm-action modal (premium replacement for window.confirm) --}}

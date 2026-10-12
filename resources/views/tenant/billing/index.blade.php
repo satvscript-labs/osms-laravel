@@ -137,7 +137,10 @@
     @unless ($configured)
         <div class="alert alert-info py-2 px-3 small rounded-3">
             <i class="bi bi-info-circle me-1"></i>
-            Online payments aren't configured yet. Add your Razorpay keys to <code>.env</code> to enable checkout.
+            {{-- UI-02 — written for the shop owner who reads it, not the developer who
+                 would fix it. (Gateway keys belong in the server's .env; that is our job.) --}}
+            Online payment isn't available right now. To pay or renew, contact us at
+            <a href="mailto:{{ config('saas.support_email') }}" class="alert-link">{{ config('saas.support_email') }}</a>.
         </div>
     @endunless
 
@@ -224,7 +227,13 @@
                             @foreach ($invoices as $invoice)
                                 @php $reversed = $invoice->isReversed(); @endphp
                                 <tr @class(['text-muted-foreground' => $reversed])>
-                                    <td class="ps-4">{{ optional($invoice->paid_at ?? $invoice->created_at)->format('d M Y') }}</td>
+                                    <td class="ps-4">
+                                        {{ optional($invoice->paid_at ?? $invoice->created_at)->format('d M Y') }}
+                                        {{-- QA-03 — the number they will quote to us, the same one on our ledger. --}}
+                                        @if ($invoice->receipt_no)
+                                            <span class="d-block text-2xs text-faint font-monospace mt-1">{{ $invoice->receipt_no }}</span>
+                                        @endif
+                                    </td>
                                     <td @class(['text-decoration-line-through' => $reversed])>
                                         ₹ {{ number_format($invoice->amount, 2) }}
                                     </td>

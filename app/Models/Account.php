@@ -29,11 +29,13 @@ class Account extends Model
     protected $fillable = [
         'name', 'display_name', 'billing_email', 'billing_phone', 'billing_address',
         'tax_id', 'status', 'internal_notes', 'owner_user_id',
-        'supervised', 'supervised_reason',
+        'supervised', 'supervised_reason', 'trial_used_at',
     ];
 
     protected $casts = [
         'supervised' => 'boolean',
+        // P.2 - when this account's one free trial began. Set once, never cleared.
+        'trial_used_at' => 'datetime',
     ];
 
     /** The stores (tenants) under this account. Fully isolated from each other (Q-B). */
@@ -154,7 +156,7 @@ class Account extends Model
      */
     public function billableStores(): HasMany
     {
-        return $this->stores()->where('is_billable', true)->where('store_status', '!=', 'closed');
+        return $this->stores()->billable();
     }
 
     /**

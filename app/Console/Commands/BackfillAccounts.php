@@ -110,6 +110,8 @@ class BackfillAccounts extends Command
                     'status' => $p['subscription']?->status ?? 'trialing',
                     'internal_notes' => $tenant->internal_notes, // moves up (06 §4.2)
                     'owner_user_id' => $p['owner']?->id,
+                    // P.2 - every store began with a trial; its first subscription row dates it.
+                    'trial_used_at' => $p['subscription']?->created_at,
                 ]);
 
                 $tenant->forceFill(['account_id' => $account->id])->save();
