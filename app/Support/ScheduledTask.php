@@ -68,6 +68,26 @@ final class ScheduledTask
         };
     }
 
+    /**
+     * Same stamping as command(), for a task that is a plain closure rather than an
+     * artisan command (e.g. the scheduler heartbeat). It stays visible in
+     * `osms:scheduler-status` and a throw is recorded, then re-thrown.
+     */
+    public static function call(string $name, callable $task): Closure
+    {
+        return static function () use ($name, $task): void {
+            try {
+                $task();
+            } catch (Throwable $e) {
+                self::fail($name, $e->getMessage());
+
+                throw $e;
+            }
+
+            Cache::forever(self::key($name, 'ok'), now()->toIso8601String());
+        };
+    }
+
     /** When this task last finished successfully, or null if it never has (here). */
     public static function lastSuccess(string $name): ?Carbon
     {

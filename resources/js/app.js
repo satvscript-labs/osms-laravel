@@ -32,6 +32,12 @@ import './form-back-guard';
 // Flash messages as floating toasts — they used to shift the whole page.
 import './toasts';
 
+// P6 / 03 §6.4 — Back closes an open overlay instead of leaving the page.
+import './overlay-history';
+
+// QA-01/02 — operator panel: ask for the password BEFORE a change is sent.
+import './password-confirm';
+
 // Auto-enable tooltips and popovers
 document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('[data-bs-toggle="tooltip"]').forEach((el) => {

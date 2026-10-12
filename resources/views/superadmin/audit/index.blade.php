@@ -35,7 +35,7 @@
                             </td>
                             <td style="font-size:var(--text-sm);">
                                 @if ($log->tenant)
-                                    <a href="{{ route('superadmin.tenants.show', $log->tenant) }}" class="text-decoration-none">{{ $log->tenant->store_name }}</a>
+                                    <a href="{{ route('superadmin.stores.show', $log->tenant) }}" class="text-decoration-none">{{ $log->tenant->store_name }}</a>
                                 @else
                                     —
                                 @endif

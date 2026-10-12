@@ -3,6 +3,22 @@
 
 @section('content')
 <div class="p-4 p-md-5">
+
+    {{-- P4 — supervised mode: this customer is billed by hand, so the
+         self-serve controls are gone. The server refuses them regardless;
+         hiding them here just avoids offering something that will fail. --}}
+    @if (!empty($supervised))
+        <div class="card border-0 shadow-sm rounded-4 mb-4 animate-fade-up"
+             style="border-left:3px solid var(--osms-primary) !important;">
+            <div class="card-body p-4 d-flex align-items-start gap-3">
+                <i class="bi bi-person-check text-primary"></i>
+                <div>
+                    <p class="fw-semibold mb-1">We look after your billing</p>
+                    <p class="text-muted-foreground text-sm mb-0">{{ $supervised }}</p>
+                </div>
+            </div>
+        </div>
+    @endif
     <div class="mb-4">
         <p class="section-label mb-1">Account</p>
         <h1 class="h3 fw-semibold font-display mb-1">Subscription</h1>
@@ -14,6 +30,37 @@
     @endif
     @if (session('error'))
         <div class="alert alert-danger py-2 px-3 small rounded-3">{{ session('error') }}</div>
+    @endif
+
+    {{-- ISS-02 (N-b) — a payment was taken back. Say so where they can see it,
+         rather than leaving them to notice a struck-through row. Recent only:
+         a notice, not a permanent mark. --}}
+    @if ($recentReversals->isNotEmpty())
+        <div class="card border-0 shadow-sm rounded-4 mb-4 animate-fade-up"
+             style="border-left:3px solid var(--tone-amber) !important;">
+            <div class="card-body p-4 d-flex align-items-start gap-3">
+                <span class="d-inline-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
+                      style="width:2.5rem;height:2.5rem;background:var(--tone-amber-bg);color:var(--tone-amber);">
+                    <i class="bi bi-arrow-counterclockwise"></i>
+                </span>
+                <div class="min-w-0">
+                    <p class="fw-semibold mb-1">
+                        {{ $recentReversals->count() === 1 ? 'A payment was reversed' : 'Some payments were reversed' }}
+                    </p>
+                    @foreach ($recentReversals as $reversal)
+                        <p class="text-muted-foreground text-sm mb-1">
+                            <strong>₹ {{ number_format($reversal->amount, 2) }}</strong>
+                            recorded {{ optional($reversal->paid_at ?? $reversal->created_at)->format('d M Y') }}
+                            was reversed on {{ $reversal->reversed_at->format('d M Y') }}.
+                        </p>
+                    @endforeach
+                    <p class="text-muted-foreground text-sm mb-0">
+                        Your access is unaffected. If this looks wrong, please
+                        <a href="{{ route('legal.contact') }}">get in touch</a>.
+                    </p>
+                </div>
+            </div>
+        </div>
     @endif
 
     @php
@@ -60,14 +107,17 @@
             @if ($s === 'active' && ! $subscription?->cancel_at_period_end)
                 <div class="d-flex flex-wrap gap-2">
                     @unless ($subscription?->pending_interval)
-                        <form method="POST" action="{{ route('tenant.billing.change-interval') }}">
+                        @if (empty($supervised))
+                    <form method="POST" action="{{ route('tenant.billing.change-interval') }}">
                             @csrf
                             <input type="hidden" name="interval" value="{{ $otherInterval }}">
                             <button type="submit" class="btn btn-light">
                                 Switch to {{ ucfirst($otherInterval) }}@if ($otherInterval === 'yearly' && $yearlySave > 0)<span class="badge text-bg-success ms-1">Save {{ $yearlySave }}%</span>@endif
                             </button>
                         </form>
+                    @endif
                     @endunless
+                    @if (empty($supervised))
                     <form method="POST" action="{{ route('tenant.billing.cancel') }}">
                         @csrf
                         <button type="button" class="btn btn-light text-danger"
@@ -78,6 +128,7 @@
                             Cancel
                         </button>
                     </form>
+                    @endif
                 </div>
             @endif
         </div>
@@ -86,7 +137,10 @@
     @unless ($configured)
         <div class="alert alert-info py-2 px-3 small rounded-3">
             <i class="bi bi-info-circle me-1"></i>
-            Online payments aren't configured yet. Add your Razorpay keys to <code>.env</code> to enable checkout.
+            {{-- UI-02 — written for the shop owner who reads it, not the developer who
+                 would fix it. (Gateway keys belong in the server's .env; that is our job.) --}}
+            Online payment isn't available right now. To pay or renew, contact us at
+            <a href="mailto:{{ config('saas.support_email') }}" class="alert-link">{{ config('saas.support_email') }}</a>.
         </div>
     @endunless
 
@@ -127,6 +181,7 @@
                         @endforeach
                     </ul>
 
+                    @if (empty($supervised))
                     <form method="POST" action="{{ route('tenant.billing.subscribe') }}">
                         @csrf
                         <input type="hidden" name="tier" value="basic">
@@ -135,6 +190,7 @@
                             {{ $s === 'active' ? 'Current plan' : 'Subscribe' }}
                         </button>
                     </form>
+                    @endif
                 </div>
             </div>
         </div>
@@ -163,18 +219,66 @@
                             </tr>
                         </thead>
                         <tbody>
+                            {{-- ISS-02 — a reversed payment must never read as a
+                                 green "paid". The customer's view now mirrors
+                                 the operator's exactly: struck through, marked
+                                 Reversed, and never silently removed — they saw
+                                 the payment, so it must not just vanish. --}}
                             @foreach ($invoices as $invoice)
-                                <tr>
-                                    <td class="ps-4">{{ optional($invoice->paid_at ?? $invoice->created_at)->format('d M Y') }}</td>
-                                    <td>₹ {{ number_format($invoice->amount, 2) }}</td>
-                                    <td><span class="badge text-bg-success">{{ $invoice->status }}</span></td>
+                                @php $reversed = $invoice->isReversed(); @endphp
+                                <tr @class(['text-muted-foreground' => $reversed])>
+                                    <td class="ps-4">
+                                        {{ optional($invoice->paid_at ?? $invoice->created_at)->format('d M Y') }}
+                                        {{-- QA-03 — the number they will quote to us, the same one on our ledger. --}}
+                                        @if ($invoice->receipt_no)
+                                            <span class="d-block text-2xs text-faint font-monospace mt-1">{{ $invoice->receipt_no }}</span>
+                                        @endif
+                                    </td>
+                                    <td @class(['text-decoration-line-through' => $reversed])>
+                                        ₹ {{ number_format($invoice->amount, 2) }}
+                                    </td>
+                                    <td>
+                                        @if ($reversed)
+                                            <span class="osms-badge osms-badge-red">
+                                                <span class="osms-badge-dot"></span>Reversed
+                                            </span>
+                                            <span class="d-block text-2xs text-faint mt-1">
+                                                on {{ $invoice->reversed_at->format('d M Y') }}
+                                            </span>
+                                        @elseif ($invoice->method === 'comp')
+                                            <span class="osms-badge osms-badge-blue">
+                                                <span class="osms-badge-dot"></span>Complimentary
+                                            </span>
+                                        @else
+                                            <span class="osms-badge osms-badge-green">
+                                                <span class="osms-badge-dot"></span>Paid
+                                            </span>
+                                        @endif
+                                    </td>
                                     <td class="text-end pe-4">
+                                        {{-- The receipt stays downloadable on purpose — it is
+                                             stamped REVERSED rather than withheld, because a
+                                             customer who already filed the original needs a
+                                             document that supersedes it. --}}
                                         <a href="{{ route('tenant.billing.invoices.pdf', $invoice) }}"
                                            class="btn btn-sm btn-light">
-                                            <i class="bi bi-download me-1"></i> PDF
+                                            <i class="bi bi-download me-1"></i>
+                                            {{ $reversed ? 'Cancelled receipt' : 'PDF' }}
                                         </a>
                                     </td>
                                 </tr>
+
+                                {{-- REQ-15 — the customer sees the same working the
+                                     operator does. A part-period charge is the line
+                                     most likely to be queried, and "₹338.03" with no
+                                     derivation cannot be answered across a counter. --}}
+                                @if ($invoice->hasCalculation() || $invoice->hasDiscount())
+                                    <tr>
+                                        <td colspan="4" class="pt-0 pb-3 px-4" style="border-top:0;">
+                                            @include('partials.charge-working', ['invoice' => $invoice])
+                                        </td>
+                                    </tr>
+                                @endif
                             @endforeach
                         </tbody>
                     </table>

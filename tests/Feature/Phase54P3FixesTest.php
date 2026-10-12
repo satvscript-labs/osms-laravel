@@ -138,8 +138,13 @@ class Phase54P3FixesTest extends TestCase
 
     public function test_a_comped_subscription_contributes_nothing_to_mrr(): void
     {
+        // P1 / BUG-P05 — the rule changed (owner-approved): `manual` no longer
+        // means "not paying". A comp is identified as a comp — an override in
+        // force — not inferred from who last touched the record.
         $sub = $this->tenant->subscription;
         $sub->update(['status' => 'active', 'tier' => 'basic', 'interval' => 'monthly', 'manual' => true]);
+        $sub->applyOverride(kind: 'comp', until: now()->addMonth(), reason: 'test comp');
+        $sub->save();
 
         $this->assertSame(0.0, Mrr::monthlyValue($sub->fresh()));
     }
@@ -152,28 +157,20 @@ class Phase54P3FixesTest extends TestCase
         $this->assertGreaterThan(0, Mrr::monthlyValue($sub->fresh()));
     }
 
-    // ---------------- DATA-06 — superadmin edit must not null billing fields ----------------
-
-    public function test_updating_a_subscription_without_period_fields_preserves_them(): void
+    public function test_a_manually_billed_store_now_counts_toward_mrr(): void
     {
-        $superadmin = User::factory()->create(['role' => 'superadmin', 'tenant_id' => null]);
+        // The case the old rule hid: hand-managed, genuinely paying (BUG-P05).
         $sub = $this->tenant->subscription;
-        $end = now()->addDays(20)->startOfDay();
-        $sub->update(['status' => 'active', 'tier' => 'basic', 'interval' => 'yearly', 'current_period_end' => $end]);
+        $sub->update(['status' => 'active', 'tier' => 'basic', 'interval' => 'monthly', 'manual' => true]);
 
-        // Post WITHOUT interval / current_period_end — the DATA-06 foot-gun.
-        $this->actingAs($superadmin)
-            ->withSession(['auth.password_confirmed_at' => time()])
-            ->patch(route('superadmin.subscription.update', $this->tenant), [
-                'status' => 'active',
-                'tier' => 'basic',
-            ])->assertRedirect();
-
-        $fresh = $sub->fresh();
-        $this->assertSame('yearly', $fresh->interval, 'interval must not be silently cleared');
-        $this->assertNotNull($fresh->current_period_end, 'period end must not be silently cleared');
-        $this->assertSame($end->toDateString(), $fresh->current_period_end->toDateString());
+        $this->assertGreaterThan(0, Mrr::monthlyValue($sub->fresh()));
     }
+
+    // ---------------- DATA-06 — superadmin edit must not null billing fields ----------------
+    //
+    // feat-billing P.3 - the raw "edit status / period end" endpoint this guarded was REMOVED, so the
+    // foot-gun it protected against (a post without the period fields clearing the billing period)
+    // no longer exists. Phase83PreDeployFixesTest asserts the endpoint is gone.
 
     // ---------------- PERF-05 — low-stock count is a COUNT, not a full load ----------------
 

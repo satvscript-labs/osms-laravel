@@ -20,5 +20,7 @@ class DatabaseSeeder extends Seeder
     public function run(): void
     {
         $this->call(SuperadminSeeder::class);
+        // P1 / REQ-4 — plans as data. Idempotent; never overwrites edited prices.
+        $this->call(PlanSeeder::class);
     }
 }

@@ -2,8 +2,8 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Tenant;
 use App\Models\User;
+use App\Services\StoreProvisioner;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -27,7 +27,7 @@ class OnboardingController extends Controller
         return view('onboarding.create');
     }
 
-    public function store(Request $request): RedirectResponse
+    public function store(Request $request, StoreProvisioner $provisioner): RedirectResponse
     {
         $user = $request->user();
 
@@ -62,26 +62,26 @@ class OnboardingController extends Controller
             }
         }
 
-        // Atomic: create tenant, link user, start trial (replaces the SECURITY DEFINER RPC).
-        // Lock + re-check the user row inside the transaction so two concurrent
-        // submissions can't both create a tenant for the same user (BUG-008).
-        DB::transaction(function () use ($user, $validated, $logoUrl) {
+        // Atomic: create account + tenant, link user, start trial. Lock + re-check
+        // the user row inside the transaction so two concurrent submissions can't
+        // both create a tenant for the same user (BUG-008).
+        //
+        // P1 / REQ-2 — provisioning itself lives in StoreProvisioner, the ONE
+        // service every door shares (self-signup here, the operator door in P3,
+        // seeders, imports). This controller keeps only the self-signup-specific
+        // guard; the provisioner joins this ambient transaction.
+        DB::transaction(function () use ($user, $validated, $logoUrl, $provisioner) {
             $locked = User::whereKey($user->id)->lockForUpdate()->first();
             if (! $locked || $locked->hasTenant()) {
                 return; // another request already onboarded this user
             }
 
-            $tenant = Tenant::create([
+            $provisioner->provision($locked, [
                 'store_name' => $validated['store_name'],
                 'tax_id' => $validated['tax_id'] ?? null,
                 'address' => $validated['address'] ?? null,
                 'logo_url' => $logoUrl,
             ]);
-
-            $locked->forceFill(['tenant_id' => $tenant->id])->save();
-
-            // The trial subscription is created by the Tenant model's `created`
-            // hook (ST-Enforce) — no explicit creation needed here.
         });
 
         return redirect()->route('tenant.dashboard')

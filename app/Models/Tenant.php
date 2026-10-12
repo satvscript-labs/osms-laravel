@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Concerns\HasUuid;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
@@ -12,6 +13,7 @@ class Tenant extends Model
     use HasUuid;
 
     protected $fillable = [
+        'account_id',
         'store_name',
         'tax_id',
         'logo_url',
@@ -19,12 +21,27 @@ class Tenant extends Model
         'internal_notes',
         'gst_enabled',
         'gst_rate',
+        'is_billable',
+        'store_status',
+        'closed_at',
+        'closure_reason',
+        'purge_after',
+        'closed_by',
     ];
 
     protected $casts = [
         'gst_enabled' => 'boolean',
         'gst_rate' => 'decimal:2',
+        'is_billable' => 'boolean',
+        'closed_at' => 'datetime',
+        'purge_after' => 'datetime',
     ];
+
+    /** P1 / REQ-12 — the paying identity this store belongs to ("Customer" in the panel). */
+    public function account(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(Account::class);
+    }
 
     /** Default GST rate assumed when a registered store hasn't set one (%). */
     public const DEFAULT_GST_RATE = 12.0;
@@ -50,15 +67,66 @@ class Tenant extends Model
     protected static function booted(): void
     {
         static::created(function (Tenant $tenant) {
+            // P1 / REQ-12 — ONE subscription per ACCOUNT, not per store.
+            //
+            // A second branch joins the payer's EXISTING clock; it does not start
+            // its own. Minting one per store would give a single customer several
+            // drifting renewal dates — exactly what the account layer exists to
+            // prevent. (The part period a joining branch owes is charged by
+            // StoreProvisioner::billNewBranch() - REQ-15 - not deferred to renewal.)
+            if ($tenant->account_id
+                && Subscription::withoutGlobalScopes()->where('account_id', $tenant->account_id)->exists()) {
+                return;
+            }
+
             // Trial end is a calendar date measured in the billing timezone, so
             // create it there too (avoids a UTC/IST off-by-one at day boundaries).
             $tz = config('billing.timezone', 'Asia/Kolkata');
 
+            // feat-billing P.2 - ONE free trial per ACCOUNT, recorded on the account
+            // itself so it survives anything that happens to a subscription row.
+            // Reaching here for an account that has already had its trial means its
+            // subscription is gone, which P.1 makes impossible by ordinary means.
+            // The one thing we must not do is hand out a second free fortnight: the
+            // subscription is created LOCKED, and an operator decides what the
+            // customer is owed.
+            $account = $tenant->account_id ? Account::find($tenant->account_id) : null;
+
+            if ($account?->trial_used_at) {
+                $tenant->subscription()->create([
+                    'status' => 'canceled',
+                    'tier' => 'basic',
+                    'account_id' => $tenant->account_id,
+                    'plan_id' => Plan::query()->where('code', 'basic')->value('id'),
+                    'current_period_end' => now($tz)->subDay(),
+                ]);
+
+                \Illuminate\Support\Facades\Log::warning(
+                    'A store was added to an account that has already used its free trial and has no subscription; created it locked rather than minting a second trial.',
+                    ['account_id' => $tenant->account_id, 'tenant_id' => $tenant->id],
+                );
+
+                return;
+            }
+
             $tenant->subscription()->create([
                 'status' => 'trialing',
                 'tier' => 'basic',
+                // P1 / REQ-12 — dual-write: the subscription is account-scoped from
+                // birth when the tenant already knows its account (StoreProvisioner
+                // sets it before create). Pre-backfill tenants pass null; the
+                // osms:backfill-accounts command fills those in.
+                'account_id' => $tenant->account_id,
+                // REQ-4 — bind to the plan row matching the tier, if seeded. The
+                // PriceResolver falls back to config when plans aren't seeded (tests).
+                'plan_id' => Plan::query()->where('code', 'basic')->value('id'),
                 'current_period_end' => now($tz)->addDays((int) config('billing.trial_days', 14)),
             ]);
+
+            // Stamp it once; never overwrite an earlier date.
+            if ($account && ! $account->trial_used_at) {
+                Account::whereKey($account->id)->whereNull('trial_used_at')->update(['trial_used_at' => now()]);
+            }
         });
     }
 
@@ -78,10 +146,152 @@ class Tenant extends Model
         return $this->hasOne(WhatsAppConfig::class);
     }
 
-    /** True when this store has a live subscription (trial in-window, paid, or in grace). */
+    /**
+     * The subscription that governs this store's access.
+     *
+     * P1 / REQ-12 — money lives on the ACCOUNT, so a store is covered by its
+     * payer's subscription. Falls back to its own row for stores not yet
+     * backfilled (transition period, decision E6) — so behaviour is identical
+     * before and after `osms:backfill-accounts` runs.
+     */
+    public function governingSubscription(): ?Subscription
+    {
+        return $this->account?->subscription ?? $this->subscription;
+    }
+
+    /**
+     * True when this store may be used: the money is live AND the store itself
+     * has not been individually suspended (06 §5 — two independent levers).
+     */
     public function hasActiveAccess(): bool
     {
-        return (bool) $this->subscription?->hasAccess();
+        if ($this->isBlocked()) {
+            return false;
+        }
+
+        return (bool) $this->governingSubscription()?->hasAccess();
+    }
+
+    /**
+     * The ONE rule for "this store is paid for": billable and not closed. Used by
+     * Account::billableStores() and by Metrics' grouped count, so a renewal and a
+     * forecast can never disagree about who is billed.
+     */
+    public function scopeBillable(Builder $query): Builder
+    {
+        return $query->where('is_billable', true)->where('store_status', '!=', 'closed');
+    }
+
+    /**
+     * P5 — the store itself is shut, whatever the money says.
+     *
+     * Two different intents, one answer for the enforcement layer: `suspended`
+     * is a lever you expect to release, `closed` is the end of the relationship.
+     * Every caller that asks "may this store be used?" must go through here, so
+     * a third state can never be added and silently forgotten in one branch.
+     */
+    public function isBlocked(): bool
+    {
+        return in_array($this->store_status, ['suspended', 'closed'], true);
+    }
+
+    public function isClosed(): bool
+    {
+        return $this->store_status === 'closed';
+    }
+
+    /**
+     * Whether the retention window has run out and the data may now be destroyed.
+     * A closed store with time left on the clock is deliberately NOT purgeable —
+     * the window is the whole safety mechanism.
+     */
+    public function isPurgeable(): bool
+    {
+        return $this->isClosed()
+            && $this->purge_after !== null
+            && $this->purge_after->isPast();
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Why is this store locked? (ISS-01)
+    |--------------------------------------------------------------------------
+    | ONE place answers it, because three surfaces need the same answer and were
+    | each guessing separately: the enforcement middleware (where do I send
+    | them?), the lock screen (what do I say?), and the billing page (which
+    | banner?).
+    |
+    | The guessing produced two real defects. A store the OPERATOR suspended was
+    | told "Your payment is overdue — please renew", so a paid-up customer was
+    | invited to pay a second time for something no payment could fix. And a
+    | CLOSED store bounced between the lock screen and the dashboard forever,
+    | because closure lives on the tenant while `hasAccess()` asks the
+    | subscription — which is still perfectly active.
+    */
+
+    /** @return string|null null = access is fine */
+    public function accessDenialReason(): ?string
+    {
+        if ($this->isClosed()) {
+            return 'closed';
+        }
+
+        if ($this->store_status === 'suspended') {
+            return 'store_suspended';
+        }
+
+        $subscription = $this->governingSubscription();
+
+        if (! $subscription) {
+            return 'inactive';
+        }
+
+        if ($subscription->hasAccess()) {
+            return null;
+        }
+
+        // An operator's deliberate decision outranks whatever the status field
+        // says — `suspend` is expressed as past_due, and reading the status
+        // alone is exactly how the customer got told to pay again.
+        if ($subscription->hasActiveOverride()) {
+            if ($subscription->override_kind === 'suspension') {
+                return 'suspended';
+            }
+            if ($subscription->override_kind === 'cancellation') {
+                return 'cancelled_by_us';
+            }
+        }
+
+        return match ($subscription->status) {
+            'trialing' => 'trial_ended',
+            'past_due' => 'payment_overdue',
+            'canceled' => 'cancelled',
+            default => 'inactive',
+        };
+    }
+
+    /**
+     * Could the customer fix this themselves by paying?
+     *
+     * False for everything an operator imposed. Sending someone to a checkout
+     * that cannot lift their block is worse than telling them nothing: they
+     * pay, nothing changes, and now you owe them a refund conversation.
+     */
+    public function lockIsSelfResolvable(): bool
+    {
+        return in_array($this->accessDenialReason(), [
+            'trial_ended', 'payment_overdue', 'cancelled', 'inactive',
+        ], true);
+    }
+
+    /** Whole days left before this store's data may be destroyed. */
+    public function daysUntilPurge(): ?int
+    {
+        if (! $this->isClosed() || ! $this->purge_after) {
+            return null;
+        }
+
+        return max(0, (int) ceil(now()->diffInDays($this->purge_after, false)));
     }
 
     public function customers(): HasMany

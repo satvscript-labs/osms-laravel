@@ -23,10 +23,29 @@ return [
     'invite_days' => (int) env('SAAS_INVITE_DAYS', 7),
 
     // ST-Legal (S6) / invoices: the registered business behind OSMS.
-    'legal_entity' => env('SAAS_LEGAL_ENTITY', '[Your Registered Business Name]'),
-    'gst_number' => env('SAAS_GST_NUMBER', '[Your GSTIN]'),
+    //
+    // BUG-P10 — these default to EMPTY, never to a bracketed placeholder. A blank
+    // value makes the template omit the whole field (see BUG-P02); a placeholder
+    // like "[Your GSTIN]" would render literally on the public contact page, which
+    // is exactly the defect being fixed.
+    'legal_entity' => env('SAAS_LEGAL_ENTITY', 'SatvScript'),
+    'gst_number' => env('SAAS_GST_NUMBER', ''),
     'support_email' => env('SAAS_SUPPORT_EMAIL', 'support@osms.satvscript.com'),
-    'contact_address' => env('SAAS_CONTACT_ADDRESS', '[Your Registered Business Address]'),
+    'contact_address' => env('SAAS_CONTACT_ADDRESS', ''),
+
+    /*
+    | BUG-P02 — is the platform GST-registered?
+    |
+    | SatvScript is NOT registered (below threshold), so subscription payments are
+    | documented as a plain "Payment Receipt": no GSTIN line, no CGST/SGST split.
+    | Previously the PDF rendered an 18%-inclusive tax breakdown under a blank
+    | GSTIN — asserting tax was collected by an entity not registered to collect
+    | it, on a document a customer might submit for input-tax credit.
+    |
+    | Flip to true (and set SAAS_GST_NUMBER) once registered: the same template
+    | then renders a compliant tax invoice again. Registration is the ONLY switch.
+    */
+    'gst_registered' => (bool) env('SAAS_GST_REGISTERED', false),
 
     /*
     | OPS-01 — backup health monitoring.
@@ -39,5 +58,36 @@ return [
     'backup_dir' => env('OSMS_BACKUP_DIR', ''),
     'backup_max_age_hours' => (int) env('OSMS_BACKUP_MAX_AGE_HOURS', 26),
     'backup_min_bytes' => (int) env('OSMS_BACKUP_MIN_BYTES', 1024),
+
+    /*
+    | feat-billing P.1 / S-6 — a store purge is irreversible, so it refuses unless a
+    | recent, plausibly-sized database backup exists (the same files and thresholds as
+    | the monitor above). Default TRUE, and production should leave it so.
+    |
+    | The only reason to set OSMS_PURGE_REQUIRES_BACKUP=false is a local/dev machine that
+    | has no backup cron. Switching it off in production removes the way back.
+    */
+    'purge_requires_backup' => (bool) env('OSMS_PURGE_REQUIRES_BACKUP', true),
+
+    /*
+    | P5 / REQ-7 — "view as store" (read-only impersonation).
+    |
+    | Short on purpose. This is long enough to answer a support call and short
+    | enough that an operator who closes their laptop mid-session does not leave
+    | a live door into a customer's data. Raising it buys nothing: the session
+    | can simply be started again.
+    */
+    'impersonation_minutes' => (int) env('OSMS_IMPERSONATION_MINUTES', 30),
+
+    /*
+    | P5 / REQ-7, matrix row 16 — the retention window between closing a store
+    | and its data being destroyed.
+    |
+    | This number IS the safety mechanism: closure is instant and reversible,
+    | purging is neither and cannot happen before the window elapses. It also
+    | covers the case the owner cares about — a customer who leaves in anger in
+    | January and asks for their shop back in February.
+    */
+    'closure_retention_days' => (int) env('OSMS_CLOSURE_RETENTION_DAYS', 30),
 
 ];

@@ -1,0 +1,272 @@
+<?php
+
+namespace App\Services;
+
+use App\Models\AdminAuditLog;
+use App\Models\Subscription;
+use App\Models\SubscriptionInvoice;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
+use InvalidArgumentException;
+
+/**
+ * P1 / REQ-5 — every non-webhook money event enters the ledger through here.
+ *
+ * The rule this enforces (playbook §3.2): one ledger, one shape. A cash renewal,
+ * a UPI payment, a ₹0 comp and a Razorpay auto-debit are the SAME record,
+ * differing only in method + source — never a parallel "manual" table.
+ *
+ * BUG-P04 lives here: a complimentary grant is a ₹0 ROW with method='comp' and
+ * a required reason — never an absent row — so lifetime value and "what have we
+ * given away?" stay answerable from one query.
+ */
+class PaymentRecorder
+{
+    /** Methods whose rows are discretionary and therefore need a reason. */
+    private const REASON_REQUIRED = ['comp', 'adjustment'];
+
+    private const METHODS = ['razorpay', 'cash', 'upi', 'bank_transfer', 'cheque', 'comp', 'adjustment'];
+
+    /**
+     * Write one ledger row for a subscription payment (or grant).
+     *
+     * @param array{
+     *   reference?: string|null,
+     *   reason?: string|null,
+     *   period_start?: Carbon|null,
+     *   period_end?: Carbon|null,
+     *   recorded_by?: int|null,
+     *   source?: string,
+     *   paid_at?: Carbon|null,
+     *   tenant_id?: string|null,
+     *   list_amount?: float|null,
+     *   discount_amount?: float|null,
+     *   discount_reason?: string|null,
+     *   calculation?: array|null,
+     * } $options
+     */
+    public function record(
+        Subscription $subscription,
+        float $amount,
+        string $method,
+        array $options = [],
+    ): SubscriptionInvoice {
+        if (! in_array($method, self::METHODS, true)) {
+            throw new InvalidArgumentException("Unknown payment method [{$method}].");
+        }
+
+        $reason = $options['reason'] ?? null;
+
+        if (in_array($method, self::REASON_REQUIRED, true) && blank($reason)) {
+            // Playbook §5.2 rule 4 — discretionary actions carry a reason. Enforced
+            // at the service so no future door can forget it.
+            throw new InvalidArgumentException("A reason is required for a [{$method}] entry.");
+        }
+
+        if ($amount < 0) {
+            throw new InvalidArgumentException('Amounts are never negative; reverse a row instead.');
+        }
+
+        /*
+         * REQ-15 — a bargain is recorded, never absorbed.
+         *
+         * `amount` keeps its exact meaning: **what was actually received**, so
+         * every revenue, lifetime-value and collection figure built on it stays
+         * correct untouched. `list_amount` is what it would have been. Without
+         * that pair, money given away at the counter is invisible — the same
+         * mistake BUG-P04 made with comps, where an absent row meant an absent
+         * fact.
+         */
+        $discount = $this->discount($amount, $options);
+
+        if ($discount && blank($options['discount_reason'] ?? null)) {
+            throw new InvalidArgumentException('A discount must say why — it is a discretionary decision, and in six months the ledger has to explain it.');
+        }
+
+        return DB::transaction(function () use ($subscription, $amount, $method, $options, $reason, $discount) {
+            return SubscriptionInvoice::withoutGlobalScopes()->create([
+                // A part-period charge belongs to the BRANCH that caused it, so
+                // "what did Branch 2 cost us?" stays answerable.
+                'tenant_id' => $options['tenant_id'] ?? $subscription->tenant_id,
+                'account_id' => $subscription->account_id,
+                'amount' => round($amount, 2), // decimal, rounded once at the boundary
+                'list_amount' => $discount ? round((float) $options['list_amount'], 2) : null,
+                'discount_amount' => $discount ? round($discount, 2) : null,
+                'discount_reason' => $discount ? $options['discount_reason'] : null,
+                'calculation' => $options['calculation'] ?? null,
+                'currency' => 'INR',
+                'status' => 'paid',
+                'method' => $method,
+                'source' => $options['source'] ?? 'operator',
+                'reference' => $options['reference'] ?? null,
+                'recorded_by' => $options['recorded_by'] ?? auth()->id(),
+                'reason' => $reason,
+                'period_start' => ($options['period_start'] ?? null)?->toDateString(),
+                'period_end' => ($options['period_end'] ?? null)?->toDateString(),
+                'paid_at' => $options['paid_at'] ?? now(),
+                'receipt_no' => $this->nextReceiptNo(),
+            ]);
+        });
+    }
+
+    /**
+     * How much was knocked off, or null.
+     *
+     * Derived from `list_amount` rather than taken on trust, so the three
+     * numbers on the row can never contradict one another.
+     */
+    private function discount(float $amount, array $options): ?float
+    {
+        $list = $options['list_amount'] ?? null;
+
+        if ($list === null) {
+            return null;
+        }
+
+        $discount = round((float) $list - $amount, 2);
+
+        if ($discount <= 0) {
+            return null;   // charged at or above list — nothing was given away
+        }
+
+        return $discount;
+    }
+
+    /**
+     * P4 — record a gateway payment, idempotently.
+     *
+     * The automated lane's door into the SAME ledger. Two things it must do
+     * that `record()` cannot:
+     *
+     *   1. **Be idempotent.** Razorpay retries webhooks, so the same
+     *      `razorpay_payment_id` must never charge or record twice. Keyed
+     *      `firstOrCreate`, per playbook §5.2 rule 9.
+     *   2. **Still issue a receipt number.** Before this, webhook rows carried
+     *      no `receipt_no` while manual ones did — so a customer who paid
+     *      online got a receipt with no number on it, and the ledger had two
+     *      shapes depending on which lane wrote it. "One ledger, one truth"
+     *      has to mean identical rows, not merely the same table.
+     *
+     * @return array{0: SubscriptionInvoice, 1: bool} [row, wasNewlyRecorded]
+     */
+    public function recordGatewayPayment(
+        Subscription $subscription,
+        string $gatewayPaymentId,
+        float $amount,
+        array $options = [],
+    ): array {
+        return DB::transaction(function () use ($subscription, $gatewayPaymentId, $amount, $options) {
+            $existing = SubscriptionInvoice::withoutGlobalScopes()
+                ->where('razorpay_payment_id', $gatewayPaymentId)
+                ->first();
+
+            if ($existing) {
+                return [$existing, false]; // a retry — already recorded
+            }
+
+            $row = SubscriptionInvoice::withoutGlobalScopes()->create([
+                'tenant_id' => $subscription->tenant_id,
+                'account_id' => $subscription->account_id,
+                'razorpay_payment_id' => $gatewayPaymentId,
+                'razorpay_subscription_id' => $options['razorpay_subscription_id'] ?? null,
+                'amount' => round($amount, 2),
+                'currency' => $options['currency'] ?? 'INR',
+                'status' => 'paid',
+                'method' => 'razorpay',
+                'source' => 'webhook',
+                'recorded_by' => null, // nobody typed this; the gateway told us
+                'paid_at' => $options['paid_at'] ?? now(),
+                'receipt_no' => $this->nextReceiptNo(),
+            ]);
+
+            return [$row, true];
+        });
+    }
+
+    /**
+     * P3 / matrix row 11 — reverse a payment.
+     *
+     * A reversal is a STATE, never a delete: the original row stays visible
+     * (struck through in the panel) and a compensating record explains it. An
+     * operator who mis-keys ₹49,990 must be able to correct it without the
+     * ledger quietly losing the fact that it happened.
+     *
+     * ⚠ Reversing does NOT revoke entitlement on its own — the caller decides
+     * that, because "wrong amount, re-enter it" and "refunded, cut access" are
+     * different intents and conflating them would surprise the operator.
+     */
+    public function reverse(SubscriptionInvoice $invoice, string $reason): SubscriptionInvoice
+    {
+        if (blank($reason)) {
+            throw new InvalidArgumentException('A reversal must say why — it is a discretionary correction.');
+        }
+
+        if ($invoice->isReversed()) {
+            throw new InvalidArgumentException('That payment has already been reversed.');
+        }
+
+        return DB::transaction(function () use ($invoice, $reason) {
+            $invoice->forceFill([
+                'reversed_at' => now(),
+                'reversed_by' => auth()->id(),
+                'reversal_reason' => $reason,
+            ])->save();
+
+            AdminAuditLog::record(
+                'payment.reversed',
+                "Reversed ₹" . number_format((float) $invoice->amount, 2) . " ({$invoice->methodLabel()})",
+                $invoice->tenant_id,
+                [
+                    'account_id' => $invoice->account_id,
+                    'receipt_no' => $invoice->receipt_no,
+                    'amount' => (float) $invoice->amount,
+                    'method' => $invoice->method,
+                    'reason' => $reason,
+                ],
+            );
+
+            return $invoice->refresh();
+        });
+    }
+
+    /** A complimentary grant: a ₹0 row, never an absent one (BUG-P04). */
+    public function recordComp(Subscription $subscription, string $reason, ?Carbon $periodStart = null, ?Carbon $periodEnd = null): SubscriptionInvoice
+    {
+        return $this->record($subscription, 0.0, 'comp', [
+            'reason' => $reason,
+            'period_start' => $periodStart,
+            'period_end' => $periodEnd,
+        ]);
+    }
+
+    /**
+     * Platform-wide sequential receipt number: OSMS-2026-0001 (owner decision B1).
+     *
+     * Computed inside the caller's transaction with a lock on the latest row so
+     * two concurrent entries can't mint the same number.
+     */
+    private function nextReceiptNo(): string
+    {
+        $year = now(config('billing.timezone', 'Asia/Kolkata'))->year;
+        $prefix = "OSMS-{$year}-";
+
+        // AUD-A12 — order by LENGTH first, then value.
+        //
+        // A plain string sort puts "OSMS-2026-10000" *before* "OSMS-2026-9999"
+        // (because '1' < '9'), so the moment the four-digit run is exhausted
+        // the "latest" receipt is read as 9999 forever and every subsequent
+        // payment mints 10000 again — duplicate receipt numbers on real
+        // receipts, silently. Sorting by length first restores numeric order
+        // and works identically on MySQL and SQLite.
+        $latest = SubscriptionInvoice::withoutGlobalScopes()
+            ->where('receipt_no', 'like', $prefix . '%')
+            ->orderByRaw('LENGTH(receipt_no) DESC')
+            ->orderByDesc('receipt_no')
+            ->lockForUpdate()
+            ->value('receipt_no');
+
+        $next = $latest ? ((int) substr($latest, strlen($prefix))) + 1 : 1;
+
+        return $prefix . str_pad((string) $next, 4, '0', STR_PAD_LEFT);
+    }
+}

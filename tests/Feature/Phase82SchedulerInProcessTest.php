@@ -49,6 +49,8 @@ class Phase82SchedulerInProcessTest extends TestCase
         'queue-drain' => ['* * * * *', true],
         'monitor-failed-jobs' => ['0 * * * *', true],
         'monitor-backups' => ['0 9 * * *', true],
+        // Super Admin (P5): the panel's "is the cron alive?" heartbeat. In-process, never a child process.
+        'scheduler-heartbeat' => ['*/5 * * * *', true],
     ];
 
     // ------------------------------------------------------------------
@@ -83,6 +85,18 @@ class Phase82SchedulerInProcessTest extends TestCase
             $this->assertSame($expression, $events[$name]->expression, "{$name}: when it runs changed");
             $this->assertSame($noOverlap, (bool) $events[$name]->withoutOverlapping, "{$name}: overlap protection changed");
         }
+    }
+
+    public function test_the_heartbeat_is_stamped_so_the_status_table_does_not_call_it_never_run(): void
+    {
+        $event = collect(app(Schedule::class)->events())->first(fn ($e) => $e->description === 'scheduler-heartbeat');
+        $this->assertNotNull($event);
+
+        $this->assertNull(ScheduledTask::lastSuccess('scheduler-heartbeat'));
+        $event->run(app());
+
+        $this->assertNotNull(ScheduledTask::lastSuccess('scheduler-heartbeat'));
+        $this->assertNotNull(\App\Models\PlatformSetting::get(\App\Models\PlatformSetting::SCHEDULER_HEARTBEAT), 'and it still writes the panel heartbeat');
     }
 
     // ------------------------------------------------------------------
@@ -279,6 +293,7 @@ class Phase82SchedulerInProcessTest extends TestCase
         (ScheduledTask::command('queue-drain', 'inspire'))();
         (ScheduledTask::command('monitor-failed-jobs', 'inspire'))();
         (ScheduledTask::command('monitor-backups', 'inspire'))();
+        (ScheduledTask::call('scheduler-heartbeat', fn () => null))();
 
         Artisan::call('osms:scheduler-status');
         $out = Artisan::output();

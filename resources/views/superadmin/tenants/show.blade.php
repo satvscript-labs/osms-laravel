@@ -15,8 +15,7 @@
 
     <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
         <div class="d-flex align-items-center gap-3">
-            <span class="d-inline-flex align-items-center justify-content-center rounded-4 bg-primary text-white fw-semibold"
-                  style="width:3rem;height:3rem;font-size:1.25rem;">{{ strtoupper(substr($tenant->store_name, 0, 1)) }}</span>
+            <span class="avatar-page bg-primary text-white fw-semibold">{{ strtoupper(substr($tenant->store_name, 0, 1)) }}</span>
             <div>
                 <h1 class="h4 fw-semibold font-display mb-1">{{ $tenant->store_name }}</h1>
                 <div class="d-flex align-items-center gap-2">
@@ -88,6 +87,7 @@
                                 <form method="POST" action="{{ route('superadmin.subscription.extend-trial', $tenant) }}" class="d-flex gap-2">
                                     @csrf
                                     <input type="number" name="days" min="1" max="365" value="14" class="form-control" required style="max-width:100px;">
+                                    <input type="text" name="reason" class="form-control" required maxlength="500" placeholder="Why?">
                                     <button class="btn btn-light flex-grow-1">Add days</button>
                                 </form>
                             </div>
@@ -102,61 +102,23 @@
                                         <option value="monthly">monthly</option>
                                         <option value="yearly">yearly</option>
                                     </select>
+                                    <input type="text" name="reason" class="form-control" required maxlength="500" placeholder="Why?">
                                     <button class="btn btn-primary flex-grow-1">Grant</button>
                                 </form>
                             </div>
                         </div>
                     </div>
 
-                    {{-- Advanced edit --}}
-                    <details class="mt-4">
-                        <summary class="fw-semibold" style="font-size:var(--text-sm);cursor:pointer;">Advanced: edit raw subscription</summary>
-                        <form method="POST" action="{{ route('superadmin.subscription.update', $tenant) }}" class="row g-3 mt-1">
-                            @csrf @method('PATCH')
-                            <div class="col-md-4">
-                                <label class="form-label small fw-medium">Status</label>
-                                <select name="status" class="form-select">
-                                    @foreach (['trialing','active','past_due','canceled'] as $opt)
-                                        <option value="{{ $opt }}" @selected($s?->status === $opt)>{{ $opt }}</option>
-                                    @endforeach
-                                </select>
-                            </div>
-                            <div class="col-md-4">
-                                <label class="form-label small fw-medium">Tier</label>
-                                <select name="tier" class="form-select">
-                                    @foreach (['basic','pro','enterprise'] as $opt)
-                                        <option value="{{ $opt }}" @selected($s?->tier === $opt)>{{ $opt }}</option>
-                                    @endforeach
-                                </select>
-                            </div>
-                            <div class="col-md-4">
-                                <label class="form-label small fw-medium">Interval</label>
-                                <select name="interval" class="form-select">
-                                    <option value="">—</option>
-                                    <option value="monthly" @selected($s?->interval === 'monthly')>monthly</option>
-                                    <option value="yearly" @selected($s?->interval === 'yearly')>yearly</option>
-                                </select>
-                            </div>
-                            <div class="col-md-4">
-                                <label class="form-label small fw-medium">Period ends</label>
-                                <input type="date" name="current_period_end" value="{{ $s?->current_period_end?->format('Y-m-d') }}" class="form-control">
-                            </div>
-                            <div class="col-md-4 d-flex align-items-end">
-                                <div class="form-check">
-                                    <input type="checkbox" name="cancel_at_period_end" value="1" class="form-check-input" id="cape" @checked($s?->cancel_at_period_end)>
-                                    <label class="form-check-label small" for="cape">Cancel at period end</label>
-                                </div>
-                            </div>
-                            <div class="col-12">
-                                <button class="btn btn-secondary">Save changes</button>
-                            </div>
-                        </form>
-                    </details>
+                    {{-- The raw "edit status / tier / period end" form was removed (feat-billing P.3):
+                         it assigned entitlement directly instead of going through SubscriptionLifecycle.
+                         Every lever it offered exists on the Customer 360, previewed and reason-gated. --}}
 
                     <hr class="my-4">
 
                     <form method="POST" action="{{ route('superadmin.subscription.cancel', $tenant) }}">
                         @csrf
+                        <input type="text" name="reason" class="form-control mb-2" required maxlength="500"
+                               placeholder="Why are you cancelling?" style="max-width:24rem;">
                         <button type="button" class="btn btn-light text-danger"
                                 data-confirm="This cancels the store's access immediately. If a live Razorpay subscription exists, it will also be canceled at cycle end."
                                 data-confirm-title="Cancel this subscription?"
