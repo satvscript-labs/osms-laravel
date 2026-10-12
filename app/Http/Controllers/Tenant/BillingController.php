@@ -244,6 +244,11 @@ class BillingController extends Controller
         // E1.3 (W8) — through the engine, audited as the owner.
         app(SubscriptionLifecycle::class)->ownerRequestInterval($subscription, $validated['interval']);
 
+        // Choosing the period they are on undid a pending switch — say that, not "will switch".
+        if ($validated['interval'] === $subscription->interval) {
+            return back()->with('status', "You'll stay on {$validated['interval']} billing. The switch is cancelled.");
+        }
+
         return back()->with('status', "Your billing cycle will switch to {$validated['interval']} at your next renewal.");
     }
 

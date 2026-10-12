@@ -156,7 +156,8 @@
         $basic = $plans['basic'];
         $save = (int) round((1 - $basic['yearly_price'] / ($basic['monthly_price'] * 12)) * 100);
     @endphp
-    <div class="row g-3" x-data="{ interval: 'monthly' }">
+    {{-- Opens on the period they are on, so "Current plan" sits under the price they pay. --}}
+    <div class="row g-3" x-data="{ interval: @js($interval ?: 'monthly') }">
         <div class="col-md-6">
             <div class="card border-0 shadow-sm rounded-4 h-100" style="outline:2px solid var(--osms-primary);">
                 <div class="card-body p-4 d-flex flex-column">

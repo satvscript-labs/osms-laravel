@@ -463,11 +463,16 @@ class Phase84E1EngineTest extends TestCase
             ->assertSee('Switching to Yearly at your next renewal')
             ->assertSee('Keep Monthly');
 
+        // Undoing says "you stay", never "will switch" (found in the E1 manual pass).
         $this->actingAs($owner)->post(route('tenant.billing.change-interval'), ['interval' => 'monthly'])
-            ->assertSessionHas('status');
+            ->assertSessionHas('status', "You'll stay on monthly billing. The switch is cancelled.");
 
         $this->assertNull($this->sub($hq)->pending_interval);
         $this->assertSame('monthly', $this->sub($hq)->interval);
+        $this->assertDatabaseHas('admin_audit_logs', [
+            'action' => 'subscription.owner_interval',
+            'description' => 'Owner cancelled the pending switch and stays on monthly billing',
+        ]);
     }
 
     public function test_the_operator_is_told_autopay_does_not_follow_their_switch(): void

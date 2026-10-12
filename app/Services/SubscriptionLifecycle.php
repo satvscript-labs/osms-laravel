@@ -874,10 +874,13 @@ class SubscriptionLifecycle
 
         $this->locked($subscription, function (Subscription $s) use ($interval) {
             $before = $this->snapshot($s);
-            $s->pending_interval = $interval === ($s->interval ?: 'monthly') ? null : $interval;
+            $keep = $interval === ($s->interval ?: 'monthly');
+            $s->pending_interval = $keep ? null : $interval;
             $s->save();
 
-            $this->auditAs('owner', 'subscription.owner_interval', "Owner switched to {$interval} billing from their next renewal", $s, $before);
+            $this->auditAs('owner', 'subscription.owner_interval', $keep
+                ? "Owner cancelled the pending switch and stays on {$interval} billing"
+                : "Owner switched to {$interval} billing from their next renewal", $s, $before);
         });
     }
 
