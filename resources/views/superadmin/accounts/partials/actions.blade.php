@@ -26,6 +26,8 @@
     intro="Money that arrived outside the gateway — cash, UPI, a bank transfer. Say what it pays for; the preview shows exactly what it will do.">
     <div class="row g-3"
          x-data="paymentField(@js($billList), @js($renewPrices ?? ['monthly' => 0, 'yearly' => 0]), @js($payInterval), @js($openBills->first()?->id ?? 'renewal'))">
+        {{-- A-1 — the renewal this form was opened for; a stale page is refused. --}}
+        <input type="hidden" name="renews_from" value="{{ $subscription?->current_period_end?->toDateString() ?? 'none' }}">
         <div class="col-12">
             <label class="form-label" for="pay-for">What it pays for</label>
             <select id="pay-for" name="for" class="form-select" x-model="forId">

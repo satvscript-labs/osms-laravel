@@ -159,6 +159,21 @@ class Settlement
         }
 
         return DB::transaction(function () use ($subscription, $action, $input, $reason) {
+            // A-1 — two operators (or two tabs) renewing the same customer: the
+            // once-per-submission token stops the SAME form twice, not two forms.
+            // The form says which renewal it was opened for; if the clock has moved
+            // since, this is a second renewal nobody asked for.
+            if (array_key_exists('renews_from', $input) && $input['renews_from'] !== null && $input['renews_from'] !== '') {
+                $now = Subscription::withoutGlobalScopes()->whereKey($subscription->getKey())->lockForUpdate()->value('current_period_end');
+                $now = $now ? Carbon::parse($now)->toDateString() : 'none';
+
+                if ($now !== (string) $input['renews_from']) {
+                    throw new InvalidArgumentException('Their renewal changed since this page was opened (covered until '
+                        . ($now === 'none' ? 'no date' : Carbon::parse($now)->format('d M Y'))
+                        . '). Reload to see it before taking another payment — nothing was recorded.');
+                }
+            }
+
             $charge = $this->engine->raiseTerm($subscription, [
                 'interval' => ($input['interval'] ?? null) ?: null,
                 'cycles' => (int) (($input['cycles'] ?? null) ?: 1),

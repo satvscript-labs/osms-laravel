@@ -135,7 +135,10 @@ class AccountActionController extends Controller
             'method' => ['required', 'in:' . implode(',', Settlement::HAND_METHODS)],
             'reference' => ['nullable', 'string', 'max:120'],
             'reason' => ['nullable', 'string', 'max:500'],
-            'paid_at' => ['nullable', 'date', 'before_or_equal:today'],
+            // A-2 — "today" on the BILLING clock (the dialog's default and
+            // Settlement's check), not the app's: they differ for 5½ hours a day.
+            'paid_at' => ['nullable', 'date', 'before_or_equal:' . now(config('billing.timezone', 'Asia/Kolkata'))->toDateString()],
+            'renews_from' => ['nullable', 'string', 'max:10'],
             // REQ-15 — a counter-bargain. One-off on this row, never recurring.
             'discount_reason' => ['nullable', 'string', 'max:500'],
             // D-4 — more than the bill is confirmed, never silent.

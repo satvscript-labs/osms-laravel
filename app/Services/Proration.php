@@ -141,8 +141,14 @@ class Proration
     {
         $out = [];
 
-        // Bounded: a few years of monthly cycles at most (a prepay is capped at 12).
-        for ($k = 0; $k < 120; $k++) {
+        // Bounded, and never silently: a prepay is capped at 12 cycles and an
+        // extension at a year, so 600 cycles is unreachable — if it is ever
+        // reached, refuse rather than charge only the first part of the span.
+        for ($k = 0; ; $k++) {
+            if ($k >= 600) {
+                throw new \LogicException("Cannot split {$start->toDateString()} → {$end->toDateString()} into {$interval} cycles.");
+            }
+
             $cycleStart = BillingCycle::add($start, $interval, $k);
 
             if ($cycleStart->gte($end)) {

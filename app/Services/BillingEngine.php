@@ -168,6 +168,10 @@ class BillingEngine
     /** @param array $fields the charge's priced fields; $options: via, by */
     private function raise(Subscription $s, array $fields, array $options): BillingCharge
     {
+        if (! $s->account_id) {
+            throw new InvalidArgumentException('This subscription is not linked to a customer account yet, so nothing can be billed to it.');
+        }
+
         return MoneyWrite::during(function () use ($s, $fields, $options) {
             $open = BillingCharge::query()->where('open_key', $fields['open_key'])->lockForUpdate()->first();
 
