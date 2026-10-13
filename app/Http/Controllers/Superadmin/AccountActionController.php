@@ -76,6 +76,10 @@ class AccountActionController extends Controller
             'interval' => ['nullable', 'in:monthly,yearly'],
             'reference' => ['nullable', 'string', 'max:120'],
             'at_period_end' => ['nullable', 'boolean'],
+            // E2 — pay N cycles ahead (E2-A); D-4 confirmation of an amount over the bill.
+            'cycles' => ['nullable', 'integer', 'min:1', 'max:12'],
+            'confirm_over' => ['nullable', 'boolean'],
+            'discount_reason' => ['nullable', 'string', 'max:500'],
         ]);
 
         try {

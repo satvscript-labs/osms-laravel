@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Account;
 use App\Models\AdminAuditLog;
+use App\Models\BillingCharge;
 use App\Models\Plan;
 use App\Models\Subscription;
 use App\Models\SubscriptionInvoice;
@@ -38,7 +39,8 @@ class SubscriptionLifecycle
     /** Actions that cannot commit without an operator's stated reason. */
     private const REASON_REQUIRED = [
         'extend', 'comp', 'suspend', 'reactivate', 'cancel',
-        'force_expire', 'set_price', 'clear_price', 'mark_paid', 'waive',
+        'force_expire', 'set_price', 'clear_price',
+        // mark_paid / waive: enforced by Settlement, which now runs them (E2.3).
     ];
 
     public function __construct(
@@ -145,7 +147,14 @@ class SubscriptionLifecycle
                     $row = $this->lockRow($subscription);
                     $before = $after = $this->snapshot($row);
                     $warnings = $this->warningsFor($row, $action);
-                    $this->apply($row, $action, $input, audit: false);
+
+                    // E2.3 — the money actions are "raise the next term, then settle
+                    // it"; previewed through exactly that path.
+                    if (in_array($action, Settlement::TERM_ACTIONS, true)) {
+                        app(Settlement::class)->payTerm($row, $action, $input);
+                    } else {
+                        $this->apply($row, $action, $input, audit: false);
+                    }
 
                     return $row;
                 });
@@ -187,6 +196,16 @@ class SubscriptionLifecycle
     /** Execute for real, audited. */
     public function commit(Subscription $subscription, string $action, array $input = []): Subscription
     {
+        // E2.3 — renew / mark paid / waive are money: a charge is raised for the next
+        // term and settled, so the payment says what it paid for (rule 6). The
+        // coverage still comes back here, through grantTerm().
+        if (in_array($action, Settlement::TERM_ACTIONS, true)) {
+            app(Settlement::class)->payTerm($subscription, $action, $input);
+            $subscription->refresh();
+
+            return $subscription;
+        }
+
         $this->locked($subscription, fn (Subscription $row) => $this->apply($row, $action, $input, audit: true));
 
         // E1.10 / rule 5 — an ending reaches the gateway, AFTER the commit: the
@@ -217,7 +236,6 @@ class SubscriptionLifecycle
         match ($action) {
             'extend' => $this->doExtend($s, (int) ($input['days'] ?? 0), $reason),
             'comp' => $this->doComp($s, (int) ($input['months'] ?? 0), $reason, $input['interval'] ?? null),
-            'renew' => $this->doRenew($s, $input),
             'set_price' => $this->doSetPrice($s, $input['price'] ?? null, $reason, $input['interval'] ?? null),
             'clear_price' => $this->doClearPrice($s, $reason),
             'suspend' => $this->doSuspend($s, $reason),
@@ -225,8 +243,6 @@ class SubscriptionLifecycle
             'cancel' => $this->doCancel($s, $reason, (bool) ($input['at_period_end'] ?? false)),
             'force_expire' => $this->doForceExpire($s, $reason),
             'switch_interval' => $this->doSwitchInterval($s, (string) ($input['interval'] ?? '')),
-            'mark_paid' => $this->doMarkPaid($s, $input, $reason),
-            'waive' => $this->doWaive($s, $reason),
             default => throw new InvalidArgumentException("Unknown lifecycle action [{$action}]."),
         };
 
@@ -301,60 +317,6 @@ class SubscriptionLifecycle
         // A grant is a ₹0 LEDGER ROW, never an absent one — otherwise lifetime
         // value is wrong for every comped customer (playbook §3.2 / BUG-P04).
         $this->payments->recordComp($s, $reason, $base, $s->current_period_end);
-    }
-
-    // ---- Row 5 · Renewal (manual) -----------------------------------
-
-    private function doRenew(Subscription $s, array $input): void
-    {
-        $method = (string) ($input['method'] ?? 'cash');
-        // E1.4 — a renewal starts a new period, so a pending switch lands here
-        // unless the operator chose a period explicitly.
-        $interval = (string) ($input['interval'] ?? $s->pending_interval ?? $s->interval ?? 'monthly');
-
-        // REQ-15 — a renewal is the moment the branch count is reconciled.
-        // Branches added mid-cycle were charged pro rata at the time; from here
-        // they are simply part of the bill, and a branch CLOSED mid-cycle stops
-        // being charged (decision D4: no refund, they keep what they paid for
-        // until this moment).
-        $this->syncQuantity($s);
-
-        // Priced AFTER the fresh re-count above — the same answer the operator's
-        // form gets from PriceResolver::renewalPrice() (QA-05), but never from a
-        // store list loaded earlier in the request.
-        $list = $this->prices->effectivePrice($s, $interval);
-        $amount = ($input['amount'] ?? null) !== null && $input['amount'] !== ''
-            ? (float) $input['amount']
-            : $list;
-
-        // AUD-05 - a zero-rupee "cash payment" is a lie in the ledger: no money
-        // moved. Giving time away for free is what a comp is for, and a comp
-        // carries a reason. Refuse rather than silently record a payment that
-        // never happened. (A blank amount still falls back to the list price.)
-        if ($amount <= 0.0) {
-            throw new InvalidArgumentException('A renewal needs an amount. To give them time for free, use Grant free access instead - it records a zero-value entry with your reason.');
-        }
-
-        $base = $this->clockBase($s);
-        $end = $interval === 'yearly' ? $base->copy()->addYear() : $base->copy()->addMonth();
-
-        $this->payments->record($s, $amount, $method, [
-            'reference' => $input['reference'] ?? null,
-            'period_start' => $base,
-            'period_end' => $end,
-            'reason' => $input['reason'] ?? null,
-        ] + $this->bargain($list, $amount, $input));
-
-        $s->status = 'active';
-        $s->interval = $interval;
-        $s->pending_interval = null;
-        $s->current_period_start = $base->toDateString();
-        $s->current_period_end = $end;
-        $s->cancel_at_period_end = false;
-
-        // Manual wins for this cycle — the webhook must not undo a renewal the
-        // operator just took money for.
-        $s->applyOverride('manual_renewal', $end, $input['reason'] ?? 'Manual renewal');
     }
 
     // ---- Row 7 · Price change ---------------------------------------
@@ -473,99 +435,55 @@ class SubscriptionLifecycle
         }
     }
 
-    // ---- Row 8 · Failed payment --------------------------------------
+    // ---- Rows 5 / 8 · A term paid for (or waived) -------------------
 
     /**
-     * "Their payment did arrive, outside the gateway."
+     * E2.3 — the coverage a paid TERM charge buys. Only Settlement calls this, after
+     * it has the money (rule 2: nothing unpaid changes access).
      *
-     * ⚠ AUD-A01 — this used to set `status = 'active'` and nothing else, which
-     * failed in the only situation it exists for. A `past_due` customer is
-     * normally past their period end, so:
+     * The rules every renewal has always followed, now in one place:
+     *   • branches are re-counted first (REQ-15 / AUDIT-03: a closed branch stops
+     *     being billed at the renewal);
+     *   • from the clock base — the later of the period end and today — so early
+     *     payment loses no days and a late one pays for none it couldn't use (D-7);
+     *   • for the charge's cycles at the charge's interval (what they paid for);
+     *     any pending switch is resolved by this renewal (E1.4);
+     *   • sticky against the gateway until the end ("manual wins for this cycle"),
+     *     or a comp override when it was waived.
      *
-     *   • access stayed **locked** — `active` past the boundary and beyond
-     *     grace is locked — so the operator was told the payment was recorded
-     *     while the customer still could not sign in; and
-     *   • the override was pinned to the already-expired period end, making it
-     *     dead on arrival, so that night's reconcile put them straight back to
-     *     `past_due`.
-     *
-     * Both halves of the confirmation message ("Marked as paid — dunning will
-     * not override this") were false. Marking a payment received must move the
-     * clock, exactly as a renewal does — because that is what being paid means.
+     * @return array{0: Carbon, 1: Carbon} the coverage actually granted
      */
-    private function doMarkPaid(Subscription $s, array $input, string $reason): void
+    public function grantTerm(Subscription $subscription, BillingCharge $charge, string $action, string $reason, bool $free, array $input = []): array
     {
-        // AUDIT-03 — like a renewal this starts a new cycle, so it is priced for
-        // the branches billed FROM here: re-count FIRST. The default used to be
-        // worked out before the re-count and the bargain check after it, so after
-        // a branch closed the default overcharged with no flag.
-        $this->syncQuantity($s);
-        $this->landPendingInterval($s);   // E1.4 — the new cycle is priced at the period it will run
+        return $this->locked($subscription, function (Subscription $s) use ($charge, $action, $reason, $free, $input) {
+            $before = $this->snapshot($s);
+            $this->syncQuantity($s);
 
-        $given = $input['amount'] ?? null;   // AUD-A03 — the key may be absent
-        $amount = ($given !== null && $given !== '')
-            ? (float) $given
-            : $this->prices->effectivePrice($s);
+            $interval = $charge->interval ?: ($s->interval ?: 'monthly');
+            $base = $this->clockBase($s);
+            $end = BillingCycle::add($base, $interval, max(1, (int) $charge->cycles));
 
-        if ($amount <= 0.0) {
-            throw new InvalidArgumentException('Marking a payment as received needs an amount. To give them the cycle for free, use Waive instead.');
-        }
+            $s->status = 'active';
+            $s->interval = $interval;
+            $s->pending_interval = null;
+            $s->current_period_start = $base->toDateString();
+            $s->current_period_end = $end;
+            $s->cancel_at_period_end = false;
+            $s->applyOverride($free ? 'comp' : 'manual_renewal', $end, $reason !== '' ? $reason : 'Manual renewal');
+            $s->manual = true;
+            $s->save();
 
-        $end = $this->advanceOneCycle($s);
-        $list = $this->prices->effectivePrice($s);
+            AdminAuditLog::record("subscription.{$action}", $this->describe($action, $s, $input), $s->tenant_id, [
+                'account_id' => $s->account_id,
+                'reason' => $reason ?: null,
+                'charge' => $charge->number,
+                'input' => collect($input)->except(['password', 'password_confirmation', '_token', '_once'])->all(),
+                'before' => $before,
+                'after' => $this->snapshot($s),
+            ]);
 
-        $this->payments->record($s, $amount, (string) ($input['method'] ?? 'cash'), [
-            'reference' => $input['reference'] ?? null,
-            'reason' => $reason,
-            'period_start' => $this->clockBase($s),
-            'period_end' => $end,
-        ] + $this->bargain($list, $amount, $input));
-
-        $s->status = 'active';
-        $s->current_period_start = $this->clockBase($s)->toDateString();
-        $s->current_period_end = $end;
-        $s->cancel_at_period_end = false;
-
-        // Sticky until the cycle they just paid for ends — long enough to
-        // actually suppress the dunning it is meant to suppress.
-        $s->applyOverride('manual_renewal', $end, $reason);
-    }
-
-    /**
-     * "They are not paying for this cycle, and they are not losing access."
-     *
-     * Same AUD-A01 defect and the same fix: a waive that leaves the customer
-     * locked out has waived nothing. It grants the cycle at ₹0 — which is what
-     * a waiver is — and records it, so lifetime value and "what have we given
-     * away?" stay answerable.
-     */
-    private function doWaive(Subscription $s, string $reason): void
-    {
-        $this->landPendingInterval($s);   // E1.4
-        $start = $this->clockBase($s);
-        $end = $this->advanceOneCycle($s);
-
-        $s->status = 'active';
-        $s->current_period_start = $start->toDateString();
-        $s->current_period_end = $end;
-        $s->cancel_at_period_end = false;
-        $s->applyOverride('comp', $end, $reason);
-
-        $this->payments->recordComp($s, "Waived: {$reason}", $start, $end);
-    }
-
-    /**
-     * One billing cycle on from the clock base — the shared definition used by
-     * renew, mark-paid and waive so the three cannot disagree about what "a
-     * cycle" means.
-     */
-    private function advanceOneCycle(Subscription $s): Carbon
-    {
-        $base = $this->clockBase($s);
-
-        return ($s->interval ?? 'monthly') === 'yearly'
-            ? $base->copy()->addYear()
-            : $base->copy()->addMonth();
+            return [$base, $end];
+        });
     }
 
     // ---------------------------------------------------------------
@@ -1030,37 +948,6 @@ class SubscriptionLifecycle
         $s->quantity = max(1, $billable);
     }
 
-    /**
-     * REQ-15 — somebody bargained at the counter.
-     *
-     * A ONE-OFF reduction on THIS charge, with a reason. Deliberately not an
-     * offer or coupon engine — the owner ruled that out and it stays out. There
-     * is no rule, no stacking, no expiry, nothing that repeats: a standing
-     * lower rate is a NEGOTIATED PRICE, which already exists and is the right
-     * tool for "they always pay less".
-     *
-     * Returns nothing at all when the amount is at or above list, so an
-     * ordinary payment carries no discount fields and reads exactly as before.
-     *
-     * @return array{list_amount?: float, discount_reason?: string}
-     */
-    private function bargain(float $list, float $charged, array $input): array
-    {
-        if ($charged >= $list || $list <= 0) {
-            return [];
-        }
-
-        return [
-            'list_amount' => $list,
-            // Falls back to the action's own reason rather than refusing: the
-            // operator has already had to say WHY at the top of the modal, and
-            // demanding it twice for the same decision is how required fields
-            // get filled with "x".
-            'discount_reason' => trim((string) ($input['discount_reason'] ?? ''))
-                ?: (trim((string) ($input['reason'] ?? '')) ?: 'Agreed at the counter'),
-        ];
-    }
-
     /** Never shorten coverage by accident: extend from today or the end, whichever is later. */
     private function clockBase(Subscription $s): Carbon
     {
@@ -1089,6 +976,8 @@ class SubscriptionLifecycle
             'effective_price' => $this->prices->effectivePrice($s),
             'override_kind' => $s->override_kind,
             'override_until' => $s->override_until?->toDateString(),
+            // E2 — what the account owes; a preview shows it move (voids, settles).
+            'owed' => app(BillingEngine::class)->owed($s->account_id),
         ];
     }
 

@@ -268,7 +268,9 @@ class Phase73OperatorActionsTest extends TestCase
     {
         $this->sub()->update(['status' => 'past_due']);
 
-        $this->act(['action' => 'mark_paid', 'amount' => 4999, 'method' => 'upi', 'reason' => 'paid by UPI, webhook missed it'])
+        $this->act(['action' => 'mark_paid', 'amount' => 4999, 'method' => 'upi', 'reason' => 'paid by UPI, webhook missed it',
+            // D-4 (E2) — ₹4,999 on a monthly bill is over the bill: confirmed, never silent.
+            'confirm_over' => 1])
             ->assertSessionHas('status');
 
         $this->assertSame('active', $this->sub()->status);

@@ -329,8 +329,9 @@ class Phase81BranchBillingTest extends TestCase
         // D4 — no refund; they keep what they paid for until the cycle ends.
         $this->assertSame(2, $subscription->fresh()->quantity);
 
+        // E2 — the amount defaults to the bill, priced for the branches left.
         app(SubscriptionLifecycle::class)->commit($subscription->fresh(), 'renew', [
-            'amount' => 500, 'method' => 'cash',
+            'method' => 'cash',
         ]);
 
         $this->assertSame(1, $subscription->fresh()->quantity);
