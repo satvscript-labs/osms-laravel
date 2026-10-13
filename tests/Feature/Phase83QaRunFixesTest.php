@@ -266,7 +266,9 @@ class Phase83QaRunFixesTest extends TestCase
         $this->assertTrue($q['applicable']);
         $this->assertGreaterThan($q['days_in_period'], $q['days_charged'], 'paid cover runs past one period, and is charged');
         $this->assertGreaterThan(499.0, $q['amount']);
-        $this->assertContains('Note', array_column($q['lines'], 'label'), 'the long count is explained, not left to look like a slip');
+        // E2.5 / FB-13 — explained cycle by cycle (a part cycle, then whole ones),
+        // not by a note beside a "45 of 31" count.
+        $this->assertContains('Whole cycles', array_column($q['lines'], 'label'), 'the long span is explained, not left to look like a slip');
         $this->assertNotContains('Charged from', array_column($q['lines'], 'label'), 'it starts the day it joined');
     }
 
