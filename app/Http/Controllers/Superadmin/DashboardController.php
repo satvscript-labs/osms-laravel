@@ -47,8 +47,6 @@ class DashboardController extends Controller
         $mrr = $active->sum(fn ($s) => Mrr::monthlyValue($s));
         $comped = $active->filter(fn ($s) => $s->override_kind === 'comp' && $s->hasActiveOverride())->count();
 
-        $live = SubscriptionInvoice::withoutGlobalScopes()->whereNull('reversed_at');
-
         // ---- 2. Base health -------------------------------------------
         $byStatus = Subscription::withoutGlobalScopes()
             ->selectRaw('status, COUNT(*) as c')
@@ -63,11 +61,10 @@ class DashboardController extends Controller
             'mrr' => round($mrr, 2),
             'arr' => round($mrr * 12, 2),
             'comped' => $comped,
-            'collected_month' => (float) (clone $live)
-                ->where('method', '!=', 'comp')
+            'collected_month' => (float) SubscriptionInvoice::withoutGlobalScopes()->collected()
                 ->whereBetween('paid_at', [now()->startOfMonth(), now()->endOfMonth()])
                 ->sum('amount'),
-            'collected_all' => (float) (clone $live)->where('method', '!=', 'comp')->sum('amount'),
+            'collected_all' => (float) SubscriptionInvoice::withoutGlobalScopes()->collected()->sum('amount'),
             'accounts' => Account::count(),
             'stores' => Tenant::count(),
             'active' => (int) ($byStatus['active'] ?? 0),
@@ -132,6 +129,8 @@ class DashboardController extends Controller
             // P6 / §8 — the two metrics the one ledger and the account layer
             // made possible. Both state their own limits on the surface.
             'collection' => $metrics->collection(),
+            // E2 — bills raised and not yet paid, by age.
+            'owed' => app(\App\Services\BillingEngine::class)->owedSummary(),
             'churn' => $metrics->churn(),
             'recent' => Account::query()
                 ->with('subscription')

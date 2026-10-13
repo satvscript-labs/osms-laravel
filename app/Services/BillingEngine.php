@@ -296,6 +296,34 @@ class BillingEngine
         return round((float) BillingCharge::query()->where('account_id', $accountId)->pending()->sum('amount'), 2);
     }
 
+    /**
+     * E2 / 2.7 — every open bill on the platform, aged from its due date: what
+     * Today shows as Owed. Charges, not dates: money someone has actually been
+     * asked for.
+     *
+     * @return array{total: float, bills: int, accounts: int, aged: array{fresh: float, month: float, older: float}}
+     */
+    public function owedSummary(): array
+    {
+        $today = Carbon::today(config('billing.timezone', 'Asia/Kolkata'));
+        $aged = ['fresh' => 0.0, 'month' => 0.0, 'older' => 0.0];
+        $open = BillingCharge::query()->pending()->get(['account_id', 'amount', 'due_on', 'created_at']);
+
+        foreach ($open as $charge) {
+            $due = $charge->due_on ?? $charge->created_at;
+            $days = $due ? max(0, (int) Carbon::parse($due->toDateString())->diffInDays($today, false)) : 0;
+            $bucket = $days <= 7 ? 'fresh' : ($days <= 30 ? 'month' : 'older');
+            $aged[$bucket] = round($aged[$bucket] + (float) $charge->amount, 2);
+        }
+
+        return [
+            'total' => round((float) $open->sum('amount'), 2),
+            'bills' => $open->count(),
+            'accounts' => $open->pluck('account_id')->unique()->count(),
+            'aged' => $aged,
+        ];
+    }
+
     // ---------------------------------------------------------------
     // Internals
     // ---------------------------------------------------------------

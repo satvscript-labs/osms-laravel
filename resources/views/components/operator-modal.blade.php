@@ -312,6 +312,7 @@ function operatorModal(config) {
                 effective_price: 'They pay',
                 override_kind: 'Operator override',
                 override_until: 'Override until',
+                owed: 'Owed',
             })[key] || (key.charAt(0).toUpperCase() + key.slice(1)).replace(/_/g, ' ');
         },
 
@@ -319,7 +320,7 @@ function operatorModal(config) {
             if (v === null || v === undefined || v === '') return '—';
             if (v === true) return 'yes';
             if (v === false) return 'no';
-            if (key === 'effective_price' || key === 'negotiated_price') {
+            if (key === 'effective_price' || key === 'negotiated_price' || key === 'owed') {
                 return '₹ ' + Number(v).toLocaleString('en-IN', { maximumFractionDigits: 2 });
             }
             return String(v);

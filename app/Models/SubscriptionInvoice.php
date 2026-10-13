@@ -89,6 +89,16 @@ class SubscriptionInvoice extends Model
         return $query->orderByRaw('DATE(paid_at) DESC')->orderByDesc('created_at');
     }
 
+    /**
+     * E2 / 06 §7 — COLLECTED: money that actually arrived. Not reversed, not a ₹0
+     * grant, and not a pre-engine pro-rata "adjustment" (those recorded money that
+     * was only owed, FB-18). The one definition every revenue figure uses.
+     */
+    public function scopeCollected(Builder $query): Builder
+    {
+        return $query->whereNull('reversed_at')->whereNotIn('method', ['comp', 'adjustment']);
+    }
+
     public function isReversed(): bool
     {
         return $this->reversed_at !== null;

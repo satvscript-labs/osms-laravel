@@ -53,7 +53,7 @@
          advance — there is no receivable, only a price and a date. Saying so
          costs one line and stops the number being read as a debtors' book. --}}
     <div class="row g-3 mb-4 stagger">
-        <div class="col-12 col-lg-6">
+        <div class="col-12 col-lg-4">
             <div class="card card-lift border-0 shadow-sm rounded-4 h-100"
                  @if ($collection['overdue_count'] > 0) style="border-left:3px solid var(--tone-amber) !important;" @endif>
                 <div class="card-body p-4 d-flex align-items-start gap-3">
@@ -79,7 +79,35 @@
             </div>
         </div>
 
-        <div class="col-12 col-lg-6">
+        {{-- E2 — bills raised and not yet paid (a branch's part period, a reopened
+             renewal), aged from their due date. Charges, not dates. --}}
+        <div class="col-12 col-lg-4">
+            <div class="card card-lift border-0 shadow-sm rounded-4 h-100"
+                 @if ($owed['total'] > 0) style="border-left:3px solid var(--tone-amber) !important;" @endif>
+                <div class="card-body p-4 d-flex align-items-start gap-3">
+                    <span class="osms-stat-icon {{ $owed['total'] > 0 ? 'osms-stat-icon-amber' : 'osms-stat-icon-neutral' }} flex-shrink-0">
+                        <i class="bi bi-hourglass-split"></i>
+                    </span>
+                    <div class="min-w-0">
+                        <p class="section-label mb-1">Owed</p>
+                        <p class="h4 fw-semibold font-display mb-1">₹ {{ number_format($owed['total'], 0) }}</p>
+                        <p class="text-muted-foreground text-sm mb-0">
+                            @if ($owed['bills'] === 0)
+                                No open bills.
+                            @else
+                                {{ $owed['bills'] }} open {{ Str::plural('bill', $owed['bills']) }} from
+                                {{ $owed['accounts'] }} {{ Str::plural('customer', $owed['accounts']) }} ·
+                                0–7 days ₹ {{ number_format($owed['aged']['fresh'], 0) }} ·
+                                8–30 ₹ {{ number_format($owed['aged']['month'], 0) }} ·
+                                30+ ₹ {{ number_format($owed['aged']['older'], 0) }}
+                            @endif
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12 col-lg-4">
             <div class="card card-lift border-0 shadow-sm rounded-4 h-100">
                 <div class="card-body p-4 d-flex align-items-start gap-3">
                     <span class="osms-stat-icon osms-stat-icon-blue flex-shrink-0">

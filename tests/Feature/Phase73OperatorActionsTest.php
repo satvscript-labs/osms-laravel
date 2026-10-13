@@ -434,8 +434,9 @@ class Phase73OperatorActionsTest extends TestCase
 
         $res->assertOk();
         foreach ([
-            'm-payment', 'm-renew', 'm-extend', 'm-comp', 'm-price', 'm-interval',
-            'm-markpaid', 'm-waive', 'm-suspend', 'm-cancel', 'm-expire', 'm-notes',
+            // E2 / D-5 — one money lever: Renew now and Mark as paid are Record a payment.
+            'm-payment', 'm-extend', 'm-comp', 'm-price', 'm-interval',
+            'm-waive', 'm-suspend', 'm-cancel', 'm-expire', 'm-notes',
         ] as $modal) {
             $res->assertSee($modal);
         }

@@ -417,9 +417,10 @@ class Phase83QaRunFixesTest extends TestCase
         // The "Overdue" levers are not offered for a customer who owes nothing.
         $this->confirmed()->get(route('superadmin.accounts.show', $paused))
             ->assertSee('Suspended')
-            ->assertDontSee('data-bs-target="#m-markpaid"', false);
+            ->assertDontSee('data-bs-target="#m-waive"', false);
+        // E2 / D-5 — Mark as paid is now Record a payment; Waive is the overdue lever left.
         $this->confirmed()->get(route('superadmin.accounts.show', $owing))
-            ->assertSee('data-bs-target="#m-markpaid"', false);
+            ->assertSee('data-bs-target="#m-waive"', false);
     }
 
     // ------------------------------------------------------------------

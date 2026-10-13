@@ -104,7 +104,7 @@ class AccountController extends Controller
             // Lifetime value is one SUM over the one ledger — reversed rows excluded.
             'lifetime' => (float) SubscriptionInvoice::withoutGlobalScopes()
                 ->where('account_id', $account->id)
-                ->whereNull('reversed_at')
+                ->collected()
                 ->sum('amount'),
             /*
              * P5 / row 16 — "N rows will be destroyed", for the purge confirmation.

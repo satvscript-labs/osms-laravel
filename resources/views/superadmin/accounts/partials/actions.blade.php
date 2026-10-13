@@ -8,20 +8,62 @@
     $liveEnd = $subscription?->current_period_end?->format('d M Y') ?? '—';
 @endphp
 
-{{-- ── Row 4 · Record a payment ─────────────────────────────────── --}}
+{{-- ── Rows 4 + 5 · Record a payment (D-5) ──────────────────────────
+     ONE money lever. It asks what the money pays for — an open bill, or their
+     next renewal (N months/years ahead, E2-A) — and goes through Settlement, so
+     the ledger row names its charge and the clock moves only when time is bought.
+     Previewed like every other money action (FB-08). Below the bill: a recorded
+     one-off discount. Above it: an amber warning and a box the operator must tick
+     (D-4) — the server refuses the over-payment without it. --}}
+@php
+    $openBills = ($charges ?? collect())->where('status', 'pending')->values();
+    $billList = $openBills->map(fn ($c) => ['id' => $c->id, 'amount' => (float) $c->amount])->all();
+    $payInterval = ($subscription?->pending_interval ?? $subscription?->interval) === 'yearly' ? 'yearly' : 'monthly';
+@endphp
 <x-operator-modal id="m-payment" title="Record a payment"
-    :action="route('superadmin.accounts.payment', $account)"
+    :action="route('superadmin.accounts.payment', $account)" preview="record_payment" :account="$account"
     label="Record payment" icon="bi-cash-coin"
-    intro="A payment that arrived outside the gateway — cash at the counter, UPI, a bank transfer.">
-    <div class="row g-3" x-data="bargainField({{ (float) ($price['effective'] ?? 0) }})">
+    intro="Money that arrived outside the gateway — cash, UPI, a bank transfer. Say what it pays for; the preview shows exactly what it will do.">
+    <div class="row g-3"
+         x-data="paymentField(@js($billList), @js($renewPrices ?? ['monthly' => 0, 'yearly' => 0]), @js($payInterval), @js($openBills->first()?->id ?? 'renewal'))">
+        <div class="col-12">
+            <label class="form-label" for="pay-for">What it pays for</label>
+            <select id="pay-for" name="for" class="form-select" x-model="forId">
+                @foreach ($openBills as $bill)
+                    <option value="{{ $bill->id }}">{{ $bill->number }} · {{ $bill->label() }} — ₹ {{ number_format($bill->amount, 2) }}</option>
+                @endforeach
+                <option value="renewal">Their next renewal</option>
+            </select>
+        </div>
+
+        {{-- The next term: which period, and how far ahead. Revealed, never popped. --}}
+        <div class="col-12" x-show="isRenewal" x-transition.opacity>
+            <div class="row g-3">
+                <div class="col-6">
+                    <label class="form-label" for="pay-interval">Period</label>
+                    <select id="pay-interval" name="interval" class="form-select" x-model="interval">
+                        <option value="monthly">Monthly</option>
+                        <option value="yearly">Yearly</option>
+                    </select>
+                </div>
+                <div class="col-6">
+                    <label class="form-label" for="pay-cycles"
+                           x-text="interval === 'yearly' ? 'Years ahead' : 'Months ahead'">Months ahead</label>
+                    <input id="pay-cycles" name="cycles" type="number" min="1" :max="maxCycles"
+                           x-model.number="cycles" class="form-control" inputmode="numeric">
+                </div>
+            </div>
+        </div>
+
         <div class="col-6">
             <label class="form-label" for="pay-amount">Amount</label>
             <div class="input-group">
                 <span class="input-group-text">₹</span>
                 <input id="pay-amount" name="amount" type="number" step="0.01" min="0" required
-                       x-model.number="amount" value="{{ $price['effective'] ?? '' }}"
+                       x-model.number="amount" @input="touched = true"
                        class="form-control" inputmode="decimal">
             </div>
+            <p class="text-xs text-muted-foreground mt-1 mb-0">Bill: ₹ <span x-text="billLabel"></span></p>
         </div>
         <div class="col-6">
             <label class="form-label" for="pay-method">Method</label>
@@ -34,7 +76,9 @@
         </div>
         <div class="col-6">
             <label class="form-label" for="pay-date">Received on</label>
-            <input id="pay-date" name="paid_at" type="date" class="form-control" value="{{ now()->toDateString() }}">
+            <input id="pay-date" name="paid_at" type="date" class="form-control"
+                   value="{{ now(config('billing.timezone'))->toDateString() }}"
+                   max="{{ now(config('billing.timezone'))->toDateString() }}">
         </div>
         <div class="col-6">
             <label class="form-label" for="pay-ref">Reference <span class="text-faint">optional</span></label>
@@ -45,98 +89,33 @@
             <input id="pay-note" name="reason" type="text" class="form-control" maxlength="500">
         </div>
 
-        {{-- REQ-15 — the counter-bargain.
-             Appears only when the amount typed is BELOW what they owe, because
-             a field that is always there invites a discount nobody asked for.
-             Deliberately not an offer engine: one amount, one reason, this
-             charge only. A standing lower rate is Set negotiated price. --}}
+        {{-- REQ-15 — the counter-bargain, against THIS bill only. --}}
         <div class="col-12" x-show="discounted" x-cloak x-transition.opacity>
             <div class="rounded-3 p-3" style="background:var(--tone-green-bg);">
                 <p class="text-sm mb-2" style="color:var(--tone-green);">
                     <i class="bi bi-tag me-1"></i>
-                    <strong>₹ <span x-text="saved"></span></strong> below their price of
-                    ₹{{ number_format($price['effective'] ?? 0, 2) }} — recorded as a discount
-                    on this payment only, not on their ongoing rate.
+                    <strong>₹ <span x-text="saved"></span></strong> below the bill of ₹ <span x-text="billLabel"></span> —
+                    recorded as a discount on this payment only, not on their ongoing rate.
                 </p>
-                <label class="form-label" for="pay-discount-why">Why the discount
-                    <span class="text-faint">optional</span></label>
-                <input id="pay-discount-why" name="discount_reason" type="text"
-                       class="form-control" maxlength="500"
+                <label class="form-label" for="pay-discount-why">Why the discount <span class="text-faint">optional</span></label>
+                <input id="pay-discount-why" name="discount_reason" type="text" class="form-control" maxlength="500"
                        placeholder="e.g. bargained at the counter, rounded down">
             </div>
         </div>
-    </div>
-    <p class="text-muted-foreground text-xs mt-3 mb-0">
-        <i class="bi bi-info-circle me-1"></i>
-        This records the money. To also move their renewal date, use <strong>Renew now</strong>.
-    </p>
-</x-operator-modal>
 
-{{-- ── Row 5 · Renew now ────────────────────────────────────────── --}}
-<x-operator-modal id="m-renew" title="Renew now" :action="$act" preview="renew" :account="$account"
-    label="Take payment & renew" icon="bi-arrow-repeat"
-    intro="Records the payment AND moves the renewal date. Manual wins for this cycle.">
-    {{-- QA-05 — priced like the renewal will be: the branches billed AFTER it
-         re-counts them, at the period chosen here. --}}
-    {{-- E1.4 — a renewal starts the next period: default to a pending switch, if any. --}}
-    @php($rnInterval = ($subscription?->pending_interval ?? $subscription?->interval) === 'yearly' ? 'yearly' : 'monthly')
-    <div class="row g-3" x-data="renewField(@js($renewPrices ?? ['monthly' => 0, 'yearly' => 0]), @js($rnInterval))">
-        <div class="col-6">
-            <label class="form-label" for="rn-amount">Amount</label>
-            <div class="input-group">
-                <span class="input-group-text">₹</span>
-                <input id="rn-amount" name="amount" type="number" step="0.01" min="0"
-                       x-model.number="amount" @input="touched = true"
-                       value="{{ ($renewPrices ?? [])[$rnInterval] ?? '' }}"
-                       class="form-control" inputmode="decimal">
-            </div>
-        </div>
-        <div class="col-6">
-            <label class="form-label" for="rn-interval">Period</label>
-            <select id="rn-interval" name="interval" class="form-select" x-model="interval">
-                <option value="monthly" @selected($subscription?->interval === 'monthly')>1 month</option>
-                <option value="yearly" @selected($subscription?->interval === 'yearly')>1 year</option>
-            </select>
-        </div>
-        <div class="col-6">
-            <label class="form-label" for="rn-method">Method</label>
-            <select id="rn-method" name="method" class="form-select">
-                <option value="cash">Cash</option>
-                <option value="upi">UPI</option>
-                <option value="bank_transfer">Bank transfer</option>
-                <option value="cheque">Cheque</option>
-            </select>
-        </div>
-        <div class="col-6">
-            <label class="form-label" for="rn-ref">Reference <span class="text-faint">optional</span></label>
-            <input id="rn-ref" name="reference" type="text" class="form-control">
-        </div>
-
-        {{-- REQ-15 — the counter-bargain, on a renewal too. --}}
-        <div class="col-12" x-show="discounted" x-cloak x-transition.opacity>
-            <div class="rounded-3 p-3" style="background:var(--tone-green-bg);">
-                <p class="text-sm mb-2" style="color:var(--tone-green);">
-                    <i class="bi bi-tag me-1"></i>
-                    <strong>₹ <span x-text="saved"></span></strong> below their price of
-                    ₹ <span x-text="listLabel"></span> —
-                    recorded as a discount on this renewal only.
-                </p>
-                <label class="form-label" for="rn-discount-why">Why the discount
-                    <span class="text-faint">optional</span></label>
-                <input id="rn-discount-why" name="discount_reason" type="text"
-                       class="form-control" maxlength="500"
-                       placeholder="e.g. bargained at renewal">
-            </div>
-        </div>
-
-        {{-- QA-05 — more than they owe is almost always a stale default or a
-             typo. Said out loud; the full warn-and-confirm step is D-4 (E2). --}}
+        {{-- D-4 / FB-09 — more than the bill is never silent. --}}
         <div class="col-12" x-show="over" x-cloak x-transition.opacity>
-            <p class="text-sm mb-0 rounded-3 p-3" style="background:var(--tone-amber-bg);color:var(--tone-amber);">
-                <i class="bi bi-exclamation-triangle me-1"></i>
-                <strong>₹ <span x-text="excess"></span></strong> MORE than their price of
-                ₹ <span x-text="listLabel"></span> for this period. Check the amount before you take it.
-            </p>
+            <div class="rounded-3 p-3" style="background:var(--tone-amber-bg);">
+                <p class="text-sm mb-2" style="color:var(--tone-amber);">
+                    <i class="bi bi-exclamation-triangle me-1"></i>
+                    <strong>₹ <span x-text="excess"></span></strong> MORE than the bill of ₹ <span x-text="billLabel"></span>.
+                    To pay for more time, choose more months instead.
+                </p>
+                <div class="form-check mb-0">
+                    <input class="form-check-input" type="checkbox" name="confirm_over" value="1" id="pay-confirm-over" x-model="confirmed">
+                    <label class="form-check-label text-sm" for="pay-confirm-over">I confirm this amount — it is what they paid</label>
+                </div>
+            </div>
         </div>
     </div>
 </x-operator-modal>
@@ -223,35 +202,6 @@
 
 {{-- ── Row 8 · Failed payment ───────────────────────────────────── --}}
 @if ($subscription?->status === 'past_due')
-<x-operator-modal id="m-markpaid" title="Mark as paid" :action="$act" preview="mark_paid" :account="$account"
-    label="Mark paid" icon="bi-check2-circle"
-    intro="They have paid but the gateway did not tell us. Records the money and stops the chasing.">
-    <div class="row g-3">
-        <div class="col-6">
-            <label class="form-label" for="mp-amount">Amount</label>
-            <div class="input-group">
-                <span class="input-group-text">₹</span>
-                {{-- AUDIT-03 — the cycle this pays for, priced like a renewal. --}}
-                <input id="mp-amount" name="amount" type="number" step="0.01" min="0"
-                       value="{{ ($renewPrices ?? [])[($subscription?->pending_interval ?? $subscription?->interval) === 'yearly' ? 'yearly' : 'monthly'] ?? ($price['effective'] ?? '') }}" class="form-control">
-            </div>
-        </div>
-        <div class="col-6">
-            <label class="form-label" for="mp-method">Method</label>
-            <select id="mp-method" name="method" class="form-select">
-                <option value="cash">Cash</option>
-                <option value="upi">UPI</option>
-                <option value="bank_transfer">Bank transfer</option>
-                <option value="cheque">Cheque</option>
-            </select>
-        </div>
-        <div class="col-12">
-            <label class="form-label" for="mp-reason">Why <span style="color:var(--tone-red);">*</span></label>
-            <input id="mp-reason" name="reason" type="text" required maxlength="500" class="form-control">
-        </div>
-    </div>
-</x-operator-modal>
-
 <x-operator-modal id="m-waive" title="Waive what is owed" :action="$act" preview="waive" :account="$account"
     label="Waive it" dismiss="Never mind" icon="bi-hand-thumbs-up" tone="danger"
     intro="Write off this period. Recorded as a ₹0 entry, so it is visible rather than invisible.">
@@ -502,59 +452,68 @@
 @push('scripts')
 <script nonce="{{ csp_nonce() }}">
 /**
- * REQ-15 — the counter-bargain field.
+ * D-5 — Record a payment: what it pays for, and the amount that follows it.
  *
- * Reveals itself only when the operator types LESS than the customer owes. A
- * discount box that is always on screen invites a discount nobody asked for;
- * this one appears because a bargain has already happened.
+ * The amount follows the chosen bill (an open charge, or the next renewal at the
+ * chosen period × months ahead) until the operator types their own; after that it
+ * is theirs and is never overwritten. `bill` is the number the server will hold
+ * the payment against, so the discount panel and the D-4 warning compare against
+ * exactly what Settlement will.
  *
- * Motion contract (CLAUDE.md): it fades in rather than popping — an element
- * must never hard-swap between shown and hidden.
+ * Opened from an "Owed" row (data-pay-for), it starts on that bill.
+ * Motion contract: panels fade (x-transition), never pop.
  */
-function bargainField(list) {
-    return {
-        list: Number(list) || 0,
-        amount: Number(list) || 0,
-        get discounted() {
-            return this.list > 0 && Number(this.amount) >= 0 && Number(this.amount) < this.list;
-        },
-        get saved() {
-            return (this.list - Number(this.amount)).toLocaleString('en-IN', {
-                minimumFractionDigits: 2, maximumFractionDigits: 2,
-            });
-        },
-    };
-}
-
-/**
- * QA-05 — Renew now's amount, priced per period.
- *
- * Follows the Period select until the operator types an amount of their own;
- * after that it is theirs and is never overwritten. `list` is what the renewal
- * will price the period at, so the discount panel (below it) and the warning
- * (above it) compare against the same number the server will.
- */
-function renewField(prices, interval) {
+function paymentField(bills, prices, interval, forId) {
     const money = (n) => Number(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const start = { interval, forId };
 
     return {
+        bills,
         prices,
         interval,
+        forId,
+        cycles: 1,
         touched: false,
-        amount: Number(prices[interval]) || 0,
+        confirmed: false,
+        amount: 0,
         init() {
-            this.$watch('interval', (value) => {
-                if (!this.touched) this.amount = Number(this.prices[value]) || 0;
+            this.amount = this.bill;
+            this.$watch('forId', () => this.follow());
+            this.$watch('interval', () => { this.cycles = Math.min(Math.max(1, Number(this.cycles) || 1), this.maxCycles); this.follow(); });
+            this.$watch('cycles', () => this.follow());
+            this.$watch('amount', () => { if (!this.over) this.confirmed = false; });
+
+            const modal = this.$el.closest('.modal');
+            modal?.addEventListener('show.bs.modal', (e) => {
+                const id = e.relatedTarget?.dataset?.payFor;
+                if (id && this.bills.some((b) => b.id === id)) {
+                    this.forId = id;
+                    this.touched = false;
+                    this.amount = this.bill;
+                }
+            });
+            // A fresh start every time it opens: never yesterday's half-typed payment.
+            modal?.addEventListener('hidden.bs.modal', () => {
+                Object.assign(this, { interval: start.interval, forId: start.forId, cycles: 1, touched: false, confirmed: false });
+                this.amount = this.bill;
             });
         },
-        get list() { return Number(this.prices[this.interval]) || 0; },
-        get listLabel() { return money(this.list); },
-        get discounted() {
-            return this.list > 0 && Number(this.amount) >= 0 && Number(this.amount) < this.list;
+        follow() { if (!this.touched) this.amount = this.bill; },
+        get isRenewal() { return this.forId === 'renewal'; },
+        get maxCycles() { return this.interval === 'yearly' ? 3 : 12; },
+        get bill() {
+            if (this.isRenewal) {
+                const n = Math.min(Math.max(1, Number(this.cycles) || 1), this.maxCycles);
+                return Math.round((Number(this.prices[this.interval]) || 0) * n * 100) / 100;
+            }
+            const b = this.bills.find((x) => x.id === this.forId);
+            return b ? Number(b.amount) : 0;
         },
-        get over() { return this.list > 0 && Number(this.amount) > this.list; },
-        get saved() { return money(this.list - Number(this.amount)); },
-        get excess() { return money(Number(this.amount) - this.list); },
+        get billLabel() { return money(this.bill); },
+        get discounted() { return this.bill > 0 && Number(this.amount) > 0 && Number(this.amount) < this.bill; },
+        get over() { return this.bill > 0 && Number(this.amount) > this.bill + 0.005; },
+        get saved() { return money(this.bill - Number(this.amount)); },
+        get excess() { return money(Number(this.amount) - this.bill); },
     };
 }
 </script>

@@ -52,7 +52,6 @@
                 </button>
                 <ul class="dropdown-menu dropdown-menu-end" style="box-shadow: var(--shadow-overlay);">
                     <li><h6 class="dropdown-header">Money</h6></li>
-                    <li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#m-renew"><i class="bi bi-arrow-repeat me-2"></i>Renew now</button></li>
                     <li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#m-price"><i class="bi bi-tag me-2"></i>Set negotiated price</button></li>
                     @if ($subscription->hasNegotiatedPrice())
                         <li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#m-clear-price"><i class="bi bi-tag me-2"></i>Back to list price</button></li>
@@ -69,7 +68,6 @@
                     @if ($subscription->status === 'past_due' && ! $subscription->isSuspended())
                         <li><hr class="dropdown-divider"></li>
                         <li><h6 class="dropdown-header">Overdue</h6></li>
-                        <li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#m-markpaid"><i class="bi bi-check2-circle me-2"></i>Mark as paid</button></li>
                         <li><button class="dropdown-item" data-bs-toggle="modal" data-bs-target="#m-waive"><i class="bi bi-hand-thumbs-up me-2"></i>Waive</button></li>
                     @endif
 
@@ -104,6 +102,11 @@
                     <span class="meta-chip text-capitalize"
                           title="Operator override in force — automation will not change this">
                         <i class="bi bi-hand-index-thumb"></i> {{ $s->override_kind }}
+                    </span>
+                @endif
+                @if (($owed ?? 0) > 0)
+                    <span class="osms-badge osms-badge-amber" title="Open bills — see the Owed tab">
+                        <span class="osms-badge-dot"></span>₹ {{ number_format($owed, 2) }} owed
                     </span>
                 @endif
                 <span class="meta-chip"><i class="bi bi-shop"></i> {{ $account->stores->count() }} {{ Str::plural('store', $account->stores->count()) }}</span>
@@ -150,7 +153,7 @@
                     <p class="text-muted-foreground text-sm mb-0">
                         A branch is not being charged for. This should not happen on its own —
                         adding a branch charges the part period and raises the count in the same
-                        step. <strong>Renew now</strong> reconciles it from the next cycle.
+                        step. Recording their <strong>next renewal</strong> reconciles it from that cycle.
                     </p>
                 </div>
             </div>
