@@ -104,9 +104,21 @@ class BillingController extends Controller
             ? $account->charges()->pending()->with('tenant:id,store_name')->orderBy('created_at')->get()
             : collect();
 
+        // E3.5 / FB-07 — what THEY pay, from the engine (branches, tiers, negotiated
+        // price): never config('billing.plans'), which knows none of that.
+        $resolver = app(\App\Services\PriceResolver::class);
+        $prices = $subscription ? [
+            'monthly' => $resolver->renewalPrice($subscription, 'monthly'),
+            'yearly' => $resolver->renewalPrice($subscription, 'yearly'),
+        ] : null;
+
         return view('tenant.billing.index', [
             'subscription' => $subscription,
             'owed' => $owed,
+            'prices' => $prices,
+            'branches' => $account ? max(1, $account->billableStoreCount()) : 1,
+            // null = this person may pay online now; otherwise the sentence why not.
+            'payBlock' => $this->cannotPayOnline($request, $billing),
             'supervised' => $this->supervisionBlock($request),
             'plans' => $plans,
             'invoices' => $invoices,

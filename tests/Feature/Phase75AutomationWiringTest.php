@@ -166,6 +166,9 @@ class Phase75AutomationWiringTest extends TestCase
     {
         // Constraint C1. Nothing in P4 may change this without an operator
         // deliberately turning it off.
+        // E3 — with the gateway configured (the page no longer offers a button
+        // that can only fail when it is not).
+        \Tests\Fakes\FakeRazorpay::install($this->app);
         [$tenant, $owner] = $this->store();
 
         $this->assertFalse($tenant->account->isSupervised());
