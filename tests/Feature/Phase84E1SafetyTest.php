@@ -123,7 +123,7 @@ class Phase84E1SafetyTest extends TestCase
     {
         $this->seed(\Database\Seeders\PlanSeeder::class);
         $account = $this->payingAccount();
-        $form = ['amount' => 499, 'method' => 'cash', 'paid_at' => now()->toDateString(), '_once' => (string) Str::uuid()];
+        $form = ['for' => 'renewal', 'amount' => 499, 'method' => 'cash', 'paid_at' => now()->toDateString(), '_once' => (string) Str::uuid()];
         $this->asOperator();
 
         $this->post(route('superadmin.accounts.payment', $account), $form);

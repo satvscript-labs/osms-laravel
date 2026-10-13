@@ -93,8 +93,16 @@ class BillingController extends Controller
 
         $invoices = $this->ledger($request)->with('tenant')->newestFirst()->get();
 
+        // E2 — what the PAYER has been asked for (account-owned, E2-H): read through
+        // the account, never the tenant scope. Paying it online arrives with E3.
+        $account = $request->user()?->tenant?->account;
+        $owed = $account
+            ? $account->charges()->pending()->with('tenant:id,store_name')->orderBy('created_at')->get()
+            : collect();
+
         return view('tenant.billing.index', [
             'subscription' => $subscription,
+            'owed' => $owed,
             'supervised' => $this->supervisionBlock($request),
             'plans' => $plans,
             'invoices' => $invoices,

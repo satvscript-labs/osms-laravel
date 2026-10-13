@@ -80,25 +80,35 @@ class Proration
             return $this->notApplicable($blocked, $unit, $branches, $interval, $breakdown['tier_label']);
         }
 
-        // The period this branch is buying INTO (for the rate's denominator), and
-        // the stretch it is charged for: from the later of the day it joined and
-        // the day the account's PAID cover begins. Nobody pays for days before the
-        // branch existed.
+        // E2.5 / FB-13 — the whole span the branch rides, split into cycles, each
+        // priced at its own real length (06 §5.1).
         //
-        // QA-04 — nor for days nobody paid for. A customer who pays early during
-        // their trial is covered from the trial's end; the gap until then is still
-        // trial, free for every store, this one too. Counting from the join date
-        // alone charged "45 of 31" days for exactly that gap. Where the account has
-        // prepaid more than one period, the join date can sit inside an earlier
-        // PAID period, and those days are rightly charged — which is why the start
-        // comes from the ledger, not from stepping one interval back.
-        $periodStart = $this->currentPeriodStart($periodEnd, $interval, $tz);
-        $daysInPeriod = max(1, (int) $periodStart->diffInDays($periodEnd));
-        $paidFrom = $this->paidCoverStart($subscription, $joinedOn, $tz) ?? $periodStart;
-        $chargedFrom = $joinedOn->greaterThan($paidFrom) ? $joinedOn->copy() : $paidFrom->copy();
-        $daysCharged = max(0, (int) $chargedFrom->diffInDays($periodEnd));
+        // Where the span starts — QA-04, kept: from the later of the day it joined
+        // and the start of the account's PAID cover. Nobody pays for trial days, and
+        // where the account prepaid several periods back to back the join date can
+        // sit inside an earlier PAID period, whose days are rightly charged. The
+        // ledger knows the earliest running cover; the stored period start knows
+        // only the latest period; one cycle back is the last resort.
+        $coverStart = $this->paidCoverStart($subscription, $joinedOn, $tz)
+            ?? ($subscription->current_period_start
+                ? Carbon::parse($subscription->current_period_start->toDateString(), $tz)->startOfDay()
+                : null)
+            ?? BillingCycle::add($periodEnd, $interval, -1);
+        $chargedFrom = $joinedOn->greaterThan($coverStart) ? $joinedOn->copy() : $coverStart->copy();
 
-        $amount = round($unit * $branches * $daysCharged / $daysInPeriod, 2);
+        // Cycle boundaries FORWARD from the cover start, with the clock's own
+        // arithmetic (BillingCycle), the last one clipped to the period end.
+        $segments = $this->segments($coverStart, $periodEnd, $chargedFrom, $interval, $unit * $branches);
+
+        if ($segments === []) {
+            return $this->notApplicable('Their current period has already ended — the new branch will be billed in full at the next renewal.',
+                $unit, $branches, $interval, $breakdown['tier_label']);
+        }
+
+        // Each line rounded once; the total is their sum, so the working adds up.
+        $amount = round(array_sum(array_column($segments, 'amount')), 2);
+        $first = $segments[0];
+        $daysCharged = max(0, (int) $chargedFrom->diffInDays($periodEnd));
 
         return [
             'applicable' => true,
@@ -106,23 +116,71 @@ class Proration
             'amount' => $amount,
             'unit_price' => $unit,
             'branches' => $branches,
-            'period_start' => $periodStart,
+            // The cycle the branch joins in (its real length is the first denominator).
+            'period_start' => $first['cycle_start'],
             'period_end' => $periodEnd,
-            // AUDIT-02 — the stretch actually charged for; the ledger row records
-            // THIS as its cover, so its dates and its working cannot disagree.
+            // AUDIT-02 — the stretch actually charged for.
             'charged_from' => $chargedFrom,
-            'days_in_period' => $daysInPeriod,
+            'days_in_period' => $first['cycle_days'],
             'days_charged' => $daysCharged,
             'interval' => $interval,
             'tier_label' => $breakdown['tier_label'],
-            // The working, in the order a person reads it. Rendered verbatim
-            // wherever this charge is shown.
-            'lines' => $this->lines($joinedOn, $chargedFrom, $periodStart, $periodEnd, $daysInPeriod, $daysCharged,
-                $unit, $branches, $interval, $breakdown['tier_label'], $amount),
-            'formula' => $this->formula($unit, $branches, $daysCharged, $daysInPeriod, $amount),
+            'segments' => $segments,
+            'lines' => $this->lines($joinedOn, $chargedFrom, $periodEnd, $segments, $unit, $branches, $interval, $breakdown['tier_label'], $amount),
+            'formula' => $this->formula($segments, $unit, $branches, $amount),
         ];
     }
 
+    /**
+     * The span [chargedFrom, end) cut at cycle boundaries counted from $start.
+     *
+     * @return list<array{cycle_start: Carbon, cycle_end: Carbon, cycle_days: int, from: Carbon, to: Carbon,
+     *                    days: int, whole: bool, amount: float}>
+     */
+    private function segments(Carbon $start, Carbon $end, Carbon $chargedFrom, string $interval, float $perCycle): array
+    {
+        $out = [];
+
+        // Bounded, and never silently: a prepay is capped at 12 cycles and an
+        // extension at a year, so 600 cycles is unreachable — if it is ever
+        // reached, refuse rather than charge only the first part of the span.
+        for ($k = 0; ; $k++) {
+            if ($k >= 600) {
+                throw new \LogicException("Cannot split {$start->toDateString()} → {$end->toDateString()} into {$interval} cycles.");
+            }
+
+            $cycleStart = BillingCycle::add($start, $interval, $k);
+
+            if ($cycleStart->gte($end)) {
+                break;
+            }
+
+            $cycleEnd = BillingCycle::add($start, $interval, $k + 1);
+            $to = $cycleEnd->min($end);
+            $from = $cycleStart->max($chargedFrom);
+
+            if ($from->gte($to)) {
+                continue;   // before the branch joined: not its days
+            }
+
+            $cycleDays = max(1, (int) $cycleStart->diffInDays($cycleEnd));
+            $days = (int) $from->diffInDays($to);
+            $whole = $from->equalTo($cycleStart) && $to->equalTo($cycleEnd);
+
+            $out[] = [
+                'cycle_start' => $cycleStart->copy(),
+                'cycle_end' => $cycleEnd->copy(),
+                'cycle_days' => $cycleDays,
+                'from' => $from->copy(),
+                'to' => $to->copy(),
+                'days' => $days,
+                'whole' => $whole,
+                'amount' => $whole ? round($perCycle, 2) : round($perCycle * $days / $cycleDays, 2),
+            ];
+        }
+
+        return $out;
+    }
     /**
      * Why a pro-rata charge does not apply. Returning the REASON rather than
      * silently returning ₹0 matters: "nothing to charge" and "we could not
@@ -204,80 +262,94 @@ class Proration
     }
 
     /**
-     * The start of the period now running, derived by stepping one interval
-     * back from its end. Cheaper and more honest than storing it: the end date
-     * is the field the whole system already maintains.
+     * The working, in the order a person reads it. One part cycle (where the branch
+     * joined), then any whole cycles, then any irregular tail — never "365 of 31".
+     *
+     * @return list<array{label: string, value: string}>
      */
-    private function currentPeriodStart(Carbon $periodEnd, string $interval, string $tz): Carbon
-    {
-        return $interval === 'yearly'
-            ? $periodEnd->copy()->subYear()
-            : $periodEnd->copy()->subMonth();
-    }
-
-    /** @return list<array{label: string, value: string}> */
     private function lines(
-        Carbon $joinedOn, Carbon $chargedFrom, Carbon $periodStart, Carbon $periodEnd,
-        int $daysInPeriod, int $daysCharged,
+        Carbon $joinedOn, Carbon $chargedFrom, Carbon $periodEnd, array $segments,
         float $unit, int $branches, string $interval, ?string $tierLabel, float $amount,
     ): array {
         $per = $interval === 'yearly' ? 'year' : 'month';
+        $first = $segments[0];
 
-        $lines = [
-            ['label' => 'Branch starts', 'value' => $joinedOn->format('d M Y')],
-            [
-                'label' => 'Current billing period',
-                'value' => $periodStart->format('d M Y') . ' → ' . $periodEnd->format('d M Y')
-                    . ' (' . $daysInPeriod . ' days)',
-            ],
-        ];
+        $lines = [['label' => 'Branch starts', 'value' => $joinedOn->format('d M Y')]];
 
         // QA-04 — when the branch joins before the paid period starts, say where
         // the charge begins and why, or "Branch starts 12 Oct" beside "31 days"
         // reads as an error.
         if ($chargedFrom->greaterThan($joinedOn)) {
+            $lines[] = ['label' => 'Charged from', 'value' => $chargedFrom->format('d M Y') . ' (their paid cover starts then)'];
+        }
+
+        $lines[] = [
+            'label' => 'Current billing period',
+            'value' => $first['cycle_start']->format('d M Y') . ' → ' . $first['cycle_end']->format('d M Y')
+                . ' (' . $first['cycle_days'] . ' days)',
+        ];
+        $lines[] = ['label' => 'Days being charged', 'value' => $first['days'] . ' of ' . $first['cycle_days']];
+
+        $rest = array_slice($segments, 1);
+        $whole = array_values(array_filter($rest, fn ($s) => $s['whole']));
+        $tail = array_values(array_filter($rest, fn ($s) => ! $s['whole']));
+
+        if ($whole !== []) {
+            $n = count($whole);
             $lines[] = [
-                'label' => 'Charged from',
-                'value' => $chargedFrom->format('d M Y') . ' (their paid cover starts then)',
+                'label' => 'Whole cycles',
+                'value' => $whole[0]['from']->format('d M Y') . ' → ' . end($whole)['to']->format('d M Y')
+                    . " = {$n} × ₹ " . number_format($whole[0]['amount'], 2),
             ];
         }
 
-        // Prepaid more than one period: the days run past one period's length,
-        // which is right, and must not look like an arithmetic slip.
-        if ($daysCharged > $daysInPeriod) {
+        foreach ($tail as $t) {
             $lines[] = [
-                'label' => 'Note',
-                'value' => 'They have paid ahead, so this covers more than one billing period',
+                'label' => 'Part cycle',
+                'value' => $t['from']->format('d M Y') . ' → ' . $t['to']->format('d M Y')
+                    . ' = ' . $t['days'] . ' of ' . $t['cycle_days'] . ' days',
             ];
         }
 
-        $lines = [...$lines,
-            ['label' => 'Days being charged', 'value' => $daysCharged . ' of ' . $daysInPeriod],
-            [
-                'label' => 'Rate',
-                'value' => '₹ ' . number_format($unit, 2) . ' per branch per ' . $per
-                    . ($tierLabel ? " ({$tierLabel})" : ''),
-            ],
+        $lines[] = [
+            'label' => 'Rate',
+            'value' => '₹ ' . number_format($unit, 2) . ' per branch per ' . $per . ($tierLabel ? " ({$tierLabel})" : ''),
         ];
 
         if ($branches > 1) {
             $lines[] = ['label' => 'Branches joining', 'value' => (string) $branches];
         }
 
-        $lines[] = ['label' => 'Part period due now', 'value' => '₹ ' . number_format($amount, 2)];
+        $lines[] = [
+            'label' => count($segments) === 1 && ! $segments[0]['whole'] ? 'Part period due now' : 'Due now',
+            'value' => '₹ ' . number_format($amount, 2),
+        ];
 
         return $lines;
     }
 
     /** The arithmetic on one line, so it can be checked at a glance. */
-    private function formula(float $unit, int $branches, int $daysCharged, int $daysInPeriod, float $amount): string
+    private function formula(array $segments, float $unit, int $branches, float $amount): string
     {
-        $left = '₹ ' . number_format($unit, 2);
+        $rate = '₹ ' . number_format($unit, 2) . ($branches > 1 ? ' × ' . $branches : '');
+        $terms = [];
+        $wholeCount = 0;
 
-        if ($branches > 1) {
-            $left .= ' × ' . $branches;
+        foreach ($segments as $s) {
+            if ($s['whole']) {
+                $wholeCount++;
+
+                continue;
+            }
+
+            $terms[] = "{$rate} × {$s['days']} ÷ {$s['cycle_days']}";
         }
 
-        return "{$left} × {$daysCharged} ÷ {$daysInPeriod} = ₹ " . number_format($amount, 2);
+        if ($wholeCount > 0) {
+            // Always counted, even one: "₹ 4,999.00 = ₹ 4,999.00" reads like a typo.
+            $terms[] = "{$wholeCount} × {$rate}";
+        }
+
+        return implode(' + ', $terms) . ' = ₹ ' . number_format($amount, 2);
     }
 }

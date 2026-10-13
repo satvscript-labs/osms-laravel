@@ -266,7 +266,9 @@ class Phase83QaRunFixesTest extends TestCase
         $this->assertTrue($q['applicable']);
         $this->assertGreaterThan($q['days_in_period'], $q['days_charged'], 'paid cover runs past one period, and is charged');
         $this->assertGreaterThan(499.0, $q['amount']);
-        $this->assertContains('Note', array_column($q['lines'], 'label'), 'the long count is explained, not left to look like a slip');
+        // E2.5 / FB-13 — explained cycle by cycle (a part cycle, then whole ones),
+        // not by a note beside a "45 of 31" count.
+        $this->assertContains('Whole cycles', array_column($q['lines'], 'label'), 'the long span is explained, not left to look like a slip');
         $this->assertNotContains('Charged from', array_column($q['lines'], 'label'), 'it starts the day it joined');
     }
 
@@ -277,8 +279,9 @@ class Phase83QaRunFixesTest extends TestCase
 
         $this->store('Booked — Branch 2', $hq->account->fresh());
 
-        $row = SubscriptionInvoice::withoutGlobalScopes()
-            ->where('account_id', $hq->account_id)->whereNotNull('calculation')->firstOrFail();
+        // E2 — the part period is a charge (owed), with the cover it was quoted for.
+        $row = \App\Models\BillingCharge::query()
+            ->where('account_id', $hq->account_id)->where('kind', 'branch_join')->firstOrFail();
 
         $this->assertEquals(499.0, (float) $row->amount);
 
@@ -300,8 +303,9 @@ class Phase83QaRunFixesTest extends TestCase
 
         $this->store('Prepaid Booked — Branch 2', $hq->account->fresh());
 
-        $row = SubscriptionInvoice::withoutGlobalScopes()
-            ->where('account_id', $hq->account_id)->whereNotNull('calculation')->firstOrFail();
+        // E2 — the part period is a charge (owed), with the cover it was quoted for.
+        $row = \App\Models\BillingCharge::query()
+            ->where('account_id', $hq->account_id)->where('kind', 'branch_join')->firstOrFail();
 
         // Charged from today across two prepaid periods — and the row says exactly that.
         $this->assertSame($this->today()->toDateString(), $row->period_start->toDateString());
@@ -413,9 +417,10 @@ class Phase83QaRunFixesTest extends TestCase
         // The "Overdue" levers are not offered for a customer who owes nothing.
         $this->confirmed()->get(route('superadmin.accounts.show', $paused))
             ->assertSee('Suspended')
-            ->assertDontSee('data-bs-target="#m-markpaid"', false);
+            ->assertDontSee('data-bs-target="#m-waive"', false);
+        // E2 / D-5 — Mark as paid is now Record a payment; Waive is the overdue lever left.
         $this->confirmed()->get(route('superadmin.accounts.show', $owing))
-            ->assertSee('data-bs-target="#m-markpaid"', false);
+            ->assertSee('data-bs-target="#m-waive"', false);
     }
 
     // ------------------------------------------------------------------

@@ -60,11 +60,10 @@ class BillingController extends Controller
             'method' => $method,
             'search' => $search,
             'totals' => [
-                'collected' => (float) (clone $live)->where('method', '!=', 'comp')->sum('amount'),
+                'collected' => (float) SubscriptionInvoice::withoutGlobalScopes()->collected()->sum('amount'),
                 'comped' => (int) (clone $live)->where('method', 'comp')->count(),
                 'reversed' => (int) SubscriptionInvoice::withoutGlobalScopes()->whereNotNull('reversed_at')->count(),
-                'this_month' => (float) (clone $live)
-                    ->where('method', '!=', 'comp')
+                'this_month' => (float) SubscriptionInvoice::withoutGlobalScopes()->collected()
                     ->whereBetween('paid_at', [now()->startOfMonth(), now()->endOfMonth()])
                     ->sum('amount'),
             ],

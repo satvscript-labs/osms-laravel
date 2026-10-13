@@ -28,6 +28,7 @@ class Phase71SuperadminBoundaryTest extends TestCase
     private Tenant $tenant;
     private User $owner;
     private \App\Models\SubscriptionInvoice $invoice;
+    private \App\Models\BillingCharge $charge;
 
     protected function setUp(): void
     {
@@ -42,6 +43,13 @@ class Phase71SuperadminBoundaryTest extends TestCase
         // genuinely exercised rather than 404-ing during model binding.
         $this->invoice = app(\App\Services\PaymentRecorder::class)
             ->record($this->tenant->account->subscription, 100, 'cash');
+
+        // E2 — a real open charge, so the void / waive routes resolve too. Written
+        // as a fixture (no audit row: the inertness test counts them from zero).
+        $this->charge = \App\Models\BillingCharge::create([
+            'account_id' => $this->tenant->account_id, 'number' => 'CHG-TEST-0001', 'kind' => 'renewal',
+            'status' => 'pending', 'amount' => 499, 'raised_via' => 'operator',
+        ]);
     }
 
     /**
@@ -60,6 +68,7 @@ class Phase71SuperadminBoundaryTest extends TestCase
             'account' => $this->tenant->account_id,
             'store' => $this->tenant->id,
             'invoice' => $this->invoice->id,
+            'charge' => $this->charge->id,
             // P5 — the credential and view-as routes act on a person.
             'user' => $this->owner->id,
         ];
@@ -163,6 +172,8 @@ class Phase71SuperadminBoundaryTest extends TestCase
         // The ledger is untouched — no row added, and the existing one not reversed.
         $this->assertSame($ledgerBefore, \App\Models\SubscriptionInvoice::withoutGlobalScopes()->count());
         $this->assertSame($reversedBefore, $this->invoice->fresh()->reversed_at);
+        // E2 — and what is owed is untouched: not voided, not waived, not paid.
+        $this->assertSame('pending', $this->charge->fresh()->status);
         // And no per-store lever moved either.
         $this->assertSame('active', $this->tenant->fresh()->store_status);
         $this->assertTrue((bool) $this->tenant->fresh()->is_billable);

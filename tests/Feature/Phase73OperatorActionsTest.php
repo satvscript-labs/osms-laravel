@@ -268,7 +268,9 @@ class Phase73OperatorActionsTest extends TestCase
     {
         $this->sub()->update(['status' => 'past_due']);
 
-        $this->act(['action' => 'mark_paid', 'amount' => 4999, 'method' => 'upi', 'reason' => 'paid by UPI, webhook missed it'])
+        $this->act(['action' => 'mark_paid', 'amount' => 4999, 'method' => 'upi', 'reason' => 'paid by UPI, webhook missed it',
+            // D-4 (E2) — ₹4,999 on a monthly bill is over the bill: confirmed, never silent.
+            'confirm_over' => 1])
             ->assertSessionHas('status');
 
         $this->assertSame('active', $this->sub()->status);
@@ -276,18 +278,27 @@ class Phase73OperatorActionsTest extends TestCase
         $this->assertSame('4999.00', SubscriptionInvoice::withoutGlobalScopes()->where('method', 'upi')->first()->amount);
     }
 
-    public function test_row4_record_payment_logs_money_without_touching_the_clock(): void
+    public function test_row4_record_payment_says_what_it_pays_for(): void
     {
         $before = $this->sub()->current_period_end->toDateString();
 
+        // E2 / D-5 — no longer "money with no purpose" (FB-08): a payment that does
+        // not say what it pays for is refused and records nothing…
         $this->asOperator()->post(route('superadmin.accounts.payment', $this->account()), [
             'amount' => 1500, 'method' => 'cash', 'reference' => 'part payment',
+        ])->assertSessionHasErrors('for');
+
+        $this->assertSame(0, SubscriptionInvoice::withoutGlobalScopes()->count());
+        $this->assertSame($before, $this->sub()->current_period_end->toDateString());
+
+        // …and one that pays the next term moves the clock, once, and names its charge.
+        $this->asOperator()->post(route('superadmin.accounts.payment', $this->account()), [
+            'for' => 'renewal', 'method' => 'cash', 'reference' => 'counter',
         ])->assertSessionHas('status');
 
-        // Deliberately separate from Renew: recording money and moving the
-        // renewal date are different intents.
-        $this->assertSame($before, $this->sub()->current_period_end->toDateString());
-        $this->assertSame('1500.00', SubscriptionInvoice::withoutGlobalScopes()->first()->amount);
+        $row = SubscriptionInvoice::withoutGlobalScopes()->sole();
+        $this->assertNotNull($row->charge_id);
+        $this->assertNotSame($before, $this->sub()->current_period_end->toDateString());
     }
 
     public function test_row11_reversal_keeps_the_row_but_stops_it_counting(): void
@@ -423,8 +434,9 @@ class Phase73OperatorActionsTest extends TestCase
 
         $res->assertOk();
         foreach ([
-            'm-payment', 'm-renew', 'm-extend', 'm-comp', 'm-price', 'm-interval',
-            'm-markpaid', 'm-waive', 'm-suspend', 'm-cancel', 'm-expire', 'm-notes',
+            // E2 / D-5 — one money lever: Renew now and Mark as paid are Record a payment.
+            'm-payment', 'm-extend', 'm-comp', 'm-price', 'm-interval',
+            'm-waive', 'm-suspend', 'm-cancel', 'm-expire', 'm-notes',
         ] as $modal) {
             $res->assertSee($modal);
         }

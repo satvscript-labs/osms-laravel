@@ -204,6 +204,35 @@
         </div>
     </div>
 
+    {{-- E2 — what they have been asked for and not yet paid, with the working.
+         Read-only: paying it online arrives with the online lane (E3). --}}
+    @if (($owed ?? collect())->isNotEmpty())
+        <div class="mt-5 animate-fade-up">
+            <p class="section-label mb-2">Owed</p>
+            <div class="card border-0 shadow-sm rounded-4">
+                <div class="card-body p-4 d-flex flex-column gap-3">
+                    @foreach ($owed as $charge)
+                        <div>
+                            <div class="d-flex justify-content-between align-items-baseline gap-3 flex-wrap">
+                                <span class="fw-semibold">{{ $charge->label() }}</span>
+                                <span class="fw-semibold">₹ {{ number_format($charge->amount, 2) }}</span>
+                            </div>
+                            <div class="text-xs text-muted-foreground mt-1">
+                                <span class="font-monospace">{{ $charge->number }}</span>
+                                @if ($charge->due_on) · due {{ $charge->due_on->format('d M Y') }}@endif
+                            </div>
+                            @include('partials.charge-working', ['invoice' => $charge])
+                        </div>
+                    @endforeach
+                    <p class="text-sm text-muted-foreground mb-0">
+                        <i class="bi bi-info-circle me-1"></i>
+                        To pay, contact us at <strong>{{ config('saas.support_email') }}</strong> — we will record it and send your receipt.
+                    </p>
+                </div>
+            </div>
+        </div>
+    @endif
+
     {{-- Invoices --}}
     <div class="mt-5">
         <p class="section-label mb-2">Payment history</p>

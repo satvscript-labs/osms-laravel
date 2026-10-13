@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Concerns\BelongsToTenant;
+use App\Models\Concerns\GuardsMoneyWrites;
 use App\Models\Concerns\HasUuid;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -14,7 +15,8 @@ use Illuminate\Database\Eloquent\Model;
  */
 class SubscriptionInvoice extends Model
 {
-    use HasUuid, BelongsToTenant;
+    // E2.1 — written only through PaymentRecorder; never deleted (rule 6).
+    use HasUuid, BelongsToTenant, GuardsMoneyWrites;
 
     protected $fillable = [
         'tenant_id', 'account_id', 'razorpay_payment_id', 'razorpay_invoice_id',
@@ -26,6 +28,8 @@ class SubscriptionInvoice extends Model
         // REQ-15 — what it would have cost, what was knocked off, and (for a
         // part-period charge) the arithmetic that produced it.
         'list_amount', 'discount_amount', 'discount_reason', 'calculation',
+        // E2 — what it paid for, and the coverage it actually granted (D-7).
+        'charge_id', 'granted_start', 'granted_end',
     ];
 
     protected $casts = [
@@ -37,6 +41,8 @@ class SubscriptionInvoice extends Model
         'list_amount' => 'decimal:2',
         'discount_amount' => 'decimal:2',
         'calculation' => 'array',
+        'granted_start' => 'date',
+        'granted_end' => 'date',
     ];
 
     /** REQ-15 — was something bargained off this particular charge? */
@@ -58,6 +64,12 @@ class SubscriptionInvoice extends Model
         return is_array($this->calculation) && ! empty($this->calculation['lines']);
     }
 
+    /** E2 — the charge this money settled (null for ₹0 grants and pre-engine rows). */
+    public function charge(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(BillingCharge::class, 'charge_id');
+    }
+
     /** P1 / REQ-12 — the payer this ledger row belongs to. */
     public function account(): \Illuminate\Database\Eloquent\Relations\BelongsTo
     {
@@ -75,6 +87,16 @@ class SubscriptionInvoice extends Model
     public function scopeNewestFirst(Builder $query): Builder
     {
         return $query->orderByRaw('DATE(paid_at) DESC')->orderByDesc('created_at');
+    }
+
+    /**
+     * E2 / 06 §7 — COLLECTED: money that actually arrived. Not reversed, not a ₹0
+     * grant, and not a pre-engine pro-rata "adjustment" (those recorded money that
+     * was only owed, FB-18). The one definition every revenue figure uses.
+     */
+    public function scopeCollected(Builder $query): Builder
+    {
+        return $query->whereNull('reversed_at')->whereNotIn('method', ['comp', 'adjustment']);
     }
 
     public function isReversed(): bool

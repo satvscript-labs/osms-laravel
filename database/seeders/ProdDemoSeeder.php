@@ -113,8 +113,11 @@ class ProdDemoSeeder extends Seeder
             ]);
 
         // Three months of paid invoices (Razorpay reconciliation history).
+        // E2.1 — demo history, written as a fixture: money rows are otherwise only
+        // ever written by the engine (MoneyWrite), so the seeder opens that scope
+        // explicitly rather than the guard growing an exception for it.
         foreach ([3, 2, 1] as $monthsAgo) {
-            $tenant->subscriptionInvoices()->create([
+            \App\Services\MoneyWrite::during(fn () => $tenant->subscriptionInvoices()->create([
                 'razorpay_payment_id' => 'pay_DEMO' . Str::upper(Str::random(12)),
                 'razorpay_invoice_id' => 'inv_DEMO' . Str::upper(Str::random(12)),
                 'razorpay_subscription_id' => 'sub_DEMO0000000001',
@@ -122,7 +125,7 @@ class ProdDemoSeeder extends Seeder
                 'currency' => 'INR',
                 'status' => 'paid',
                 'paid_at' => now()->subMonths($monthsAgo),
-            ]);
+            ]));
         }
 
         return $tenant;
