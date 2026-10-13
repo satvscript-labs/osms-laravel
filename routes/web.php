@@ -172,6 +172,9 @@ Route::middleware(['auth', 'superadmin', 'throttle:120,1'])
             Route::post('/customers/{account}/action', [SuperadminAccountAction::class, 'commit'])->middleware('once')->name('accounts.action');
             Route::post('/customers/{account}/payment', [SuperadminAccountAction::class, 'recordPayment'])->middleware('once')->name('accounts.payment');
             Route::post('/customers/{account}/payment/{invoice}/reverse', [SuperadminAccountAction::class, 'reversePayment'])->middleware('once')->name('accounts.payment.reverse');
+            // E2 — what is owed: void (never owed) or waive (given away, ₹0 entry).
+            Route::post('/customers/{account}/charges/{charge}/void', [SuperadminAccountAction::class, 'voidCharge'])->middleware('once')->name('accounts.charge.void');
+            Route::post('/customers/{account}/charges/{charge}/waive', [SuperadminAccountAction::class, 'waiveCharge'])->middleware('once')->name('accounts.charge.waive');
             Route::patch('/customers/{account}/stores/{tenant}/status', [SuperadminAccountAction::class, 'storeStatus'])->name('accounts.store.status');
             Route::patch('/customers/{account}/stores/{tenant}/billable', [SuperadminAccountAction::class, 'storeBillable'])->name('accounts.store.billable');
             Route::patch('/customers/{account}/notes', [SuperadminAccountAction::class, 'updateNotes'])->name('accounts.notes');

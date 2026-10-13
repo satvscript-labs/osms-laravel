@@ -5,7 +5,9 @@ namespace App\Http\Controllers\Superadmin;
 use App\Http\Controllers\Controller;
 use App\Models\Account;
 use App\Models\Subscription;
+use App\Models\BillingCharge;
 use App\Models\SubscriptionInvoice;
+use App\Services\BillingEngine;
 use App\Services\PriceResolver;
 use App\Services\StoreClosure;
 use App\Support\Mrr;
@@ -75,9 +77,20 @@ class AccountController extends Controller
             ->limit(50)
             ->get();
 
+        // E2 — what this customer has been asked for: open first, then the recent closed.
+        $charges = BillingCharge::query()
+            ->where('account_id', $account->id)
+            ->with('tenant:id,store_name')
+            ->orderByRaw("CASE status WHEN 'pending' THEN 0 ELSE 1 END")
+            ->orderByDesc('created_at')
+            ->limit(50)
+            ->get();
+
         return view('superadmin.accounts.show', [
             'account' => $account,
             'subscription' => $subscription,
+            'charges' => $charges,
+            'owed' => app(BillingEngine::class)->owed($account->id),
             'price' => $subscription
                 ? app(PriceResolver::class)->breakdown($subscription)
                 : null,

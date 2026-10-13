@@ -90,6 +90,18 @@ class BillingCharge extends Model
         return $this->status === 'pending';
     }
 
+    /** The stored working (partials.charge-working reads it for charges and payments alike). */
+    public function hasCalculation(): bool
+    {
+        return is_array($this->calculation) && ! empty($this->calculation['lines']);
+    }
+
+    /** A bargain is recorded on the PAYMENT against this bill, never on the bill itself. */
+    public function hasDiscount(): bool
+    {
+        return false;
+    }
+
     /** E2-G — has this charge already granted coverage (possibly before a reversal)? */
     public function hasGranted(): bool
     {

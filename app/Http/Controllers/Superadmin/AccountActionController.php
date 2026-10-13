@@ -5,9 +5,11 @@ namespace App\Http\Controllers\Superadmin;
 use App\Http\Controllers\Controller;
 use App\Models\Account;
 use App\Models\AdminAuditLog;
+use App\Models\BillingCharge;
 use App\Models\SubscriptionInvoice;
 use App\Models\Tenant;
-use App\Services\PaymentRecorder;
+use App\Services\BillingEngine;
+use App\Services\Settlement;
 use App\Services\SubscriptionLifecycle;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -31,7 +33,8 @@ class AccountActionController extends Controller
 {
     public function __construct(
         private readonly SubscriptionLifecycle $lifecycle,
-        private readonly PaymentRecorder $payments,
+        private readonly Settlement $settlement,
+        private readonly BillingEngine $engine,
     ) {}
 
     /**
@@ -93,7 +96,12 @@ class AccountActionController extends Controller
         return back()->with('status', $this->confirmation($validated['action']));
     }
 
-    /** Row 4 — record a payment that arrived outside the gateway. */
+    /**
+     * Row 4 — one "Record a payment" (D-5): money received outside the gateway,
+     * and WHAT IT PAYS FOR — an open charge, or the next term (N cycles ahead,
+     * E2-A). It goes through Settlement, so it is previewed, it moves the clock
+     * when it buys time, and the ledger row names its charge (FB-08, rule 6).
+     */
     public function recordPayment(Request $request, Account $account): RedirectResponse
     {
         $subscription = $account->subscription;
@@ -102,46 +110,40 @@ class AccountActionController extends Controller
             return back()->with('error', 'This customer has no subscription.');
         }
 
-        $validated = $request->validate([
-            'amount' => ['required', 'numeric', 'min:0', 'max:99999999'],
-            'method' => ['required', 'in:cash,upi,bank_transfer,cheque,adjustment'],
-            'reference' => ['nullable', 'string', 'max:120'],
-            'reason' => ['nullable', 'string', 'max:500'],
-            'paid_at' => ['nullable', 'date'],
-            // REQ-15 — a counter-bargain. One-off on this row, never recurring.
-            'discount_reason' => ['nullable', 'string', 'max:500'],
-        ]);
-
-        // What it would have been. Passing this lets PaymentRecorder work out
-        // the discount itself, so the three numbers on the row cannot disagree.
-        $list = app(\App\Services\PriceResolver::class)->effectivePrice($subscription);
+        $validated = $request->validate(self::paymentRules());
 
         try {
-            $invoice = $this->payments->record(
-                $subscription,
-                (float) $validated['amount'],
-                $validated['method'],
-                [
-                    'reference' => $validated['reference'] ?? null,
-                    'reason' => $validated['reason'] ?? null,
-                    'paid_at' => isset($validated['paid_at']) ? \Illuminate\Support\Carbon::parse($validated['paid_at']) : null,
-                ] + $this->bargain($list, (float) $validated['amount'], $validated),
-            );
+            $invoice = $validated['for'] === 'renewal'
+                ? $this->settlement->payTerm($subscription, 'renew', $validated)
+                : $this->settlement->settle($this->chargeOf($account, $validated['for']), $validated);
         } catch (InvalidArgumentException $e) {
             return back()->with('error', $e->getMessage());
         }
 
-        AdminAuditLog::record(
-            'payment.recorded',
-            "Recorded ₹" . number_format((float) $validated['amount'], 2) . " ({$invoice->methodLabel()}) for {$account->displayName()}",
-            $subscription->tenant_id,
-            ['account_id' => $account->id, 'receipt_no' => $invoice->receipt_no] + $validated,
-        );
-
         return back()->with('status', "Payment recorded — receipt {$invoice->receipt_no}.");
     }
 
-    /** Row 11 — reverse a payment. The row stays; the money stops counting. */
+    /** The one validation for a hand-recorded payment, shared with the preview. */
+    public static function paymentRules(): array
+    {
+        return [
+            // E2 — what it pays for: 'renewal' (the next term) or an open charge's id.
+            'for' => ['required', 'string', 'max:64'],
+            'interval' => ['nullable', 'in:monthly,yearly'],
+            'cycles' => ['nullable', 'integer', 'min:1', 'max:12'],
+            'amount' => ['nullable', 'numeric', 'min:0', 'max:99999999'],
+            'method' => ['required', 'in:' . implode(',', Settlement::HAND_METHODS)],
+            'reference' => ['nullable', 'string', 'max:120'],
+            'reason' => ['nullable', 'string', 'max:500'],
+            'paid_at' => ['nullable', 'date', 'before_or_equal:today'],
+            // REQ-15 — a counter-bargain. One-off on this row, never recurring.
+            'discount_reason' => ['nullable', 'string', 'max:500'],
+            // D-4 — more than the bill is confirmed, never silent.
+            'confirm_over' => ['nullable', 'boolean'],
+        ];
+    }
+
+    /** Row 11 — reverse a payment. The row stays; the money stops counting; what it paid is owed again. */
     public function reversePayment(Request $request, Account $account, SubscriptionInvoice $invoice): RedirectResponse
     {
         // Never let a reversal cross accounts, even with a valid invoice id.
@@ -152,12 +154,52 @@ class AccountActionController extends Controller
         ]);
 
         try {
-            $this->payments->reverse($invoice, $validated['reason']);
+            $this->settlement->reverse($invoice, $validated['reason']);
         } catch (InvalidArgumentException $e) {
             return back()->with('error', $e->getMessage());
         }
 
-        return back()->with('status', 'Payment reversed. The entry stays on the ledger, struck through.');
+        return back()->with('status', $invoice->charge_id
+            ? 'Payment reversed. The entry stays on the ledger, struck through, and what it paid for is owed again. Access is unchanged.'
+            : 'Payment reversed. The entry stays on the ledger, struck through.');
+    }
+
+    /** E2-F — the charge was never owed (raised in error). Reason required; the row stays. */
+    public function voidCharge(Request $request, Account $account, string $charge): RedirectResponse
+    {
+        $validated = $request->validate(['reason' => ['required', 'string', 'max:500']]);
+
+        try {
+            $row = $this->engine->void($this->chargeOf($account, $charge), $validated['reason']);
+        } catch (InvalidArgumentException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return back()->with('status', "{$row->number} voided — it is no longer owed.");
+    }
+
+    /** E2-F — the charge is given away: a ₹0 entry with the reason, and it still buys what it was for. */
+    public function waiveCharge(Request $request, Account $account, string $charge): RedirectResponse
+    {
+        $validated = $request->validate(['reason' => ['required', 'string', 'max:500']]);
+
+        try {
+            $invoice = $this->settlement->waive($this->chargeOf($account, $charge), $validated['reason']);
+        } catch (InvalidArgumentException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return back()->with('status', "Waived — a ₹0 entry ({$invoice->receipt_no}) records it.");
+    }
+
+    /** A charge of THIS account, or 404 — a valid id from another account never resolves (isolation). */
+    private function chargeOf(Account $account, string $id): BillingCharge
+    {
+        $charge = BillingCharge::query()->whereKey($id)->where('account_id', $account->id)->first();
+
+        abort_unless($charge, 404);
+
+        return $charge;
     }
 
     /** Row 10 (per-store) — suspend or reactivate one branch, not the account. */
@@ -227,27 +269,6 @@ class AccountActionController extends Controller
         );
 
         return back()->with('status', 'Notes saved.');
-    }
-
-    /**
-     * REQ-15 — a one-off bargain, recorded rather than absorbed.
-     *
-     * Silent when the amount is at or above list, so an ordinary payment
-     * carries no discount fields at all.
-     *
-     * @return array{list_amount?: float, discount_reason?: string}
-     */
-    private function bargain(float $list, float $charged, array $validated): array
-    {
-        if ($charged >= $list || $list <= 0) {
-            return [];
-        }
-
-        return [
-            'list_amount' => $list,
-            'discount_reason' => trim((string) ($validated['discount_reason'] ?? ''))
-                ?: (trim((string) ($validated['reason'] ?? '')) ?: 'Agreed at the counter'),
-        ];
     }
 
     private function confirmation(string $action): string

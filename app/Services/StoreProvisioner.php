@@ -116,35 +116,20 @@ class StoreProvisioner
             return;
         }
 
-        $invoice = app(PaymentRecorder::class)->record(
-            $subscription,
-            $proration['amount'],
-            'adjustment',
-            [
-                'tenant_id' => $tenant->id,          // the branch that caused it
-                'reason' => "Part period for {$tenant->store_name}",
-                // AUDIT-02 — cover = what was charged for (from the join date when
-                // that falls inside prepaid cover), not just the current period.
-                'period_start' => $proration['charged_from'],
-                'period_end' => $proration['period_end'],
-                'calculation' => [
-                    'kind' => 'proration',
-                    'lines' => $proration['lines'],
-                    'formula' => $proration['formula'],
-                ],
-            ],
-        );
+        // E2.4 / FB-18 — a PENDING charge, not a paid row: nothing is recorded as
+        // received until it is. Owed rises; access is untouched (rule 2).
+        $charge = app(BillingEngine::class)->raiseBranchJoin($subscription, $tenant, $proration, ['via' => 'provision']);
 
         AdminAuditLog::record(
             'subscription.branch_added',
             "{$tenant->store_name} added to {$account->displayName()} — ₹"
-                . number_format($proration['amount'], 2) . ' charged for the part period',
+                . number_format($proration['amount'], 2) . " owed for the part period ({$charge->number})",
             $tenant->id,
             [
                 'account_id' => $account->id,
                 'quantity' => $subscription->quantity,
                 'amount' => $proration['amount'],
-                'receipt_no' => $invoice->receipt_no,
+                'charge' => $charge->number,
                 'formula' => $proration['formula'],
             ],
         );

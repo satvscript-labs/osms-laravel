@@ -245,6 +245,57 @@ class Phase85E2GuardTest extends TestCase
         $this->assertSame([], $this->scan('app/X.php', "<?php \$n = BillingCharge::query()->pending()->sum('amount');"));
     }
 
+    /**
+     * Rule 6 — who may put a row on the ledger. Settlement (every payment, against
+     * a charge); the lifecycle (₹0 comp grants only); the legacy webhook (gateway
+     * money, until E3 routes it through Settlement). Nobody else.
+     */
+    public function test_only_the_engine_calls_the_ledger_recorder(): void
+    {
+        $allowed = [
+            'app/Services/Settlement.php' => null,                              // anything
+            'app/Services/SubscriptionLifecycle.php' => ['recordComp'],         // ₹0 grants only
+            'app/Http/Controllers/RazorpayWebhookController.php' => ['recordGatewayPayment'], // until E3
+        ];
+        $root = base_path('app');
+        $found = [];
+
+        foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator($root)) as $file) {
+            if ($file->getExtension() !== 'php') {
+                continue;
+            }
+
+            $relative = 'app/' . str_replace('\\', '/', substr($file->getPathname(), strlen($root) + 1));
+            // Judge code, not prose: a comment naming the recorder is not a call.
+            $code = implode('', array_map(
+                fn ($t) => is_array($t) ? (in_array($t[0], [T_COMMENT, T_DOC_COMMENT], true) ? '' : $t[1]) : $t,
+                token_get_all(file_get_contents($file->getPathname())),
+            ));
+
+            if ($relative === 'app/Services/PaymentRecorder.php' || ! str_contains($code, 'PaymentRecorder')) {
+                continue;
+            }
+
+            if (! array_key_exists($relative, $allowed)) {
+                $found[] = "{$relative}: uses PaymentRecorder";
+
+                continue;
+            }
+
+            if ($allowed[$relative] === null) {
+                continue;
+            }
+
+            preg_match_all('/(?:payments|PaymentRecorder::class\))\s*->\s*(\w+)\(/', $code, $m);
+
+            foreach (array_diff(array_unique($m[1]), $allowed[$relative]) as $method) {
+                $found[] = "{$relative}: calls PaymentRecorder::{$method}()";
+            }
+        }
+
+        $this->assertSame([], $found, "Only the engine writes the ledger:\n" . implode("\n", $found));
+    }
+
     public function test_nothing_in_app_writes_money_behind_the_engines_back(): void
     {
         $root = base_path('app');

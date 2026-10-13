@@ -260,6 +260,29 @@
 </x-operator-modal>
 @endif
 
+{{-- ── E2 · Per charge: waive (given away, ₹0 entry) or void (never owed) ── --}}
+@foreach (($charges ?? collect())->where('status', 'pending') as $open)
+<x-operator-modal :id="'m-waive-' . $open->id" title="Waive {{ $open->number }}"
+    :action="route('superadmin.accounts.charge.waive', [$account, $open->id])"
+    preview="waive_charge" :account="$account"
+    label="Waive it" dismiss="Never mind" icon="bi-hand-thumbs-up" tone="danger"
+    intro="Give ₹ {{ number_format($open->amount, 2) }} ({{ $open->label() }}) away. Recorded as a ₹0 entry with your reason, and it still buys what it was for.">
+    <input type="hidden" name="charge" value="{{ $open->id }}">
+    <label class="form-label" for="wvc-reason-{{ $open->id }}">Why <span style="color:var(--tone-red);">*</span></label>
+    <input id="wvc-reason-{{ $open->id }}" name="reason" type="text" required maxlength="500" class="form-control">
+</x-operator-modal>
+
+<x-operator-modal :id="'m-void-' . $open->id" title="Void {{ $open->number }}"
+    :action="route('superadmin.accounts.charge.void', [$account, $open->id])"
+    preview="void_charge" :account="$account"
+    label="Void it" dismiss="Never mind" icon="bi-x-circle" tone="danger"
+    intro="This bill was raised in error: it is no longer owed. No entry is made on the ledger; the bill stays listed, struck through, with your reason.">
+    <input type="hidden" name="charge" value="{{ $open->id }}">
+    <label class="form-label" for="vdc-reason-{{ $open->id }}">Why <span style="color:var(--tone-red);">*</span></label>
+    <input id="vdc-reason-{{ $open->id }}" name="reason" type="text" required maxlength="500" class="form-control">
+</x-operator-modal>
+@endforeach
+
 {{-- ── Row 10 · Suspend / reactivate ────────────────────────────── --}}
 @if ($subscription?->override_kind === 'suspension')
 <x-operator-modal id="m-reactivate" title="Reactivate" :action="$act" preview="reactivate" :account="$account"

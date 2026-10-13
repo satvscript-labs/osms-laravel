@@ -185,6 +185,8 @@
         @foreach ([
             'stores' => ['Stores', 'bi-shop'],
             'commercial' => ['Commercial', 'bi-cash-stack'],
+            // E2 — what is owed, before what was paid.
+            'owed' => ['Owed' . ($owed > 0 ? ' · ₹ ' . number_format($owed, 0) : ''), 'bi-hourglass-split'],
             'ledger' => ['Ledger', 'bi-receipt'],
             'access' => ['Access', 'bi-people'],
             'notes' => ['Notes & audit', 'bi-journal-text'],
@@ -425,6 +427,11 @@
                     </div>
                 </div>
             </div>
+        </div>
+
+        {{-- ===== Owed (E2) ===== --}}
+        <div class="tab-pane fade" id="tab-owed" role="tabpanel">
+            @include('superadmin.accounts.partials.owed')
         </div>
 
         {{-- ===== Ledger ===== --}}

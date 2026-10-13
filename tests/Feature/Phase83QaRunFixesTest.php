@@ -277,8 +277,9 @@ class Phase83QaRunFixesTest extends TestCase
 
         $this->store('Booked — Branch 2', $hq->account->fresh());
 
-        $row = SubscriptionInvoice::withoutGlobalScopes()
-            ->where('account_id', $hq->account_id)->whereNotNull('calculation')->firstOrFail();
+        // E2 — the part period is a charge (owed), with the cover it was quoted for.
+        $row = \App\Models\BillingCharge::query()
+            ->where('account_id', $hq->account_id)->where('kind', 'branch_join')->firstOrFail();
 
         $this->assertEquals(499.0, (float) $row->amount);
 
@@ -300,8 +301,9 @@ class Phase83QaRunFixesTest extends TestCase
 
         $this->store('Prepaid Booked — Branch 2', $hq->account->fresh());
 
-        $row = SubscriptionInvoice::withoutGlobalScopes()
-            ->where('account_id', $hq->account_id)->whereNotNull('calculation')->firstOrFail();
+        // E2 — the part period is a charge (owed), with the cover it was quoted for.
+        $row = \App\Models\BillingCharge::query()
+            ->where('account_id', $hq->account_id)->where('kind', 'branch_join')->firstOrFail();
 
         // Charged from today across two prepaid periods — and the row says exactly that.
         $this->assertSame($this->today()->toDateString(), $row->period_start->toDateString());

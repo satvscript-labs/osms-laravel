@@ -146,15 +146,10 @@ class SubscriptionLifecycle
                 $row = self::writing(function () use ($subscription, $action, $input, &$before, &$warnings, &$after) {
                     $row = $this->lockRow($subscription);
                     $before = $after = $this->snapshot($row);
-                    $warnings = $this->warningsFor($row, $action);
-
-                    // E2.3 — the money actions are "raise the next term, then settle
-                    // it"; previewed through exactly that path.
-                    if (in_array($action, Settlement::TERM_ACTIONS, true)) {
-                        app(Settlement::class)->payTerm($row, $action, $input);
-                    } else {
-                        $this->apply($row, $action, $input, audit: false);
-                    }
+                    $warnings = [
+                        ...$this->warningsFor($row, $this->warnsLike($action, $input)),
+                        ...$this->runForPreview($row, $action, $input),
+                    ];
 
                     return $row;
                 });
@@ -191,6 +186,77 @@ class SubscriptionLifecycle
             'changes' => $this->diff($before, $after),
             'ledger_rows_added' => $ledgerAfter - $ledgerBefore,
         ];
+    }
+
+    /**
+     * E2 — what a dry run executes: the money actions through Settlement / the
+     * engine (exactly the path their commit takes), everything else through
+     * apply(). Returns any extra warnings the dry run found.
+     *
+     * @return list<string>
+     */
+    private function runForPreview(Subscription $row, string $action, array $input): array
+    {
+        if (in_array($action, Settlement::TERM_ACTIONS, true)) {
+            app(Settlement::class)->payTerm($row, $action, $input);
+
+            return [];
+        }
+
+        if ($action === 'record_payment') {
+            // D-4 — over the bill: show what WOULD happen, and say so in amber.
+            // The commit itself still refuses until the operator confirms.
+            $warnings = [];
+            $bill = ($input['for'] ?? '') === 'renewal'
+                ? app(BillingEngine::class)->quoteTerm($row, ($input['interval'] ?? null) ?: null, (int) (($input['cycles'] ?? null) ?: 1))['amount']
+                : (float) $this->accountCharge($row, (string) ($input['for'] ?? ''))->amount;
+            $given = $input['amount'] ?? null;
+
+            if ($given !== null && $given !== '' && (float) $given > $bill + 0.005) {
+                $warnings[] = Settlement::overMessage((float) $given, $bill);
+                $input['confirm_over'] = 1;
+            }
+
+            ($input['for'] ?? '') === 'renewal'
+                ? app(Settlement::class)->payTerm($row, 'renew', $input)
+                : app(Settlement::class)->settle($this->accountCharge($row, (string) $input['for']), $input);
+
+            return $warnings;
+        }
+
+        if ($action === 'void_charge') {
+            app(BillingEngine::class)->void($this->accountCharge($row, (string) ($input['charge'] ?? '')), (string) ($input['reason'] ?? ''));
+
+            return [];
+        }
+
+        if ($action === 'waive_charge') {
+            app(Settlement::class)->waive($this->accountCharge($row, (string) ($input['charge'] ?? '')), (string) ($input['reason'] ?? ''));
+
+            return [];
+        }
+
+        $this->apply($row, $action, $input, audit: false);
+
+        return [];
+    }
+
+    /** Which existing warnings apply: paying the next term warns like a renewal. */
+    private function warnsLike(string $action, array $input): string
+    {
+        return $action === 'record_payment' && ($input['for'] ?? '') === 'renewal' ? 'renew' : $action;
+    }
+
+    /** A charge of this subscription's account — never another's (isolation). */
+    private function accountCharge(Subscription $s, string $id): BillingCharge
+    {
+        $charge = $id === '' ? null : BillingCharge::query()->whereKey($id)->where('account_id', $s->account_id)->first();
+
+        if (! $charge) {
+            throw new InvalidArgumentException('Choose what this payment is for — that bill is not on this customer\'s account.');
+        }
+
+        return $charge;
     }
 
     /** Execute for real, audited. */
@@ -317,6 +383,10 @@ class SubscriptionLifecycle
         // A grant is a ₹0 LEDGER ROW, never an absent one — otherwise lifetime
         // value is wrong for every comped customer (playbook §3.2 / BUG-P04).
         $this->payments->recordComp($s, $reason, $base, $s->current_period_end);
+
+        // E2-F — the free months cover the term that was being asked for. A
+        // branch's part period is NOT covered (it ran before the grant starts).
+        app(BillingEngine::class)->voidOpen($s, "Covered by free access: {$reason}", ['first_term', 'renewal']);
     }
 
     // ---- Row 7 · Price change ---------------------------------------
@@ -394,6 +464,9 @@ class SubscriptionLifecycle
         $s->status = 'canceled';
         $s->cancel_at_period_end = false;
         $s->applyOverride('cancellation', null, $reason);
+
+        // E2-E — the relationship ends now: stop chasing what is open, visibly.
+        app(BillingEngine::class)->voidOpen($s, "Cancelled: {$reason}");
     }
 
     // ---- Row 9 · Expiry ----------------------------------------------
@@ -409,6 +482,9 @@ class SubscriptionLifecycle
             ->subDay()->toDateString();
         $s->cancel_at_period_end = false;
         $s->applyOverride('cancellation', null, $reason);
+
+        // E2-E — access ended now: open charges are voided, with the reason.
+        app(BillingEngine::class)->voidOpen($s, "Access ended: {$reason}");
     }
 
     // ---- Row 13 · Interval switch ------------------------------------

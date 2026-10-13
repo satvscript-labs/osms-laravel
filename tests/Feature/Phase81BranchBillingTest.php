@@ -193,15 +193,20 @@ class Phase81BranchBillingTest extends TestCase
         // Billed for two branches now, from this moment.
         $this->assertSame(2, $subscription->quantity);
 
-        $prorata = SubscriptionInvoice::withoutGlobalScopes()
+        // E2 / FB-18 — OWED, not paid: a pending charge, and no ledger row until
+        // money actually arrives.
+        $prorata = \App\Models\BillingCharge::query()
             ->where('account_id', $subscription->account_id)
-            ->where('method', 'adjustment')
+            ->where('kind', 'branch_join')
             ->firstOrFail();
 
+        $this->assertSame('pending', $prorata->status);
         $this->assertGreaterThan(0, (float) $prorata->amount);
         // Tagged to the branch that caused it, so "what did Branch 2 cost?"
         // stays answerable.
         $this->assertSame($branch->id, $prorata->tenant_id);
+        $this->assertSame(0, SubscriptionInvoice::withoutGlobalScopes()->where('account_id', $subscription->account_id)->count());
+        $this->assertEquals((float) $prorata->amount, app(\App\Services\BillingEngine::class)->owed($subscription->account_id));
     }
 
     public function test_the_prorated_charge_stores_its_full_working(): void
@@ -211,11 +216,11 @@ class Phase81BranchBillingTest extends TestCase
 
         $this->tenant('Alpha — Adajan', $subscription->account);
 
-        $prorata = SubscriptionInvoice::withoutGlobalScopes()
-            ->where('method', 'adjustment')->firstOrFail();
+        // E2 — the working lives on the charge (and on the receipt once paid).
+        $prorata = \App\Models\BillingCharge::query()->where('kind', 'branch_join')->firstOrFail();
 
         // The owner's requirement: it must show HOW it was calculated.
-        $this->assertTrue($prorata->hasCalculation());
+        $this->assertNotEmpty($prorata->calculation['lines'] ?? []);
 
         $labels = collect($prorata->calculation['lines'])->pluck('label');
         $this->assertContains('Branch starts', $labels);
@@ -350,6 +355,7 @@ class Phase81BranchBillingTest extends TestCase
 
         $this->withSession(['auth.password_confirmed_at' => time()])
             ->post(route('superadmin.accounts.payment', $subscription->account_id), [
+                'for' => 'renewal',
                 'amount' => 400,
                 'method' => 'cash',
                 'discount_reason' => 'bargained at the counter',
@@ -372,7 +378,7 @@ class Phase81BranchBillingTest extends TestCase
 
         $this->withSession(['auth.password_confirmed_at' => time()])
             ->post(route('superadmin.accounts.payment', $subscription->account_id), [
-                'amount' => 400, 'method' => 'cash', 'discount_reason' => 'one-off',
+                'for' => 'renewal', 'amount' => 400, 'method' => 'cash', 'discount_reason' => 'one-off',
             ]);
 
         // THE distinction. A standing lower rate is a negotiated price; this is
@@ -389,7 +395,7 @@ class Phase81BranchBillingTest extends TestCase
 
         $this->withSession(['auth.password_confirmed_at' => time()])
             ->post(route('superadmin.accounts.payment', $subscription->account_id), [
-                'amount' => 500, 'method' => 'cash',
+                'for' => 'renewal', 'amount' => 500, 'method' => 'cash',
             ]);
 
         $invoice = SubscriptionInvoice::withoutGlobalScopes()->latest('id')->firstOrFail();
@@ -518,8 +524,9 @@ class Phase81BranchBillingTest extends TestCase
         $subscription = $this->payingCustomer();
         $branch = $this->tenant('Alpha — Adajan', $subscription->account);
 
-        $invoice = SubscriptionInvoice::withoutGlobalScopes()
-            ->where('method', 'adjustment')->firstOrFail();
+        // E2 — the receipt exists once the part period is PAID; it carries the working.
+        $charge = \App\Models\BillingCharge::query()->where('kind', 'branch_join')->firstOrFail();
+        $invoice = app(\App\Services\Settlement::class)->settle($charge, ['method' => 'cash']);
 
         $html = view('tenant.billing.invoice-pdf', [
             'invoice' => $invoice,
