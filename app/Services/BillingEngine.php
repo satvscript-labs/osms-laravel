@@ -280,7 +280,7 @@ class BillingEngine
             });
         };
 
-        $row = $subscription ? $this->withLockedSubscription($subscription, fn () => $run()) : DB::transaction($run);
+        $row = $subscription ? $this->withLockedSubscription($subscription, fn () => $run()) : MoneyWrite::transaction($run);
         $charge->setRawAttributes($row->getAttributes(), true);
 
         return $charge;
@@ -354,7 +354,7 @@ class BillingEngine
     /** E7 — the account's subscription row, locked for this transaction. */
     private function withLockedSubscription(Subscription $subscription, \Closure $fn): mixed
     {
-        return DB::transaction(function () use ($subscription, $fn) {
+        return MoneyWrite::transaction(function () use ($subscription, $fn) {
             $row = Subscription::withoutGlobalScopes()->whereKey($subscription->getKey())->lockForUpdate()->firstOrFail();
 
             return $fn($row);

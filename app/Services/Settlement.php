@@ -47,7 +47,7 @@ class Settlement
      */
     public function settle(BillingCharge $charge, array $payment): SubscriptionInvoice
     {
-        return DB::transaction(function () use ($charge, $payment) {
+        return MoneyWrite::transaction(function () use ($charge, $payment) {
             [$sub, $row] = $this->lockForSettle($charge);
 
             $amount = $this->amountFor($row, $payment);
@@ -121,7 +121,7 @@ class Settlement
             throw new InvalidArgumentException('A reason is required to waive — it is a discretionary decision and the audit trail must record why.');
         }
 
-        return DB::transaction(function () use ($charge, $reason, $input) {
+        return MoneyWrite::transaction(function () use ($charge, $reason, $input) {
             [$sub, $row] = $this->lockForSettle($charge);
 
             [$grantStart, $grantEnd] = $this->grant($sub, $row, $input['action'] ?? 'waive', $reason, free: true, input: $input);
@@ -166,7 +166,7 @@ class Settlement
             throw new InvalidArgumentException("A reason is required to {$action} — it is a discretionary decision and the audit trail must record why.");
         }
 
-        return DB::transaction(function () use ($subscription, $action, $input, $reason) {
+        return MoneyWrite::transaction(function () use ($subscription, $action, $input, $reason) {
             // A-1 — two operators (or two tabs) renewing the same customer: the
             // once-per-submission token stops the SAME form twice, not two forms.
             // The form says which renewal it was opened for; if the clock has moved
@@ -206,8 +206,8 @@ class Settlement
      */
     public function reverse(SubscriptionInvoice $invoice, string $reason): SubscriptionInvoice
     {
-        return DB::transaction(function () use ($invoice, $reason) {
-            $sub = Subscription::withoutGlobalScopes()->where('account_id', $invoice->account_id)->lockForUpdate()->first();
+        return MoneyWrite::transaction(function () use ($invoice, $reason) {
+            $sub = $this->lockSubscriptionOf($invoice->account_id);
 
             $reversed = $this->payments->reverse($invoice, $reason);
 
@@ -241,13 +241,25 @@ class Settlement
     // Internals
     // ---------------------------------------------------------------
 
+    /**
+     * A-10 — the account's subscription, locked by its PRIMARY KEY.
+     *
+     * Every engine path locks this row through the primary key (lifecycle, engine).
+     * Locking it through the account_id index instead takes the locks in a
+     * different order inside InnoDB, and two such paths deadlocked each other on
+     * MariaDB (found by the E2 race test). Resolve the id first, then lock by key.
+     */
+    private function lockSubscriptionOf(?string $accountId): ?Subscription
+    {
+        $id = $accountId ? Subscription::withoutGlobalScopes()->where('account_id', $accountId)->value('id') : null;
+
+        return $id ? Subscription::withoutGlobalScopes()->whereKey($id)->lockForUpdate()->first() : null;
+    }
+
     /** @return array{0: Subscription, 1: BillingCharge} both locked, subscription first */
     private function lockForSettle(BillingCharge $charge): array
     {
-        $sub = Subscription::withoutGlobalScopes()
-            ->where('account_id', $charge->account_id)
-            ->lockForUpdate()
-            ->first();
+        $sub = $this->lockSubscriptionOf($charge->account_id);
 
         if (! $sub) {
             throw new InvalidArgumentException('This customer has no subscription.');

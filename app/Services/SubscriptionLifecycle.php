@@ -96,7 +96,7 @@ class SubscriptionLifecycle
      */
     private function locked(Subscription $subscription, Closure $fn): mixed
     {
-        [$row, $result] = DB::transaction(fn () => self::writing(function () use ($subscription, $fn) {
+        [$row, $result] = MoneyWrite::transaction(fn () => self::writing(function () use ($subscription, $fn) {
             $row = $this->lockRow($subscription);
 
             return [$row, $fn($row)];
@@ -666,7 +666,7 @@ class SubscriptionLifecycle
      */
     public function startTrial(Tenant $tenant): ?Subscription
     {
-        return DB::transaction(fn () => self::writing(function () use ($tenant) {
+        return MoneyWrite::transaction(fn () => self::writing(function () use ($tenant) {
             $account = $tenant->account_id
                 ? Account::query()->whereKey($tenant->account_id)->lockForUpdate()->first()
                 : null;

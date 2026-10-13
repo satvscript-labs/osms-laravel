@@ -296,6 +296,40 @@ class Phase85E2GuardTest extends TestCase
         $this->assertSame([], $found, "Only the engine writes the ledger:\n" . implode("\n", $found));
     }
 
+    /**
+     * A-10 — the subscription row is locked through its PRIMARY KEY, everywhere.
+     * Locking it through the account_id index in one path and the key in another
+     * deadlocked two payments on MariaDB (E2 race test). SQLite has no row locks,
+     * so this is held statically.
+     */
+    public function test_the_subscription_row_is_only_ever_locked_by_its_key(): void
+    {
+        $root = base_path('app');
+        $found = [];
+
+        foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator($root)) as $file) {
+            if ($file->getExtension() !== 'php') {
+                continue;
+            }
+
+            $relative = 'app/' . str_replace('\\', '/', substr($file->getPathname(), strlen($root) + 1));
+            $code = implode('', array_map(
+                fn ($t) => is_array($t) ? (in_array($t[0], [T_COMMENT, T_DOC_COMMENT], true) ? '' : $t[1]) : $t,
+                token_get_all(file_get_contents($file->getPathname())),
+            ));
+
+            foreach (explode(';', $code) as $statement) {
+                if (preg_match('/Subscription::|->subscription\(\)/', $statement)
+                    && str_contains($statement, 'lockForUpdate(')
+                    && ! str_contains($statement, 'whereKey(')) {
+                    $found[] = "{$relative}: locks a subscription without whereKey()";
+                }
+            }
+        }
+
+        $this->assertSame([], $found, "Lock the subscription by its key:\n" . implode("\n", $found));
+    }
+
     public function test_nothing_in_app_writes_money_behind_the_engines_back(): void
     {
         $root = base_path('app');
