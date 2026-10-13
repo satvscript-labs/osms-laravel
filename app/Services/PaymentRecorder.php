@@ -83,7 +83,7 @@ class PaymentRecorder
             throw new InvalidArgumentException('A discount must say why — it is a discretionary decision, and in six months the ledger has to explain it.');
         }
 
-        return DB::transaction(function () use ($subscription, $amount, $method, $options, $reason, $discount) {
+        return DB::transaction(fn () => MoneyWrite::during(function () use ($subscription, $amount, $method, $options, $reason, $discount) {
             return SubscriptionInvoice::withoutGlobalScopes()->create([
                 // A part-period charge belongs to the BRANCH that caused it, so
                 // "what did Branch 2 cost us?" stays answerable.
@@ -103,10 +103,14 @@ class PaymentRecorder
                 'reason' => $reason,
                 'period_start' => ($options['period_start'] ?? null)?->toDateString(),
                 'period_end' => ($options['period_end'] ?? null)?->toDateString(),
+                // E2 — what it paid for and what it actually granted.
+                'charge_id' => $options['charge_id'] ?? null,
+                'granted_start' => ($options['granted_start'] ?? null)?->toDateString(),
+                'granted_end' => ($options['granted_end'] ?? null)?->toDateString(),
                 'paid_at' => $options['paid_at'] ?? now(),
                 'receipt_no' => $this->nextReceiptNo(),
             ]);
-        });
+        }));
     }
 
     /**
@@ -155,7 +159,7 @@ class PaymentRecorder
         float $amount,
         array $options = [],
     ): array {
-        return DB::transaction(function () use ($subscription, $gatewayPaymentId, $amount, $options) {
+        return DB::transaction(fn () => MoneyWrite::during(function () use ($subscription, $gatewayPaymentId, $amount, $options) {
             $existing = SubscriptionInvoice::withoutGlobalScopes()
                 ->where('razorpay_payment_id', $gatewayPaymentId)
                 ->first();
@@ -180,7 +184,7 @@ class PaymentRecorder
             ]);
 
             return [$row, true];
-        });
+        }));
     }
 
     /**
@@ -205,7 +209,7 @@ class PaymentRecorder
             throw new InvalidArgumentException('That payment has already been reversed.');
         }
 
-        return DB::transaction(function () use ($invoice, $reason) {
+        return DB::transaction(fn () => MoneyWrite::during(function () use ($invoice, $reason) {
             $invoice->forceFill([
                 'reversed_at' => now(),
                 'reversed_by' => auth()->id(),
@@ -226,7 +230,7 @@ class PaymentRecorder
             );
 
             return $invoice->refresh();
-        });
+        }));
     }
 
     /** A complimentary grant: a ₹0 row, never an absent one (BUG-P04). */

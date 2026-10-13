@@ -77,6 +77,12 @@ class Account extends Model
         return $this->hasMany(SubscriptionInvoice::class)->withoutGlobalScopes();
     }
 
+    /** E2 — what this account has been asked for (owed when pending). Account-owned (E2-H). */
+    public function charges(): HasMany
+    {
+        return $this->hasMany(BillingCharge::class);
+    }
+
     public function owner(): BelongsTo
     {
         return $this->belongsTo(User::class, 'owner_user_id');
