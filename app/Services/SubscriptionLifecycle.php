@@ -230,6 +230,13 @@ class SubscriptionLifecycle
             return [];
         }
 
+        if ($action === 'apply_unapplied') {
+            app(Settlement::class)->applyUnapplied($this->accountUnapplied($row, (string) ($input['unapplied'] ?? '')),
+                $this->accountCharge($row, (string) ($input['charge'] ?? '')), (string) ($input['note'] ?? ''));
+
+            return [];
+        }
+
         if ($action === 'waive_charge') {
             app(Settlement::class)->waive($this->accountCharge($row, (string) ($input['charge'] ?? '')), (string) ($input['reason'] ?? ''));
 
@@ -255,6 +262,18 @@ class SubscriptionLifecycle
             ->whereIn('kind', ['first_term', 'renewal'])->exists();
 
         return $isTerm ? 'renew' : $action;
+    }
+
+    /** Unapplied money already matched to this subscription's account — never another's. */
+    private function accountUnapplied(Subscription $s, string $id): \App\Models\UnappliedPayment
+    {
+        $u = $id === '' ? null : \App\Models\UnappliedPayment::query()->whereKey($id)->where('account_id', $s->account_id)->first();
+
+        if (! $u) {
+            throw new InvalidArgumentException('That payment is not on this customer\'s account.');
+        }
+
+        return $u;
     }
 
     /** A charge of this subscription's account — never another's (isolation). */

@@ -26,6 +26,8 @@
         </p>
     </div>
 
+    @include('superadmin.billing.partials.unapplied')
+
     <div class="row g-3 mb-4 stagger">
         <div class="col-6 col-lg-3">
             <x-metric-card label="Collected this month" value="₹ {{ number_format($totals['this_month'], 0) }}" icon="bi-cash-coin" tone="primary" />

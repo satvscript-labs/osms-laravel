@@ -29,6 +29,25 @@
         </div>
     @endif
 
+    {{-- E3 / FB-04 — money received online that matched no bill. Never silent. --}}
+    @if ($unapplied['count'] > 0)
+        <a href="{{ route('superadmin.billing.index') }}#unapplied" class="card card-lift border-0 shadow-sm rounded-4 mb-4 animate-fade-up text-reset text-decoration-none"
+           style="border-left:3px solid var(--tone-amber) !important;">
+            <div class="card-body p-4 d-flex align-items-start gap-3">
+                <span class="osms-stat-icon osms-stat-icon-amber flex-shrink-0"><i class="bi bi-inbox"></i></span>
+                <div class="min-w-0">
+                    <p class="fw-semibold mb-1">
+                        ₹ {{ number_format($unapplied['total'], 2) }} received online is not on any bill
+                    </p>
+                    <p class="text-muted-foreground text-sm mb-0">
+                        {{ $unapplied['count'] }} {{ Str::plural('payment', $unapplied['count']) }} to resolve — apply each to a bill,
+                        or refund it in Razorpay and record that here. Not counted as collected until then.
+                    </p>
+                </div>
+            </div>
+        </a>
+    @endif
+
     {{-- ---- 1. How is the money ---- --}}
     <p class="section-label mb-2">Money</p>
     <div class="row g-3 mb-4 stagger">

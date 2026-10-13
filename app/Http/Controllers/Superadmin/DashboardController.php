@@ -129,6 +129,11 @@ class DashboardController extends Controller
             // P6 / §8 — the two metrics the one ledger and the account layer
             // made possible. Both state their own limits on the surface.
             'collection' => $metrics->collection(),
+            // E3 — money received online that is on no bill: a person must decide.
+            'unapplied' => [
+                'count' => \App\Models\UnappliedPayment::open()->count(),
+                'total' => (float) \App\Models\UnappliedPayment::open()->sum('amount'),
+            ],
             // E2 — bills raised and not yet paid, by age.
             'owed' => app(\App\Services\BillingEngine::class)->owedSummary(),
             'churn' => $metrics->churn(),

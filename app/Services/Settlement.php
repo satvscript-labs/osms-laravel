@@ -379,6 +379,41 @@ class Settlement
         });
     }
 
+    /**
+     * Money from an order OSMS didn't know has no customer yet: the operator says
+     * whose it is (with why), so it can be applied on that customer's page.
+     */
+    public function assignUnapplied(UnappliedPayment $unapplied, string $accountId, string $note): UnappliedPayment
+    {
+        $note = trim($note);
+
+        if ($note === '') {
+            throw new InvalidArgumentException('Say how you know whose payment this is — the record has to explain it later.');
+        }
+
+        return MoneyWrite::transaction(fn () => MoneyWrite::during(function () use ($unapplied, $accountId, $note) {
+            $u = UnappliedPayment::query()->whereKey($unapplied->getKey())->lockForUpdate()->firstOrFail();
+
+            if (! $u->isOpen()) {
+                throw new InvalidArgumentException('That payment has already been ' . $u->status . '.');
+            }
+
+            if ($u->account_id) {
+                throw new InvalidArgumentException('That payment is already matched to a customer.');
+            }
+
+            $u->forceFill(['account_id' => $accountId, 'resolution_note' => $note])->save();
+
+            AdminAuditLog::record('payment.unapplied_assigned', '₹' . number_format((float) $u->amount, 2)
+                . " received online matched to a customer: {$note}", null,
+                ['account_id' => $accountId, 'gateway_payment_id' => $u->gateway_payment_id]);
+
+            $unapplied->setRawAttributes($u->getAttributes(), true);
+
+            return $u;
+        }));
+    }
+
     /** E3-D — refunded in the Razorpay dashboard; OSMS records that it was. */
     public function markRefunded(UnappliedPayment $unapplied, string $note): UnappliedPayment
     {
