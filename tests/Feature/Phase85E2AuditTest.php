@@ -182,6 +182,26 @@ class Phase85E2AuditTest extends TestCase
         $this->assertTrue(collect($preview['warnings'])->contains(fn ($w) => str_contains($w, 'replaces the suspension')));
     }
 
+    public function test_a11_free_months_never_erase_a_reopened_debt(): void
+    {
+        $hq = $this->paying();
+        $engine = app(BillingEngine::class);
+        $paid = $engine->raiseTerm($this->sub($hq));
+        $row = app(\App\Services\Settlement::class)->settle($paid, ["method" => "cash"]);
+        app(\App\Services\Settlement::class)->reverse($row, "cheque bounced");   // debt for time already granted
+        $quote = $engine->raiseTerm($this->sub($hq));                              // an open quote for the next term
+
+        app(\App\Services\SubscriptionLifecycle::class)->commit($this->sub($hq), "comp", ["months" => 2, "reason" => "goodwill"]);
+
+        $this->assertSame("void", $quote->fresh()->status, "the next term IS covered by the free months");
+        $this->assertSame("pending", $paid->fresh()->status, "the bounced cheque is still owed");
+        $this->assertEquals(499.0, $engine->owed($hq->account_id));
+
+        // An ending still stops chasing everything (E2-E, approved).
+        app(\App\Services\SubscriptionLifecycle::class)->commit($this->sub($hq), "cancel", ["reason" => "left"]);
+        $this->assertSame("void", $paid->fresh()->status);
+    }
+
     public function test_a2_received_on_is_judged_on_the_billing_clock(): void
     {
         $hq = $this->paying();

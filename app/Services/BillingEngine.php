@@ -291,9 +291,15 @@ class BillingEngine
      * kinds), e.g. on an immediate cancellation. Returns how many were voided.
      * Runs inside the caller's transaction and lock (the lifecycle's).
      */
-    public function voidOpen(Subscription $s, string $reason, ?array $kinds = null, array $options = []): int
+    public function voidOpen(Subscription $s, string $reason, ?array $kinds = null, array $options = [], bool $keepReopened = false): int
     {
         $query = BillingCharge::query()->where('account_id', $s->account_id)->pending();
+
+        // A-11 — a REOPENED bill is debt for time already granted (E2-G). Something
+        // that only covers the FUTURE (free months) must not erase it.
+        if ($keepReopened) {
+            $query->whereNull('reopened_at');
+        }
 
         if ($kinds !== null) {
             $query->whereIn('kind', $kinds);

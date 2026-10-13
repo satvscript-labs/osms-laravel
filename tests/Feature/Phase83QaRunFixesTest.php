@@ -574,7 +574,10 @@ class Phase83QaRunFixesTest extends TestCase
 
         $paying = $this->payingAccount('Paying');
         $this->confirmed()->get(route('superadmin.accounts.create', ['account' => $paying->account_id]))
-            ->assertSee('Adding it today charges a part period of');
+            // A-12 (E2) — a bill owed until paid, over the span it rides; never "N of M days".
+            ->assertSee('Adding it today raises a bill of')
+            ->assertSee('It is owed until they pay it')
+            ->assertDontSee('on their ledger and receipt');
     }
 
     public function test_the_newest_entry_of_a_day_reads_first_even_when_entered_by_date_only(): void
