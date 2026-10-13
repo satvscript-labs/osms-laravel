@@ -75,7 +75,8 @@ class AccountActionController extends Controller
             'months' => ['nullable', 'integer', 'min:1', 'max:60'],
             'amount' => ['nullable', 'numeric', 'min:0', 'max:99999999'],
             'price' => ['nullable', 'numeric', 'min:0', 'max:99999999'],
-            'method' => ['nullable', 'in:cash,upi,bank_transfer,cheque,razorpay,adjustment'],
+            // A-6 — the same hand-recorded methods as Record a payment, at this door too.
+            'method' => ['nullable', 'in:' . implode(',', Settlement::HAND_METHODS)],
             'interval' => ['nullable', 'in:monthly,yearly'],
             'reference' => ['nullable', 'string', 'max:120'],
             'at_period_end' => ['nullable', 'boolean'],

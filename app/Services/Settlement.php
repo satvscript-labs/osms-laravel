@@ -53,6 +53,14 @@ class Settlement
             $amount = $this->amountFor($row, $payment);
             $method = (string) ($payment['method'] ?? 'cash');
 
+            // A-6 — money an operator records by hand is cash, UPI, a transfer or a
+            // cheque. "adjustment" would move the clock yet be left out of collected
+            // revenue; "razorpay" would be gateway money nobody's gateway saw. Only
+            // the gateway lane (E3) may record those, and it says so via `source`.
+            if (($payment['source'] ?? 'operator') === 'operator' && ! in_array($method, self::HAND_METHODS, true)) {
+                throw new InvalidArgumentException('Record cash, UPI, a bank transfer or a cheque here. Online payments are recorded by the gateway itself.');
+            }
+
             if ($amount <= 0.0) {
                 throw new InvalidArgumentException(($payment['action'] ?? null) === 'mark_paid'
                     ? 'Marking a payment as received needs an amount. To give them the cycle for free, use Waive instead.'

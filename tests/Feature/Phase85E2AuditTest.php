@@ -114,6 +114,31 @@ class Phase85E2AuditTest extends TestCase
         $this->assertStringContainsString("becomes owed again", $termModal);
     }
 
+    public function test_a6_money_recorded_by_hand_is_only_ever_a_hand_method(): void
+    {
+        $hq = $this->paying();
+        $end = $this->sub($hq)->current_period_end->toDateString();
+
+        // The generic action door (still used for Waive) refuses the other methods…
+        foreach (['adjustment', 'razorpay'] as $method) {
+            $this->withSession(['auth.password_confirmed_at' => now()->timestamp])
+                ->post(route('superadmin.accounts.action', $hq->account_id), [
+                    'action' => 'renew', 'method' => $method, '_once' => (string) Str::uuid(),
+                ])->assertSessionHasErrors('method');
+        }
+
+        // …and so does the engine itself, whichever door is used.
+        try {
+            app(\App\Services\SubscriptionLifecycle::class)->commit($this->sub($hq), 'renew', ['method' => 'adjustment']);
+            $this->fail('an adjustment must not be recorded as a hand payment');
+        } catch (InvalidArgumentException $e) {
+            $this->assertStringContainsString('Record cash, UPI', $e->getMessage());
+        }
+
+        $this->assertSame(0, SubscriptionInvoice::withoutGlobalScopes()->count());
+        $this->assertSame($end, $this->sub($hq)->current_period_end->toDateString(), 'no clock moved');
+    }
+
     public function test_a2_received_on_is_judged_on_the_billing_clock(): void
     {
         $hq = $this->paying();
