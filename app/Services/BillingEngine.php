@@ -326,6 +326,46 @@ class BillingEngine
         return $count;
     }
 
+    // ---------------------------------------------------------------
+    // E3 — the owner opens online checkout for a bill
+    // ---------------------------------------------------------------
+
+    /**
+     * Attach the bill's ONE Razorpay order (created on first use, reused after —
+     * a bill's amount never changes, so its order never goes stale: E3-A) and
+     * stamp the time, which starts the "being paid online" window (E3-B).
+     *
+     * Under the account lock, so two clicks can't create two orders.
+     *
+     * @param  \Closure(BillingCharge): string  $createOrder  the gateway call, given the locked bill
+     */
+    public function openCheckout(BillingCharge $charge, \Closure $createOrder): BillingCharge
+    {
+        $subscription = Subscription::withoutGlobalScopes()->where('account_id', $charge->account_id)->first();
+
+        if (! $subscription) {
+            throw new InvalidArgumentException('We could not find your subscription. Please contact us and we will sort it out.');
+        }
+
+        return $this->withLockedSubscription($subscription, fn () => MoneyWrite::during(function () use ($charge, $createOrder) {
+            $row = BillingCharge::query()->whereKey($charge->getKey())->lockForUpdate()->firstOrFail();
+
+            if (! $row->isPending()) {
+                throw new InvalidArgumentException("{$row->number} is already " . mb_strtolower($row->statusLabel()) . ' — there is nothing to pay.');
+            }
+
+            $fields = ['gateway_checkout_at' => now()];
+
+            if (! $row->gateway_order_id) {
+                $fields['gateway_order_id'] = $createOrder($row);
+            }
+
+            $row->forceFill($fields)->save();
+
+            return $row;
+        }));
+    }
+
     /** What the account owes right now: the sum of its pending charges. */
     public function owed(?string $accountId): float
     {

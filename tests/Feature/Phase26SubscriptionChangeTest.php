@@ -34,9 +34,11 @@ class Phase26SubscriptionChangeTest extends TestCase
 
     public function test_active_subscriber_can_schedule_a_cycle_switch(): void
     {
+        // E3-E — no Razorpay plan to switch: the engine prices the next bill at the
+        // new period. Nothing may be sent to the gateway.
         $this->mock(BillingService::class, function ($m) {
             $m->shouldReceive('isConfigured')->andReturn(true);
-            $m->shouldReceive('changeInterval')->with('sub_ABC', 'basic', 'yearly')->once();
+            $m->shouldNotReceive('cancelSubscription');
         });
 
         $this->actingAs($this->admin)->post(route('tenant.billing.change-interval'), ['interval' => 'yearly'])

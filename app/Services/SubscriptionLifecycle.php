@@ -765,35 +765,6 @@ class SubscriptionLifecycle
         return $changed;
     }
 
-    /**
-     * W7 — the owner opened an online checkout. Rule 2: an unpaid action changes
-     * NOTHING about access. Only the gateway reference and the period they asked
-     * for (as pending) are recorded; status, dates and price move only when the
-     * webhook confirms the money.
-     *
-     * L-3: always the ACCOUNT's one subscription — the old updateOrCreate keyed on
-     * tenant_id minted a second clock for a second branch or after a purge.
-     */
-    public function linkCheckout(Subscription $subscription, string $gatewaySubscriptionId, string $interval, ?string $tier = null): void
-    {
-        $this->locked($subscription, function (Subscription $s) use ($gatewaySubscriptionId, $interval, $tier) {
-            $before = $this->snapshot($s);
-
-            $s->razorpay_subscription_id = $gatewaySubscriptionId;
-            $s->pending_interval = $interval === ($s->interval ?: 'monthly') ? null : $interval;
-
-            if ($tier) {
-                $s->tier = $tier;
-            }
-
-            $s->save();
-
-            $this->auditAs('owner', 'subscription.checkout_started', 'Owner opened an online checkout ('
-                . $interval . ') — nothing changes until the payment is confirmed', $s, $before,
-                ['gateway_subscription_id' => $gatewaySubscriptionId]);
-        });
-    }
-
     /** W8 — the owner asked to switch billing period, from their next renewal (E1.4). */
     public function ownerRequestInterval(Subscription $subscription, string $interval): void
     {
@@ -823,6 +794,9 @@ class SubscriptionLifecycle
 
             $this->auditAs('owner', 'subscription.owner_cancel', 'Owner cancelled at the end of the current period', $s, $before);
         });
+
+        // Rule 5 — a legacy autopay (if any) stops at the cycle end, after the commit.
+        $this->stopGatewayCharging($subscription, immediately: false, why: 'cancelled by the owner');
     }
 
     /**

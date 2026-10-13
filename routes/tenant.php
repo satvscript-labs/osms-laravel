@@ -103,7 +103,9 @@ Route::middleware('role:store_admin,superadmin')->group(function () {
     Route::post('billing/subscribe', [BillingController::class, 'subscribe'])->name('billing.subscribe');
     Route::post('billing/cancel', [BillingController::class, 'cancel'])->name('billing.cancel');
     Route::post('billing/change-interval', [BillingController::class, 'changeInterval'])->name('billing.change-interval');
-    Route::get('billing/success', [BillingController::class, 'success'])->name('billing.success');
+    // E3 — pay a bill online (Razorpay Order), and Razorpay Checkout's callback.
+    Route::post('billing/pay', [BillingController::class, 'pay'])->name('billing.pay');
+    Route::post('billing/paid', [BillingController::class, 'paid'])->name('billing.paid');
     Route::get('billing/invoices/{invoice}/pdf', [BillingController::class, 'invoicePdf'])->name('billing.invoices.pdf');
 });
 

@@ -299,22 +299,24 @@ class Phase84E1EngineTest extends TestCase
         $sub = $this->sub($hq);
         $this->assertSame('past_due', $sub->status, 'rule 2: an unpaid checkout changes nothing');
         $this->assertSame($before, $sub->accessState());
-        $this->assertSame('sub_fake_1', $sub->razorpay_subscription_id);
-        $this->assertSame('yearly', $sub->pending_interval);
+        $this->assertNull($sub->razorpay_subscription_id, 'E3: no Razorpay subscription is created any more');
         $this->assertSame(1, Subscription::withoutGlobalScopes()->where('account_id', $hq->account_id)->count());
-        $this->assertSame('owner', AdminAuditLog::where('action', 'subscription.checkout_started')->firstOrFail()->meta['actor']);
+        $bill = \App\Models\BillingCharge::where('account_id', $hq->account_id)->sole();
+        $this->assertSame('order_fake_1', $bill->gateway_order_id);
+        $this->assertSame('owner', $bill->raised_via);
     }
 
-    public function test_a_checkout_from_a_branch_whose_origin_was_purged_links_to_the_same_clock(): void
+    public function test_a_payment_from_a_branch_whose_origin_was_purged_is_billed_to_the_same_clock(): void
     {
         $hq = $this->store('Origin');
         $this->store('Branch', $hq->account->fresh());
         Subscription::withoutGlobalScopes()->where('account_id', $hq->account_id)->update(['tenant_id' => null]);
 
-        $this->lifecycle()->linkCheckout($this->sub($hq), 'sub_branch', 'monthly');
+        $bill = app(\App\Services\BillingEngine::class)->raiseTerm($this->sub($hq), ['via' => 'owner']);
 
         $this->assertSame(1, Subscription::withoutGlobalScopes()->where('account_id', $hq->account_id)->count());
-        $this->assertSame('sub_branch', $this->sub($hq)->razorpay_subscription_id);
+        $this->assertSame($hq->account_id, $bill->account_id);
+        $this->assertSame($this->sub($hq)->id, $bill->subscription_id);
     }
 
     public function test_the_owners_interval_switch_and_cancel_are_audited(): void
@@ -549,12 +551,10 @@ class FakeGateway extends BillingService
         return true;
     }
 
-    public function createSubscription(Tenant $tenant, string $tier, string $interval = 'monthly'): array
+    public function createOrder(\App\Models\BillingCharge $charge): string
     {
-        return ['subscription_id' => 'sub_fake_' . (++$this->created)];
+        return 'order_fake_' . (++$this->created);
     }
-
-    public function changeInterval(string $razorpaySubscriptionId, string $tier, string $interval): void {}
 
     public function cancelSubscription(string $razorpaySubscriptionId, bool $atCycleEnd = true): void
     {

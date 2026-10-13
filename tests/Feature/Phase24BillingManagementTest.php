@@ -135,19 +135,21 @@ class Phase24BillingManagementTest extends TestCase
 
     public function test_trialing_store_can_subscribe(): void
     {
-        $this->mock(BillingService::class, function ($m) {
-            $m->shouldReceive('isConfigured')->andReturn(true);
-            $m->shouldReceive('createSubscription')
-                ->with(\Mockery::any(), 'basic', 'yearly')
-                ->once()
-                ->andReturn(['subscription_id' => 'sub_NEW', 'short_url' => null]);
-            $m->shouldReceive('publicKey')->andReturn('rzp_test_x');
-        });
+        // E3 — the trial converts by paying its first term: an Order for the
+        // engine's price, opened by the account owner. Nothing changes until paid.
+        $rzp = \Tests\Fakes\FakeRazorpay::install($this->app);
+        $this->seed(\Database\Seeders\PlanSeeder::class);
+        $owner = User::factory()->create(['tenant_id' => null, 'role' => 'store_admin']);
+        $store = app(\App\Services\StoreProvisioner::class)->provision($owner, ['store_name' => 'Converting Optical']);
+        $sub = Subscription::withoutGlobalScopes()->where('account_id', $store->account_id)->first();
 
-        $this->actingAs($this->user)->post(route('tenant.billing.subscribe'), ['tier' => 'basic', 'interval' => 'yearly'])
-            ->assertOk()->assertSee('Pay with Razorpay');
+        $this->actingAs($owner->fresh())->post(route('tenant.billing.subscribe'), ['interval' => 'yearly'])
+            ->assertOk()->assertSee('Pay ₹ 4,999.00');
 
-        $this->assertSame('sub_NEW', $this->subscription->fresh()->razorpay_subscription_id);
+        $bill = \App\Models\BillingCharge::where('account_id', $store->account_id)->sole();
+        $this->assertSame('first_term', $bill->kind);
+        $this->assertSame(499900, $rzp->ordersCreated[0]['amount'], 'the order is for the bill, in paise');
+        $this->assertSame('trialing', $sub->fresh()->status, 'rule 2: nothing changes until the money lands');
     }
 
     // ---- invoices --------------------------------------------------------
