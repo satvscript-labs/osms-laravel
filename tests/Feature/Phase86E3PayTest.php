@@ -192,6 +192,7 @@ class Phase86E3PayTest extends TestCase
 
         $this->assertSame('pending', $bill->fresh()->status);
         $this->assertSame(0, SubscriptionInvoice::withoutGlobalScopes()->count());
+        $this->assertSame(0, \App\Models\UnappliedPayment::count(), 'a mismatched pair is refused, not recorded as anyone\x27s money');
     }
 
     public function test_one_owner_cannot_confirm_another_accounts_order(): void

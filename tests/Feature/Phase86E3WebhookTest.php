@@ -139,15 +139,70 @@ class Phase86E3WebhookTest extends TestCase
         $this->assertSame(1, SubscriptionInvoice::withoutGlobalScopes()->count());
     }
 
-    public function test_money_for_an_unknown_order_is_kept_and_flagged_with_200(): void
+    public function test_money_for_an_unknown_osms_order_is_kept_and_flagged_with_200(): void
     {
-        $this->send('order.paid', $this->paymentEntity('order_GHOST', 'pay_GHOST', 120000))->assertOk();
+        // An OSMS order (it carries our marker) whose bill we can't find.
+        $payload = $this->paymentEntity('order_GHOST', 'pay_GHOST', 120000)
+            + ['order' => ['entity' => ['id' => 'order_GHOST', 'receipt' => 'CHG-2026-0099', 'notes' => ['charge_id' => 'gone']]]];
+
+        $this->send('order.paid', $payload)->assertOk();
 
         $kept = UnappliedPayment::sole();
         $this->assertEquals(1200.0, (float) $kept->amount);
         $this->assertSame('order.paid', $kept->gateway_event);
         $this->assertSame(1, AdminAuditLog::where('action', 'payment.unapplied')->count());
         $this->assertSame(0, SubscriptionInvoice::withoutGlobalScopes()->count());
+    }
+
+    public function test_another_products_payment_on_a_shared_razorpay_account_is_not_osms_money(): void
+    {
+        // A-15 — no OSMS bill, no OSMS marker: somebody else's sale on the same account.
+        $payload = $this->paymentEntity('order_HOSTEL', 'pay_HOSTEL', 250000)
+            + ['order' => ['entity' => ['id' => 'order_HOSTEL', 'receipt' => 'HE-RENT-77', 'notes' => ['room' => '12']]]];
+
+        $this->send('order.paid', $payload)->assertOk();
+        $this->send('subscription.charged', [
+            'subscription' => ['entity' => ['id' => 'sub_NOT_OURS']],
+            'payment' => ['entity' => ['id' => 'pay_NOT_OURS', 'amount' => 99900, 'currency' => 'INR', 'created_at' => now()->timestamp]],
+        ])->assertOk();
+
+        $this->assertSame(0, UnappliedPayment::count(), 'not recorded as OSMS money');
+        $this->assertSame(2, AdminAuditLog::where('action', 'payment.not_osms')->count(), 'but on the record');
+    }
+
+    public function test_a_payment_the_engine_refuses_is_kept_never_retried_into_oblivion(): void
+    {
+        // A-13 — a business refusal inside settle() must not become a 500 retry loop.
+        $hq = $this->paying();
+        $bill = $this->bill($hq);
+        $this->app->instance(\App\Services\SubscriptionLifecycle::class, new class(app(\App\Services\PriceResolver::class), app(\App\Services\PaymentRecorder::class)) extends \App\Services\SubscriptionLifecycle {
+            public function grantTerm(\App\Models\Subscription $s, BillingCharge $c, string $a, string $r, bool $f, array $i = []): array
+            {
+                throw new \InvalidArgumentException('simulated business refusal');
+            }
+        });
+        $this->app->forgetInstance(Settlement::class);
+
+        $this->send('order.paid', $this->paymentEntity('order_HOOK'))->assertOk();
+
+        $kept = UnappliedPayment::sole();
+        $this->assertStringContainsString('could not be applied: simulated business refusal', $kept->reason);
+        $this->assertSame('pending', $bill->fresh()->status);
+        $this->assertSame(0, SubscriptionInvoice::withoutGlobalScopes()->count());
+    }
+
+    public function test_a_payment_in_another_currency_is_never_compared_as_rupees(): void
+    {
+        // A-14
+        $hq = $this->paying();
+        $bill = $this->bill($hq);
+        $payload = $this->paymentEntity('order_HOOK');
+        $payload['payment']['entity']['currency'] = 'USD';
+
+        $this->send('order.paid', $payload)->assertOk();
+
+        $this->assertStringContainsString('Paid in USD', UnappliedPayment::sole()->reason);
+        $this->assertSame('pending', $bill->fresh()->status);
     }
 
     public function test_a_failed_payment_is_on_the_record_and_changes_nothing(): void

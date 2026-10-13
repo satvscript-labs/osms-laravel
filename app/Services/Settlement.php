@@ -260,22 +260,35 @@ class Settlement
                     . ' — refund it, or apply it to another bill.', $event);
             }
 
+            // A-14 — bills are in rupees; anything else is not compared as if it were.
+            if (strtoupper((string) ($payment['currency'] ?? 'INR')) !== 'INR') {
+                return $this->unappliedOutcome($payment, $row, $row->account_id,
+                    "Paid in {$payment['currency']} for {$row->number} — bills are in rupees. Refund it, or apply it by hand.", $event);
+            }
+
             if (abs($rupees - (float) $row->amount) > 0.005) {
                 return $this->unappliedOutcome($payment, $row, $row->account_id,
                     'Paid ₹ ' . number_format($rupees, 2) . " online for {$row->number}, but the bill is ₹ "
                     . number_format((float) $row->amount, 2) . ' — the amounts differ.', $event);
             }
 
-            $ledger = $this->settle($row, [
-                'amount' => $rupees,
-                'method' => 'razorpay',
-                'source' => 'gateway',
-                'actor' => 'gateway',
-                'reference' => $row->gateway_order_id,
-                'gateway_payment_id' => $paymentId,
-                'paid_at' => isset($payment['created_at']) ? Carbon::createFromTimestamp((int) $payment['created_at']) : null,
-                'reason' => 'Paid online (' . $via . ')',
-            ]);
+            try {
+                $ledger = $this->settle($row, [
+                    'amount' => $rupees,
+                    'method' => 'razorpay',
+                    'source' => 'gateway',
+                    'actor' => 'gateway',
+                    'reference' => $row->gateway_order_id,
+                    'gateway_payment_id' => $paymentId,
+                    'paid_at' => isset($payment['created_at']) ? Carbon::createFromTimestamp((int) $payment['created_at']) : null,
+                    'reason' => 'Paid online (' . $via . ')',
+                ]);
+            } catch (InvalidArgumentException $e) {
+                // A-13 — a business refusal must never become a webhook retry loop
+                // that ends with the money recorded nowhere. Keep it, say why.
+                return $this->unappliedOutcome($payment, $row, $row->account_id,
+                    "Paid online for {$row->number}, but it could not be applied: " . $e->getMessage(), $event);
+            }
 
             return ['outcome' => 'settled', 'row' => $ledger, 'unapplied' => null];
         });

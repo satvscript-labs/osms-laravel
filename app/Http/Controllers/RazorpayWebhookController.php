@@ -70,6 +70,15 @@ class RazorpayWebhookController extends Controller
     {
         $payment = $this->payment($request);
 
+        // A-15 — a Razorpay account sends EVERY payment here, including other
+        // products' if the account is shared. Only OSMS's money is ours to record.
+        if ($payment !== null && in_array($event, ['order.paid', 'payment.captured', 'payment.failed', 'subscription.charged'], true)
+            && ! $this->isOsms($event, $payment, $request)) {
+            $this->auditNotOurs($event, $payment);
+
+            return;
+        }
+
         match (true) {
             in_array($event, ['order.paid', 'payment.captured'], true) && $payment !== null
                 => $settlement->settleGateway($payment, 'webhook', $event),
@@ -82,6 +91,42 @@ class RazorpayWebhookController extends Controller
 
             default => null,   // payment.authorized, refund.*, anything else: nothing to change
         };
+    }
+
+    /**
+     * A-15 — is this OSMS's payment? Yes when its order belongs to one of our bills,
+     * or it carries the marker every OSMS order is created with (notes.charge_id,
+     * receipt "CHG-…"), or — for the retired autopay lane — its subscription is one
+     * of ours. Otherwise it belongs to something else on the same Razorpay account.
+     */
+    private function isOsms(string $event, array $payment, Request $request): bool
+    {
+        if ($event === 'subscription.charged') {
+            $gatewaySub = (string) $request->input('payload.subscription.entity.id', '');
+
+            return $gatewaySub !== '' && Subscription::withoutGlobalScopes()->where('razorpay_subscription_id', $gatewaySub)->exists();
+        }
+
+        if ($payment['order_id'] && BillingCharge::query()->where('gateway_order_id', $payment['order_id'])->exists()) {
+            return true;
+        }
+
+        $orderNotes = (array) $request->input('payload.order.entity.notes', []);
+        $paymentNotes = (array) $request->input('payload.payment.entity.notes', []);
+        $receipt = (string) $request->input('payload.order.entity.receipt', '');
+
+        return ! empty($orderNotes['charge_id']) || ! empty($paymentNotes['charge_id']) || str_starts_with($receipt, 'CHG-');
+    }
+
+    /** A-15 — somebody else's payment on a shared Razorpay account: on the record, never as OSMS money. */
+    private function auditNotOurs(string $event, array $payment): void
+    {
+        AdminAuditLog::record('payment.not_osms', "Razorpay sent {$event} for a payment that is not an OSMS bill ("
+            . $payment['id'] . ') — ignored.', null, [
+                'gateway_payment_id' => $payment['id'],
+                'gateway_order_id' => $payment['order_id'],
+                'actor' => 'gateway',
+            ]);
     }
 
     /** The payment entity, shaped as Settlement expects it (amount in paise). */
