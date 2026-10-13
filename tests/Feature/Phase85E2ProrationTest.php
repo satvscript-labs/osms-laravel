@@ -107,6 +107,17 @@ class Phase85E2ProrationTest extends TestCase
         $this->assertSame('₹ 499.00 × 18 ÷ 31 + ₹ 499.00 × 7 ÷ 30 = ₹ 406.17', $q['formula']);
     }
 
+    public function test_one_whole_cycle_is_counted_not_written_as_x_equals_x(): void
+    {
+        // Joined before the paid cover starts (QA-04): exactly one whole year is charged.
+        $q = app(Proration::class)->forNewBranch($this->covered('yearly', '2026-11-01', '2027-11-01'), $this->d('2026-10-13'));
+
+        $this->assertEquals(4999.0, $q['amount']);
+        $this->assertSame('1 × ₹ 4,999.00 = ₹ 4,999.00', $q['formula'], 'found in the E2 browser pass');
+        $this->assertSame('01 Nov 2026 (their paid cover starts then)', $this->label($q, 'Charged from'));
+        $this->assertSame('₹ 4,999.00', $this->label($q, 'Due now'), 'a whole year is not a "part period"');
+    }
+
     public function test_the_branch_charge_carries_the_multi_cycle_working(): void
     {
         $sub = $this->covered('monthly', now()->subDays(5)->toDateString(), now()->addMonths(2)->addDays(25)->toDateString());

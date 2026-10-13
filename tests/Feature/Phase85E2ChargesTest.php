@@ -221,7 +221,7 @@ class Phase85E2ChargesTest extends TestCase
         $this->assertEquals($proration['amount'], (float) $charge->amount);
         $this->assertNotEmpty($charge->calculation['lines']);
         $this->assertSame('branch_join:' . $branch->id, $charge->open_key);
-        $this->assertSame('Part period · Branch 2', $charge->label());
+        $this->assertSame('New branch · Branch 2', $charge->label());
 
         $again = $this->engine()->raiseBranchJoin($sub, $branch, $proration);
         $this->assertSame($charge->id, $again->id, 'one charge per branch join');

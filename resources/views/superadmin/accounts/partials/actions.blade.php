@@ -321,7 +321,16 @@
              change their access" is true but easy to skim past; naming the day
              they keep access until makes the consequence concrete, and points
              at the lever that would actually cut it. --}}
-        @if ($subscription
+        {{-- A-5 (E2) — a payment for a branch's part period bought no time, so it
+             never "covers their access"; say what it did pay for instead. --}}
+        @php($paidBill = $row->charge)
+        @if ($paidBill?->kind === 'branch_join')
+            <p class="text-muted-foreground text-xs mt-3 mb-0">
+                <i class="bi bi-info-circle me-1"></i>
+                This paid <strong>{{ $paidBill->number }}</strong> ({{ $paidBill->label() }}). Reversing it makes that bill
+                owed again. Their access does not change.
+            </p>
+        @elseif ($subscription
             && $row->period_end
             && $subscription->current_period_end
             && $row->period_end->gte(now()->startOfDay()))
@@ -333,6 +342,9 @@
                     Reversing it takes the money off the books but
                     <strong>leaves that access in place</strong> — use
                     <strong>Suspend</strong> or <strong>End access now</strong> if that is what you mean.
+                    @if ($paidBill)
+                        What it paid for, <strong>{{ $paidBill->number }}</strong>, becomes owed again.
+                    @endif
                 </p>
             </div>
         @else

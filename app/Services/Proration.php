@@ -321,7 +321,7 @@ class Proration
         }
 
         $lines[] = [
-            'label' => count($segments) > 1 ? 'Due now' : 'Part period due now',
+            'label' => count($segments) === 1 && ! $segments[0]['whole'] ? 'Part period due now' : 'Due now',
             'value' => '₹ ' . number_format($amount, 2),
         ];
 
@@ -346,7 +346,8 @@ class Proration
         }
 
         if ($wholeCount > 0) {
-            $terms[] = ($wholeCount > 1 ? "{$wholeCount} × " : '') . $rate;
+            // Always counted, even one: "₹ 4,999.00 = ₹ 4,999.00" reads like a typo.
+            $terms[] = "{$wholeCount} × {$rate}";
         }
 
         return implode(' + ', $terms) . ' = ₹ ' . number_format($amount, 2);

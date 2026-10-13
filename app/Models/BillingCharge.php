@@ -112,7 +112,8 @@ class BillingCharge extends Model
     public function label(): string
     {
         return match ($this->kind) {
-            'branch_join' => 'Part period' . ($this->tenant?->store_name ? ' · ' . $this->tenant->store_name : ''),
+            // It may span whole cycles (FB-13), so not "part period".
+            'branch_join' => 'New branch' . ($this->tenant?->store_name ? ' · ' . $this->tenant->store_name : ''),
             'first_term' => 'First ' . $this->periodWords(),
             'renewal' => 'Renewal · ' . $this->periodWords(),
             default => ucfirst((string) $this->kind),

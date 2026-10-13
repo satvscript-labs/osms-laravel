@@ -92,6 +92,28 @@ class Phase85E2AuditTest extends TestCase
         $this->assertSame(2, SubscriptionInvoice::withoutGlobalScopes()->count());
     }
 
+    public function test_a5_reversing_a_branch_payment_never_claims_it_covers_access(): void
+    {
+        $hq = $this->paying();
+        $branch = app(StoreProvisioner::class)->provision(
+            User::factory()->create(["tenant_id" => null, "role" => "store_admin"]), ["store_name" => "Audit — Branch 2"], $hq->account->fresh());
+        $bill = \App\Models\BillingCharge::where("tenant_id", $branch->id)->sole();
+        $branchRow = app(\App\Services\Settlement::class)->settle($bill, ["method" => "cash"]);
+        $termRow = app(\App\Services\Settlement::class)->payTerm($this->sub($hq), "renew", ["method" => "cash"]);
+
+        $html = $this->withSession(["auth.password_confirmed_at" => now()->timestamp])
+            ->get(route("superadmin.accounts.show", $hq->account_id))->assertOk()->getContent();
+
+        $branchModal = Str::betweenFirst($html, "id=\"m-rev-{$branchRow->id}\"", "</form>");
+        $this->assertStringContainsString("Reversing it makes that bill", $branchModal);
+        $this->assertStringContainsString("Their access does not change", $branchModal);
+        $this->assertStringNotContainsString("currently covers their access", $branchModal);
+
+        $termModal = Str::betweenFirst($html, "id=\"m-rev-{$termRow->id}\"", "</form>");
+        $this->assertStringContainsString("currently covers their access", $termModal);
+        $this->assertStringContainsString("becomes owed again", $termModal);
+    }
+
     public function test_a2_received_on_is_judged_on_the_billing_clock(): void
     {
         $hq = $this->paying();

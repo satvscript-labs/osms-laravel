@@ -72,7 +72,7 @@ class AccountController extends Controller
 
         $ledger = SubscriptionInvoice::withoutGlobalScopes()
             ->where('account_id', $account->id)
-            ->with('tenant:id,store_name')
+            ->with(['tenant:id,store_name', 'charge.tenant:id,store_name'])
             ->newestFirst()
             ->limit(50)
             ->get();
