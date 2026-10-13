@@ -139,6 +139,49 @@ class Phase85E2AuditTest extends TestCase
         $this->assertSame($end, $this->sub($hq)->current_period_end->toDateString(), 'no clock moved');
     }
 
+    public function test_a7_only_one_next_term_is_ever_owed_but_a_reopened_debt_stays(): void
+    {
+        $hq = $this->paying();
+        $engine = app(BillingEngine::class);
+
+        // A reopened term bill: real debt for time already granted.
+        $paid = $engine->raiseTerm($this->sub($hq));
+        $row = app(\App\Services\Settlement::class)->settle($paid, ['method' => 'cash']);
+        app(\App\Services\Settlement::class)->reverse($row, 'bounced');
+
+        // An open quote for the next term; then the clock moves (an extension).
+        $first = $engine->raiseTerm($this->sub($hq));
+        app(\App\Services\SubscriptionLifecycle::class)->commit($this->sub($hq), 'extend', ['days' => 10, 'reason' => 'outage']);
+        $second = $engine->raiseTerm($this->sub($hq));
+
+        $this->assertNotSame($first->id, $second->id);
+        $this->assertSame('superseded', $first->fresh()->status, 'the stale quote is replaced, not left beside the new one');
+        $this->assertSame($second->id, $first->fresh()->superseded_by);
+        $this->assertSame('pending', $paid->fresh()->status, 'the reopened debt is NOT erased');
+        $this->assertEquals(499.0 + 499.0, $engine->owed($hq->account_id), 'one next term + the reopened debt');
+    }
+
+    public function test_a8_a_renewal_over_a_scheduled_cancellation_says_it_undoes_it(): void
+    {
+        $hq = $this->paying();
+        app(\App\Services\SubscriptionLifecycle::class)->commit($this->sub($hq), 'cancel', ['reason' => 'closing the shop', 'at_period_end' => true]);
+
+        $preview = app(\App\Services\SubscriptionLifecycle::class)->preview($this->sub($hq), 'record_payment', ['for' => 'renewal', 'method' => 'cash']);
+
+        $this->assertTrue(collect($preview['warnings'])->contains(fn ($w) => str_contains($w, 'undoes that cancellation')));
+    }
+
+    public function test_a9_paying_an_open_term_bill_warns_like_a_renewal(): void
+    {
+        $hq = $this->paying();
+        $bill = app(BillingEngine::class)->raiseTerm($this->sub($hq));
+        app(\App\Services\SubscriptionLifecycle::class)->commit($this->sub($hq), 'suspend', ['reason' => 'abuse']);
+
+        $preview = app(\App\Services\SubscriptionLifecycle::class)->preview($this->sub($hq), 'record_payment', ['for' => $bill->id, 'method' => 'cash']);
+
+        $this->assertTrue(collect($preview['warnings'])->contains(fn ($w) => str_contains($w, 'replaces the suspension')));
+    }
+
     public function test_a2_received_on_is_judged_on_the_billing_clock(): void
     {
         $hq = $this->paying();

@@ -244,7 +244,17 @@ class SubscriptionLifecycle
     /** Which existing warnings apply: paying the next term warns like a renewal. */
     private function warnsLike(string $action, array $input): string
     {
-        return $action === 'record_payment' && ($input['for'] ?? '') === 'renewal' ? 'renew' : $action;
+        if ($action !== 'record_payment') {
+            return $action;
+        }
+
+        $for = (string) ($input['for'] ?? '');
+
+        // A-9 — the next renewal, or an open TERM bill: both buy time, both warn alike.
+        $isTerm = $for === 'renewal' || BillingCharge::query()->whereKey($for)
+            ->whereIn('kind', ['first_term', 'renewal'])->exists();
+
+        return $isTerm ? 'renew' : $action;
     }
 
     /** A charge of this subscription's account — never another's (isolation). */
@@ -974,6 +984,14 @@ class SubscriptionLifecycle
             $out[] = 'This replaces the suspension in force'
                 . ($s->override_reason ? ' (' . $s->override_reason . ')' : '')
                 . ' and restores their access.';
+        }
+
+        // A-8 — they asked to leave at the end of this period; a renewal (or a
+        // free cycle) clears that. Probably intended — but never silently.
+        if (in_array($action, ['renew', 'mark_paid', 'waive', 'comp', 'extend'], true) && $s->cancel_at_period_end) {
+            $out[] = 'They are set to cancel at the end of this period'
+                . ($s->current_period_end ? ' (' . $s->current_period_end->format('d M Y') . ')' : '')
+                . '. This undoes that cancellation and keeps them on.';
         }
 
         if ($action === 'switch_interval' && $s->hasNegotiatedPrice()) {

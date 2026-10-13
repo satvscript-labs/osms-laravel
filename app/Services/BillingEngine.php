@@ -184,6 +184,25 @@ class BillingEngine
                 $open->forceFill(['status' => 'superseded', 'open_key' => null])->save();
             }
 
+            // A-7 — there is only ever ONE next term (a late payer pays from today,
+            // D-7; nobody is billed for a past period). If the clock moved while a
+            // term bill was open (an extension, a comp, a manual date), its key no
+            // longer matches: replace it rather than leave two terms owed.
+            $staleTerms = in_array($fields['kind'], ['first_term', 'renewal'], true)
+                ? BillingCharge::query()->where('account_id', $s->account_id)->pending()
+                    ->whereIn('kind', ['first_term', 'renewal'])
+                    // Never a REOPENED bill: that is debt for time already granted (E2-G),
+                    // not a quote for the next term — replacing it would erase the debt.
+                    ->whereNull('reopened_at')
+                    ->whereNotNull('open_key')->where('open_key', '!=', $fields['open_key'])
+                    ->lockForUpdate()->get()
+                : collect();
+
+            foreach ($staleTerms as $stale) {
+                $this->assertNotInFlight($stale);
+                $stale->forceFill(['status' => 'superseded', 'open_key' => null])->save();
+            }
+
             $charge = BillingCharge::create($fields + [
                 'account_id' => $s->account_id,
                 'subscription_id' => $s->id,
@@ -193,10 +212,10 @@ class BillingEngine
                 'raised_via' => $options['via'] ?? 'operator',
             ]);
 
-            if ($open) {
-                $open->forceFill(['superseded_by' => $charge->id])->save();
-                $this->audit('charge.superseded', "{$open->number} replaced by {$charge->number} (₹"
-                    . number_format((float) $open->amount, 2) . ' → ₹' . number_format((float) $charge->amount, 2) . ')',
+            foreach (array_filter([$open, ...$staleTerms]) as $replaced) {
+                $replaced->forceFill(['superseded_by' => $charge->id])->save();
+                $this->audit('charge.superseded', "{$replaced->number} replaced by {$charge->number} (₹"
+                    . number_format((float) $replaced->amount, 2) . ' → ₹' . number_format((float) $charge->amount, 2) . ')',
                     $charge, $options);
             }
 
