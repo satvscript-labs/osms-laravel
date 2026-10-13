@@ -396,7 +396,8 @@ class SubscriptionLifecycle
 
         // E2-F — the free months cover the term that was being asked for. A
         // branch's part period is NOT covered (it ran before the grant starts).
-        app(BillingEngine::class)->voidOpen($s, "Covered by free access: {$reason}", ['first_term', 'renewal']);
+        // A-11 — but never a reopened bill: that is debt for time they already had.
+        app(BillingEngine::class)->voidOpen($s, "Covered by free access: {$reason}", ['first_term', 'renewal'], keepReopened: true);
     }
 
     // ---- Row 7 · Price change ---------------------------------------

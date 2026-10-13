@@ -30,10 +30,13 @@
                 This branch joins their existing subscription — it does not start a second clock.
                 {{-- UI-03 — said as it will actually happen, for THIS customer. --}}
                 @if ($joinCost && $joinCost['applicable'])
-                    Adding it today charges a part period of
+                    {{-- A-12 (E2) — a BILL, owed until paid (FB-18), for the span it rides
+                         (FB-13): never "75 of 31 days". --}}
+                    Adding it today raises a bill of
                     <strong>₹ {{ number_format($joinCost['amount'], 2) }}</strong>
-                    ({{ $joinCost['days_charged'] }} of {{ $joinCost['days_in_period'] }} days), with the working
-                    on their ledger and receipt; from their next renewal it is part of the full bill.
+                    for {{ $joinCost['charged_from']->format('d M Y') }} → {{ $joinCost['period_end']->format('d M Y') }},
+                    with the working. It is owed until they pay it (record it from their Owed tab); from their
+                    next renewal the branch is part of the full bill.
                 @elseif ($joinCost)
                     No part-period charge today: {{ lcfirst($joinCost['reason']) }}
                 @endif
