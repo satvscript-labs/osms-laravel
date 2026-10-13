@@ -6,9 +6,9 @@ return [
     |--------------------------------------------------------------------------
     | Subscription Plans (tiers)
     |--------------------------------------------------------------------------
-    | Display metadata for each tier. Prices are in INR/month. The actual
-    | Razorpay plan_id used to create the subscription comes from
-    | config('services.razorpay.plans.<tier>').
+    | Display metadata for each tier. Prices here are only the seed for the
+    | Plans table: every price charged comes from App\Services\PriceResolver
+    | (CLAUDE.md rule 3). E3 pays with Razorpay Orders — there are no gateway plans.
     */
 
     'trial_days' => 14,
@@ -30,17 +30,9 @@ return [
     // GST rate (%) used to split subscription invoices for the PDF (India).
     'gst_rate' => env('BILLING_GST_RATE', 18),
 
-    // Number of billing cycles a new subscription runs before it ends. Razorpay
-    // requires a total_count; these are long enough to be effectively ongoing.
-    'cycles' => [
-        'monthly' => 120, // 10 years of monthly charges
-        'yearly' => 10,   // 10 years of annual charges
-    ],
-
     /*
     | Single "Basic" tier at launch, billable monthly or yearly (annual = a
-    | discount vs 12× monthly). Each interval maps to its own Razorpay plan id
-    | in config('services.razorpay.plans.basic.<interval>').
+    | discount vs 12× monthly). Seed values only — see the note above.
     */
     'plans' => [
         'basic' => [
