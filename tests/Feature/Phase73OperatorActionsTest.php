@@ -383,10 +383,11 @@ class Phase73OperatorActionsTest extends TestCase
         $this->assertSame($expected, $this->sub()->current_period_end?->toDateString(), "[{$action}] was clobbered by the webhook.");
         $this->assertSame($expectedStatus, $this->sub()->status);
 
-        // …but the money that genuinely changed hands is still recorded.
+        // …but the money that genuinely changed hands is still kept (E3-E: as
+        // unapplied, for the operator to apply or refund — never dropped).
         $this->assertTrue(
-            SubscriptionInvoice::withoutGlobalScopes()->where('method', 'razorpay')->exists(),
-            'Suppressing entitlement must never drop the payment record.',
+            \App\Models\UnappliedPayment::where('status', 'open')->exists(),
+            'A retired-lane charge must never drop the payment record.',
         );
     }
 

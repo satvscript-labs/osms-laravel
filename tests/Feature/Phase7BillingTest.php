@@ -47,7 +47,11 @@ class Phase7BillingTest extends TestCase
         ])->assertStatus(400);
     }
 
-    public function test_webhook_activates_subscription_with_valid_signature(): void
+    /**
+     * E3-E — a correctly signed event from the retired autopay lane is accepted
+     * (200, so Razorpay stops retrying) but changes nobody's access.
+     */
+    public function test_a_signed_legacy_event_is_accepted_but_activates_nothing(): void
     {
         config(['services.razorpay.webhook_secret' => 'whsec_test']);
 
@@ -69,6 +73,7 @@ class Phase7BillingTest extends TestCase
             $payload
         )->assertOk();
 
-        $this->assertSame('active', $sub->fresh()->status);
+        $this->assertSame('trialing', $sub->fresh()->status);
+        $this->assertSame(1, \App\Models\AdminAuditLog::where('action', 'subscription.gateway_event_ignored')->count());
     }
 }

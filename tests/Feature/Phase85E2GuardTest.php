@@ -255,7 +255,6 @@ class Phase85E2GuardTest extends TestCase
         $allowed = [
             'app/Services/Settlement.php' => null,                              // anything
             'app/Services/SubscriptionLifecycle.php' => ['recordComp'],         // ₹0 grants only
-            'app/Http/Controllers/RazorpayWebhookController.php' => ['recordGatewayPayment'], // until E3
         ];
         $root = base_path('app');
         $found = [];

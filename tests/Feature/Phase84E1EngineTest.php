@@ -261,18 +261,23 @@ class Phase84E1EngineTest extends TestCase
     // E1.3 W2 — gateway updates are locked and audited
     // ------------------------------------------------------------------
 
-    public function test_an_applied_gateway_update_is_audited_and_starts_the_period(): void
+    public function test_an_online_payment_is_audited_as_the_gateway_and_starts_the_period(): void
     {
+        // E3 — the gateway lane is Orders through Settlement (applyGatewayEntitlement retired).
         $hq = $this->paying('Online', daysAhead: 0);
         $oldEnd = $this->sub($hq)->current_period_end->copy();
+        $bill = app(\App\Services\BillingEngine::class)->raiseTerm($this->sub($hq), ['via' => 'owner']);
+        \App\Services\MoneyWrite::during(fn () => $bill->forceFill(['gateway_order_id' => 'order_E1'])->save());
 
-        $this->assertTrue($this->lifecycle()->applyGatewayEntitlement(
-            $this->sub($hq), 'active', $oldEnd->copy()->addMonth(), 'monthly',
-        ));
+        $result = app(\App\Services\Settlement::class)->settleGateway([
+            'id' => 'pay_E1', 'order_id' => 'order_E1', 'amount' => 49900, 'currency' => 'INR',
+            'status' => 'captured', 'created_at' => now()->timestamp,
+        ], 'webhook', 'order.paid');
 
+        $this->assertSame('settled', $result['outcome']);
         $sub = $this->sub($hq);
         $this->assertSame($oldEnd->toDateString(), $sub->current_period_start->toDateString(), 'a renewal starts where the old period ended');
-        $row = AdminAuditLog::where('action', 'subscription.gateway_applied')->firstOrFail();
+        $row = AdminAuditLog::where('action', 'subscription.renew')->firstOrFail();
         $this->assertSame('gateway', $row->meta['actor']);
     }
 

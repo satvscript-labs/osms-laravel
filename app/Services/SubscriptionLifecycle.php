@@ -576,84 +576,6 @@ class SubscriptionLifecycle
     }
 
     // ---------------------------------------------------------------
-    // Gateway lane (P0) — unchanged contract
-    // ---------------------------------------------------------------
-
-    /**
-     * Apply a gateway event's entitlement changes — unless an operator override
-     * is in force, in which case the subscription is left exactly as the human
-     * left it.
-     *
-     * ⚠ ENTITLEMENT ONLY. The caller records the payment in the ledger BEFORE
-     * calling this and must keep doing so: money that actually changed hands is
-     * always recorded, whatever the operator decided about access.
-     *
-     * @return bool true if the gateway's values were applied, false if suppressed.
-     */
-    public function applyGatewayEntitlement(
-        Subscription $subscription,
-        ?string $status,
-        ?Carbon $periodEnd,
-        ?string $interval,
-    ): bool {
-        // E1.2 — locked like every other write: a webhook and an operator action
-        // for the same customer must not interleave (FB-15).
-        return $this->locked($subscription, function (Subscription $s) use ($status, $periodEnd, $interval) {
-            if ($s->hasActiveOverride()) {
-                $this->auditSuppression($s, $status, $periodEnd);
-
-                return false;
-            }
-
-            $before = $this->snapshot($s);
-
-            if ($status) {
-                $s->status = $status;
-
-                if ($status === 'canceled') {
-                    $s->cancel_at_period_end = false;
-                }
-            }
-
-            if ($periodEnd) {
-                $old = $s->current_period_end;
-
-                if (! $old || ! $old->isSameDay($periodEnd)) {
-                    // E1.1 — a renewal starts where the old period ended; anything
-                    // else (first payment, early activation) starts today.
-                    $tz = config('billing.timezone', 'Asia/Kolkata');
-                    $today = Carbon::today($tz);
-                    $s->current_period_start = ($old && $old->lte($today) && $old->lt($periodEnd))
-                        ? $old->toDateString()
-                        : $today->toDateString();
-                }
-
-                $s->current_period_end = $periodEnd;
-            }
-
-            if ($interval) {
-                $s->interval = $interval;
-
-                if ($s->pending_interval === $interval) {
-                    $s->pending_interval = null;
-                }
-            }
-
-            if (! $s->isDirty()) {
-                return true;
-            }
-
-            $s->save();
-
-            // FB-23 / W2 — an APPLIED gateway change used to leave no audit row;
-            // only suppressed ones did.
-            $this->auditAs('gateway', 'subscription.gateway_applied', 'Razorpay update applied', $s, $before);
-
-            return true;
-        });
-    }
-
-    // ---------------------------------------------------------------
     // E1.3 — the writers that used to live outside the engine
     // ---------------------------------------------------------------
 
@@ -1111,29 +1033,5 @@ class SubscriptionLifecycle
             'waive' => "Waived {$who}'s outstanding payment",
             default => "{$action} on {$who}",
         };
-    }
-
-    private function auditSuppression(Subscription $subscription, ?string $status, ?Carbon $periodEnd): void
-    {
-        AdminAuditLog::record(
-            'subscription.webhook_suppressed',
-            "Razorpay update ignored — {$subscription->override_kind} override is in force",
-            $subscription->tenant_id,
-            [
-                'override' => [
-                    'kind' => $subscription->override_kind,
-                    'until' => $subscription->override_until?->toDateString(),
-                    'reason' => $subscription->override_reason,
-                ],
-                'kept' => [
-                    'status' => $subscription->status,
-                    'current_period_end' => $subscription->current_period_end?->toDateString(),
-                ],
-                'ignored' => [
-                    'status' => $status,
-                    'current_period_end' => $periodEnd?->toDateString(),
-                ],
-            ],
-        );
     }
 }

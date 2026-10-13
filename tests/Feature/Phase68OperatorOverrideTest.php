@@ -155,7 +155,7 @@ class Phase68OperatorOverrideTest extends TestCase
 
     // ---- THE MONEY MUST STILL BE RECORDED -------------------------------
 
-    public function test_a_suppressed_webhook_still_records_the_payment(): void
+    public function test_the_money_in_a_legacy_charge_is_always_kept(): void
     {
         $this->asAdmin()->post(route('superadmin.subscription.activate', $this->tenant), [
             'months' => 12, 'interval' => 'yearly', 'reason' => 'audit: legacy path test',
@@ -165,43 +165,35 @@ class Phase68OperatorOverrideTest extends TestCase
             'payload' => ['payment' => ['entity' => ['id' => 'pay_REAL_MONEY', 'amount' => 499000]]],
         ])->assertOk();
 
-        // Entitlement was suppressed, but ₹4,990 genuinely changed hands.
-        $this->assertDatabaseHas('subscription_invoices', [
-            'razorpay_payment_id' => 'pay_REAL_MONEY',
-            'tenant_id' => $this->tenant->id,
-        ]);
-        $this->assertSame(
-            4990.0,
-            (float) SubscriptionInvoice::withoutGlobalScopes()
-                ->where('razorpay_payment_id', 'pay_REAL_MONEY')->value('amount'),
-        );
+        // E3-E — ₹4,990 genuinely changed hands: it is KEPT, as unapplied money the
+        // operator applies or refunds — never silently, never as an access change.
+        $kept = \App\Models\UnappliedPayment::where('gateway_payment_id', 'pay_REAL_MONEY')->sole();
+        $this->assertSame(4990.0, (float) $kept->amount);
+        $this->assertSame('open', $kept->status);
+        $this->assertSame(0, SubscriptionInvoice::withoutGlobalScopes()->where('razorpay_payment_id', 'pay_REAL_MONEY')->count());
     }
 
-    public function test_a_suppressed_webhook_leaves_an_audit_trail(): void
+    public function test_a_legacy_webhook_leaves_an_audit_trail(): void
     {
-        $this->asAdmin()->post(route('superadmin.subscription.activate', $this->tenant), [
-            'months' => 6, 'interval' => 'monthly', 'reason' => 'audit: legacy path test',
-        ])->assertRedirect();
-
+        $this->webhook('subscription.activated')->assertOk();
         $this->webhook('subscription.charged')->assertOk();
 
-        $log = AdminAuditLog::where('action', 'subscription.webhook_suppressed')->latest()->first();
-
-        $this->assertNotNull($log, 'A suppressed webhook must be visible to the operator.');
-        $this->assertSame($this->tenant->id, $log->tenant_id);
-        $this->assertSame('comp', $log->meta['override']['kind']);
+        $ignored = AdminAuditLog::where('action', 'subscription.gateway_event_ignored')->sole();
+        $this->assertStringContainsString('nothing about access changed', $ignored->description);
+        $this->assertSame('Gateway (Razorpay)', $ignored->actorLabel());
+        $this->assertSame(1, AdminAuditLog::where('action', 'payment.unapplied')->count(), 'the charged money is on the record');
     }
 
-    // ---- AUTOMATION STILL WORKS WHEN NOBODY HAS OVERRIDDEN --------------
+    // ---- E3-E: THE RETIRED LANE NEVER GOVERNS ACCESS --------------------
 
-    public function test_the_webhook_still_governs_a_subscription_with_no_override(): void
+    public function test_the_retired_webhook_lane_never_governs_even_with_no_override(): void
     {
-        $expected = now()->addDays(30)->toDateString();
+        $before = [$this->sub()->status, $this->sub()->current_period_end->toDateString()];
 
         $this->webhook('subscription.charged')->assertOk();
+        $this->webhook('subscription.cancelled')->assertOk();
 
-        $this->assertSame('active', $this->sub()->status);
-        $this->assertSame($expected, $this->sub()->current_period_end->toDateString());
+        $this->assertSame($before, [$this->sub()->status, $this->sub()->current_period_end->toDateString()]);
         $this->assertNull($this->sub()->override_kind, 'An untouched subscription must carry no override.');
     }
 
@@ -222,10 +214,8 @@ class Phase68OperatorOverrideTest extends TestCase
 
         $this->webhook('subscription.charged')->assertOk();
 
-        $this->assertSame(
-            'active',
-            $this->sub()->status,
-            'An expired override must hand control back to the automated lane.',
-        );
+        // E3-E — there is no automated lane to hand control back to: the retired
+        // webhook changes nothing, override or not.
+        $this->assertSame('active', $this->sub()->status);
     }
 }
