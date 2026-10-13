@@ -195,11 +195,11 @@ class Phase85E2GuardTest extends TestCase
 
         $found = [];
 
-        if (preg_match('/DB::table\(\s*[\'"](subscription_invoices|billing_charges)[\'"]/', $code)) {
+        if (preg_match('/DB::table\(\s*[\'"](subscription_invoices|billing_charges|unapplied_payments)[\'"]/', $code)) {
             $found[] = "{$relative}: DB::table on a money table";
         }
 
-        if (preg_match('/DB::(update|statement|insert|delete|unprepared)\([^;]*\b(subscription_invoices|billing_charges)\b/is', $code)) {
+        if (preg_match('/DB::(update|statement|insert|delete|unprepared)\([^;]*\b(subscription_invoices|billing_charges|unapplied_payments)\b/is', $code)) {
             $found[] = "{$relative}: raw SQL against a money table";
         }
 
@@ -208,7 +208,7 @@ class Phase85E2GuardTest extends TestCase
         }
 
         foreach (explode(';', $code) as $statement) {
-            if (! preg_match('/SubscriptionInvoice::|BillingCharge::|->invoices\(\)|->charges\(\)|->subscriptionInvoices\(\)|->payments\(\)/', $statement)) {
+            if (! preg_match('/SubscriptionInvoice::|BillingCharge::|UnappliedPayment::|->invoices\(\)|->charges\(\)|->subscriptionInvoices\(\)|->payments\(\)/', $statement)) {
                 continue;
             }
 
