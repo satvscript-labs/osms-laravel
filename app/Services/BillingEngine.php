@@ -233,11 +233,17 @@ class BillingEngine
             && $open->interval === $fields['interval'];
     }
 
-    /** HostelEase M4 — never replace a charge the gateway may be collecting right now (E3). */
+    /**
+     * HostelEase M4 / E3-B — never replace or void a bill the owner may be paying
+     * online right now (checkout opened within the window). Outside the window the
+     * bill is free again; a payment that still arrives later lands as unapplied.
+     */
     private function assertNotInFlight(BillingCharge $charge): void
     {
-        if ($charge->gateway_order_id) {
-            throw new InvalidArgumentException("A payment for {$charge->number} is being processed online. Give it a minute, then try again.");
+        if ($charge->isBeingPaidOnline()) {
+            throw new InvalidArgumentException("{$charge->number} is being paid online right now (checkout opened at "
+                . $charge->gateway_checkout_at->timezone(config('billing.timezone', 'Asia/Kolkata'))->format('H:i')
+                . '). Give it a few minutes, then try again.');
         }
     }
 
@@ -264,7 +270,12 @@ class BillingEngine
                     throw new InvalidArgumentException("{$row->number} is {$row->statusLabel()}, so there is nothing to void.");
                 }
 
-                $this->assertNotInFlight($row);
+                // An operator's own void waits for an online payment in progress; an
+                // ending (cancel now, end access) or a grant does not (`force`) — the
+                // operator's decision wins, and late money is recorded as unapplied.
+                if (! ($options['force'] ?? false)) {
+                    $this->assertNotInFlight($row);
+                }
 
                 $row->forceFill([
                     'status' => 'void',
@@ -308,7 +319,7 @@ class BillingEngine
         $count = 0;
 
         foreach ($query->get() as $charge) {
-            $this->void($charge, $reason, $options);
+            $this->void($charge, $reason, $options + ['force' => true]);
             $count++;
         }
 

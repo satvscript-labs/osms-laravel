@@ -155,10 +155,11 @@ class Phase85E2ChargesTest extends TestCase
     {
         $hq = $this->paying();
         $charge = $this->engine()->raiseTerm($this->sub($hq));
-        \App\Services\MoneyWrite::during(fn () => $charge->forceFill(['gateway_order_id' => 'order_X'])->save());
+        // E3-B — opened checkout moments ago: it may be being paid right now.
+        \App\Services\MoneyWrite::during(fn () => $charge->forceFill(['gateway_order_id' => 'order_X', 'gateway_checkout_at' => now()])->save());
 
         $this->expectException(InvalidArgumentException::class);
-        $this->expectExceptionMessage('being processed online');
+        $this->expectExceptionMessage('being paid online right now');
 
         $this->engine()->raiseTerm($this->sub($hq), ['interval' => 'yearly']);
     }

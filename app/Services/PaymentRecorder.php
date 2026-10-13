@@ -105,6 +105,8 @@ class PaymentRecorder
                 'period_end' => ($options['period_end'] ?? null)?->toDateString(),
                 // E2 — what it paid for and what it actually granted.
                 'charge_id' => $options['charge_id'] ?? null,
+                // E3 — a gateway payment is recorded once: the column is unique.
+                'razorpay_payment_id' => $options['razorpay_payment_id'] ?? null,
                 'granted_start' => ($options['granted_start'] ?? null)?->toDateString(),
                 'granted_end' => ($options['granted_end'] ?? null)?->toDateString(),
                 'paid_at' => $options['paid_at'] ?? now(),

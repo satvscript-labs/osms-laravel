@@ -564,6 +564,8 @@ class SubscriptionLifecycle
                 'account_id' => $s->account_id,
                 'reason' => $reason ?: null,
                 'charge' => $charge->number,
+                // E1.12 — paid online: the audit names the gateway, not "System".
+                'actor' => $input['actor'] ?? null,
                 'input' => collect($input)->except(['password', 'password_confirmation', '_token', '_once'])->all(),
                 'before' => $before,
                 'after' => $this->snapshot($s),
