@@ -335,6 +335,28 @@ class Settlement
     }
 
     /**
+     * The operator puts unapplied money on the customer's NEXT RENEWAL when no open
+     * bill can take it — the usual case for an unknown order or a legacy autopay
+     * charge. The renewal bill is raised and settled in one transaction: if the
+     * amount differs, nothing is raised and the money stays unapplied.
+     */
+    public function applyUnappliedToRenewal(UnappliedPayment $unapplied, Subscription $subscription, string $note): SubscriptionInvoice
+    {
+        if (trim($note) === '') {
+            throw new InvalidArgumentException('Say why this money belongs to this bill — the record has to explain it later.');
+        }
+
+        return MoneyWrite::transaction(function () use ($unapplied, $subscription, $note) {
+            // The money row first, then the subscription — the same order applyUnapplied() takes (A-10).
+            UnappliedPayment::query()->whereKey($unapplied->getKey())->lockForUpdate()->firstOrFail();
+
+            $charge = $this->engine->raiseTerm($subscription, ['via' => 'operator']);
+
+            return $this->applyUnapplied($unapplied, $charge, $note);
+        });
+    }
+
+    /**
      * The operator puts unapplied money on a bill: it settles that bill exactly as
      * if it had arrived for it (once). The amount must equal the bill (E3-C).
      */

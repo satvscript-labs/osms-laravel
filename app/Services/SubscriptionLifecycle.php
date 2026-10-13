@@ -231,8 +231,10 @@ class SubscriptionLifecycle
         }
 
         if ($action === 'apply_unapplied') {
-            app(Settlement::class)->applyUnapplied($this->accountUnapplied($row, (string) ($input['unapplied'] ?? '')),
-                $this->accountCharge($row, (string) ($input['charge'] ?? '')), (string) ($input['note'] ?? ''));
+            $u = $this->accountUnapplied($row, (string) ($input['unapplied'] ?? ''));
+            ($input['charge'] ?? '') === 'renewal'
+                ? app(Settlement::class)->applyUnappliedToRenewal($u, $row, (string) ($input['note'] ?? ''))
+                : app(Settlement::class)->applyUnapplied($u, $this->accountCharge($row, (string) ($input['charge'] ?? '')), (string) ($input['note'] ?? ''));
 
             return [];
         }
@@ -279,10 +281,14 @@ class SubscriptionLifecycle
     /** A charge of this subscription's account — never another's (isolation). */
     private function accountCharge(Subscription $s, string $id): BillingCharge
     {
-        $charge = $id === '' ? null : BillingCharge::query()->whereKey($id)->where('account_id', $s->account_id)->first();
+        if ($id === '') {
+            throw new InvalidArgumentException('Choose the bill this is for.');
+        }
+
+        $charge = BillingCharge::query()->whereKey($id)->where('account_id', $s->account_id)->first();
 
         if (! $charge) {
-            throw new InvalidArgumentException('Choose what this payment is for — that bill is not on this customer\'s account.');
+            throw new InvalidArgumentException('That bill is not on this customer\'s account.');
         }
 
         return $charge;
@@ -977,6 +983,8 @@ class SubscriptionLifecycle
     {
         return [
             'status' => $s->status,
+            // What the preview SHOWS: a suspension is stored as past_due (house rule, QA-06).
+            'display_status' => $s->displayStatus(),
             'access' => $s->accessState(),
             'interval' => $s->interval,
             'pending_interval' => $s->pending_interval,
@@ -1014,7 +1022,11 @@ class SubscriptionLifecycle
         return match ($action) {
             'extend' => "Extended {$who} by {$input['days']} days",
             'comp' => "Granted {$who} {$input['months']} months of free access",
-            'renew' => "Renewed {$who} manually",
+            'renew' => match ($input['source'] ?? null) {
+                'gateway' => "Renewed {$who} — paid online",
+                'unapplied' => "Renewed {$who} from money received online",
+                default => "Renewed {$who} manually",
+            },
             'set_price' => "Set {$who} to a negotiated price of ₹{$input['price']}",
             'clear_price' => "Cleared {$who}'s negotiated price — back to list",
             'suspend' => "Suspended {$who}",

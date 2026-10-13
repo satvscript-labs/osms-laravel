@@ -238,6 +238,20 @@ class Subscription extends Model
         return $this->override_kind === 'suspension' && $this->hasActiveOverride();
     }
 
+    /** The override as a person reads it — never the column value ("manual_renewal"). */
+    public function overrideLabel(): string
+    {
+        return match ($this->override_kind) {
+            // Since E3 an online payment lands here too: a paid renewal, by hand or online.
+            'manual_renewal' => 'Paid renewal',
+            'comp' => 'Complimentary',
+            'extension' => 'Extended',
+            'suspension' => 'Suspended',
+            'cancellation' => 'Cancelled',
+            default => ucfirst(str_replace('_', ' ', (string) $this->override_kind)),
+        };
+    }
+
     /** The state to SHOW and COUNT: `suspended` beats the `past_due` it is stored as. */
     public function displayStatus(): string
     {

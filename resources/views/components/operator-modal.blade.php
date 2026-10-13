@@ -281,7 +281,8 @@ function operatorModal(config) {
                 this.error = data.error || null;
                 this.warnings = data.warnings || [];
                 this.ledger = data.ledger_rows_added || 0;
-                this.rows = Object.entries(data.changes || {}).map(([key, v]) => ({
+                // The raw status column is never shown (QA-06): display_status stands for it.
+                this.rows = Object.entries(data.changes || {}).filter(([key]) => key !== 'status').map(([key, v]) => ({
                     label: this.humanise(key),
                     from: this.format(key, v.from),
                     to: this.format(key, v.to),
@@ -299,7 +300,7 @@ function operatorModal(config) {
 
         humanise(key) {
             return ({
-                status: 'Status',
+                display_status: 'Status',
                 access: 'Access',
                 interval: 'Billing',
                 current_period_end: 'Covered until',
@@ -323,6 +324,18 @@ function operatorModal(config) {
             if (key === 'effective_price' || key === 'negotiated_price' || key === 'owed') {
                 return '₹ ' + Number(v).toLocaleString('en-IN', { maximumFractionDigits: 2 });
             }
+            const named = ({
+                display_status: { trialing: 'On trial', active: 'Active', past_due: 'Payment overdue', suspended: 'Suspended', canceled: 'Cancelled' },
+                access: { active: 'Full access', grace: 'In grace', locked: 'Locked' },
+                override_kind: { manual_renewal: 'Paid renewal', comp: 'Complimentary', extension: 'Extended', suspension: 'Suspended', cancellation: 'Cancelled' },
+                interval: { monthly: 'Monthly', yearly: 'Yearly' },
+                pending_interval: { monthly: 'Monthly', yearly: 'Yearly' },
+                negotiated_interval: { monthly: 'Monthly', yearly: 'Yearly' },
+            })[key];
+            if (named) return named[v] || String(v).replace(/_/g, ' ');
+            // A calendar date reads as one: 2026-11-13 → 13 Nov 2026 (no time zone shift).
+            const d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(v));
+            if (d) return new Date(+d[1], +d[2] - 1, +d[3]).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
             return String(v);
         },
     };

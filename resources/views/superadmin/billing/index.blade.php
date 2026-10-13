@@ -16,6 +16,7 @@
         filterKey: 'method',
         serverTotal: {{ $rows->total() }},
         noun: 'entry',
+        nouns: 'entries',
      })">
 
     <div class="mb-4">

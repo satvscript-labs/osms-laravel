@@ -94,7 +94,14 @@
                     </p>
                 @elseif ($subscription?->current_period_end)
                     <p class="text-muted-foreground mb-0 mt-1" style="font-size:var(--text-sm);">
-                        {{ $subscription->status === 'trialing' ? 'Trial ends' : 'Next billing' }}
+                        {{-- Never "Next billing" on a date already gone: a lapsed owner reads it as nothing being owed. --}}
+                        {{ match (true) {
+                            $subscription->isSuspended() => 'Paid through',
+                            $state === 'locked' => $subscription->status === 'trialing' ? 'Trial ended' : 'Access ended',
+                            $state === 'grace' => 'Payment was due',
+                            $subscription->status === 'trialing' => 'Trial ends',
+                            default => 'Next billing',
+                        } }}
                         {{ $subscription->current_period_end->format('d M Y') }}
                     </p>
                 @endif

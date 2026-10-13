@@ -102,6 +102,7 @@ class Phase86E3UnappliedTest extends TestCase
         $this->assertSame('paid', $bill->fresh()->status);
         $this->assertSame('applied', $stray->fresh()->status);
         $this->assertSame('pay_STRAY', SubscriptionInvoice::withoutGlobalScopes()->sole()->razorpay_payment_id);
+        $this->assertStringEndsWith('from money received online', \App\Models\AdminAuditLog::where('action', 'subscription.renew')->sole()->description);
     }
 
     public function test_applying_is_previewed_and_the_preview_writes_nothing(): void
@@ -139,6 +140,68 @@ class Phase86E3UnappliedTest extends TestCase
 
         $this->assertSame('open', $u->fresh()->status);
         $this->assertSame(0, SubscriptionInvoice::withoutGlobalScopes()->count());
+    }
+
+    public function test_with_no_open_bill_the_money_pays_their_next_renewal(): void
+    {
+        $hq = $this->customer('Renewal');
+        $u = $this->money($hq, 499, 'pay_AUTOPAY');
+        $before = Subscription::withoutGlobalScopes()->where('account_id', $hq->account_id)->firstOrFail()->current_period_end->copy();
+
+        $this->op()->get(route('superadmin.accounts.show', $hq->account_id))->assertOk()
+            ->assertSee('Their next renewal (monthly) — ₹ 499.00');
+
+        // The preview raises nothing for real.
+        $preview = $this->op()->postJson(route('superadmin.accounts.preview', $hq->account_id), [
+            'action' => 'apply_unapplied', 'unapplied' => $u->id, 'charge' => 'renewal', 'note' => 'x',
+        ])->json();
+        $this->assertNull($preview['error']);
+        $this->assertSame(1, $preview['ledger_rows_added']);
+        $this->assertSame(0, BillingCharge::count());
+
+        $this->op()->post(route('superadmin.accounts.unapplied.apply', [$hq->account_id, $u->id]), [
+            'charge' => 'renewal', 'note' => 'old autopay charge for this month', '_once' => (string) Str::uuid(),
+        ])->assertSessionHas('status', fn ($m) => str_contains($m, 'Applied'));
+
+        $bill = BillingCharge::sole();
+        $this->assertSame(['renewal', 'paid'], [$bill->kind, $bill->status]);
+        $this->assertSame('applied', $u->fresh()->status);
+        $this->assertSame($bill->id, $u->fresh()->charge_id);
+        $sub = Subscription::withoutGlobalScopes()->where('account_id', $hq->account_id)->firstOrFail();
+        $this->assertSame('active', $sub->accessState());
+        $this->assertTrue($sub->current_period_end->gt($before), 'a month bought');
+        $this->assertEquals(499.0, (float) SubscriptionInvoice::withoutGlobalScopes()->collected()->sum('amount'), 'collected once applied');
+
+        $this->op()->get(route('superadmin.accounts.show', $hq->account_id))->assertOk()
+            ->assertSee('<i class="bi bi-hand-index-thumb"></i> Paid renewal', false)
+            ->assertDontSee('<i class="bi bi-hand-index-thumb"></i> manual_renewal', false);
+    }
+
+    public function test_a_renewal_of_another_amount_raises_nothing_and_keeps_the_money(): void
+    {
+        $hq = $this->customer('Mismatch');
+        $u = $this->money($hq, 300, 'pay_ODD');
+
+        $this->op()->get(route('superadmin.accounts.show', $hq->account_id))->assertOk()
+            ->assertSee('— ₹ 499.00 (different amount)');
+
+        $this->op()->post(route('superadmin.accounts.unapplied.apply', [$hq->account_id, $u->id]), [
+            'charge' => 'renewal', 'note' => 'x', '_once' => (string) Str::uuid(),
+        ])->assertSessionHas('error', fn ($m) => str_contains($m, 'does not match'));
+
+        $this->assertSame(0, BillingCharge::count(), 'the raised renewal rolled back with the refusal');
+        $this->assertSame('open', $u->fresh()->status);
+        $this->assertSame(0, SubscriptionInvoice::withoutGlobalScopes()->count());
+    }
+
+    public function test_the_preview_asks_for_a_bill_before_one_is_chosen(): void
+    {
+        $hq = $this->customer('Empty');
+        $u = $this->money($hq, 499);
+
+        $this->assertSame('Choose the bill this is for.', $this->op()->postJson(route('superadmin.accounts.preview', $hq->account_id), [
+            'action' => 'apply_unapplied', 'unapplied' => $u->id, 'charge' => '', 'note' => '',
+        ])->json('error'));
     }
 
     public function test_recording_a_refund_needs_a_reference_and_clears_the_alert(): void

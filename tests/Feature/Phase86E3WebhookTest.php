@@ -84,6 +84,7 @@ class Phase86E3WebhookTest extends TestCase
         $row = SubscriptionInvoice::withoutGlobalScopes()->sole();
         $this->assertSame('pay_HOOK', $row->razorpay_payment_id);
         $this->assertSame('Gateway (Razorpay)', AdminAuditLog::where('action', 'payment.recorded')->sole()->actorLabel());
+        $this->assertStringEndsWith('— paid online', AdminAuditLog::where('action', 'subscription.renew')->sole()->description, 'never "manually"');
     }
 
     public function test_a_bad_signature_is_refused_and_changes_nothing(): void

@@ -251,6 +251,13 @@
                 {{ $open->number }} · {{ $open->label() }} — ₹ {{ number_format($open->amount, 2) }}{{ abs((float) $open->amount - (float) $u->amount) > 0.005 ? ' (different amount)' : '' }}
             </option>
         @endforeach
+        {{-- No open bill can take it (an unknown order, legacy autopay): their next renewal can, if the price matches. --}}
+        @if ($subscription)
+            @php($renewal = (float) ($renewPrices[$payInterval] ?? 0))
+            <option value="renewal" @disabled(abs($renewal - (float) $u->amount) > 0.005)>
+                Their next renewal ({{ $payInterval }}) — ₹ {{ number_format($renewal, 2) }}{{ abs($renewal - (float) $u->amount) > 0.005 ? ' (different amount)' : '' }}
+            </option>
+        @endif
     </select>
     <label class="form-label mt-3" for="ap-note-{{ $u->id }}">Why this bill <span style="color:var(--tone-red);">*</span></label>
     <input id="ap-note-{{ $u->id }}" name="note" type="text" required maxlength="500" class="form-control"

@@ -207,8 +207,14 @@ class AccountActionController extends Controller
         $u = \App\Models\UnappliedPayment::query()->whereKey($unapplied)->where('account_id', $account->id)->first();
         abort_unless($u, 404);
 
+        if ($validated['charge'] === 'renewal' && ! $account->subscription) {
+            return back()->with('error', 'This customer has no subscription, so there is no renewal to pay.');
+        }
+
         try {
-            $row = $this->settlement->applyUnapplied($u, $this->chargeOf($account, $validated['charge']), $validated['note']);
+            $row = $validated['charge'] === 'renewal'
+                ? $this->settlement->applyUnappliedToRenewal($u, $account->subscription, $validated['note'])
+                : $this->settlement->applyUnapplied($u, $this->chargeOf($account, $validated['charge']), $validated['note']);
         } catch (InvalidArgumentException $e) {
             return back()->with('error', $e->getMessage());
         }

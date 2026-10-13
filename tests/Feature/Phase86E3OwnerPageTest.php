@@ -121,4 +121,22 @@ class Phase86E3OwnerPageTest extends TestCase
         SubscriptionLifecycle::writing(fn () => $this->sub($hq)->forceFill(['status' => 'past_due', 'current_period_end' => now()->subDays(20)])->save());
         $this->actingAs($owner->fresh())->get(route('tenant.billing.index'))->assertSee('Pay to restore access');
     }
+
+    public function test_a_date_already_gone_is_never_called_the_next_billing(): void
+    {
+        [$hq, $owner] = $this->customer();
+        $this->actingAs($owner)->get(route('tenant.billing.index'))->assertSee('Next billing');
+
+        $set = fn (array $cols) => SubscriptionLifecycle::writing(fn () => $this->sub($hq)->forceFill($cols)->save());
+        $page = fn () => $this->actingAs($owner->fresh())->get(route('tenant.billing.index'))->assertOk();
+
+        $set(['status' => 'past_due', 'current_period_end' => now()->subDays(3)]);
+        $page()->assertSee('Payment was due')->assertDontSee('Next billing');
+
+        $set(['status' => 'canceled', 'current_period_end' => now()->subDays(40)]);
+        $page()->assertSee('Access ended')->assertDontSee('Next billing');
+
+        $set(['status' => 'trialing', 'current_period_end' => now()->subDays(2)]);
+        $page()->assertSee('Trial ended')->assertDontSee('Trial ends');
+    }
 }
