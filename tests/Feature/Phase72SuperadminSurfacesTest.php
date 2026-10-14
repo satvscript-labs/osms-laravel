@@ -285,16 +285,32 @@ class Phase72SuperadminSurfacesTest extends TestCase
 
         $this->actingAs($this->admin);
 
-        DB::enableQueryLog();
-        $this->get(route('superadmin.dashboard'))->assertOk();
-        $queries = count(DB::getQueryLog());
-        DB::disableQueryLog();
+        $count = function (): int {
+            DB::flushQueryLog();
+            DB::enableQueryLog();
+            $this->get(route('superadmin.dashboard'))->assertOk();
+            $n = count(DB::getQueryLog());
+            DB::disableQueryLog();
 
+            return $n;
+        };
+
+        $queries = $count();
+
+        // E4.6 — the worklist added amounts, reminders and the nudge: one query each,
+        // never one per row. What matters is that the count does not grow with customers.
         $this->assertLessThan(
-            25,
+            30,
             $queries,
             "Today ran {$queries} queries for 20 accounts — aggregates must happen in SQL.",
         );
+
+        foreach (range(21, 40) as $i) {
+            $t = $this->makeAccount("Dash Owner {$i}", "Dash Store {$i}");
+            $t->account->subscription->update(['status' => 'active']);
+        }
+
+        $this->assertSame($queries, $count(), 'twice the customers, the same number of queries');
     }
 
     // ---- Plans -----------------------------------------------------------

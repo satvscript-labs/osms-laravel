@@ -23,6 +23,7 @@ class PlatformController extends Controller
     {
         return view('superadmin.platform.index', [
             'supervisedGlobally' => PlatformSetting::supervisedGlobally(),
+            'remindersOn' => PlatformSetting::renewalRemindersOn(),
             // P5 — the ops surface. Everything here is a real measurement, not
             // an inference; see PlatformHealth for why each one is observable.
             'health' => app(PlatformHealth::class)->checks(),
@@ -77,6 +78,49 @@ class PlatformController extends Controller
         return back()->with('status', $validated['enabled']
             ? 'Supervised mode is on. Every customer now pays through you.'
             : 'Supervised mode is off. Customers can pay online again.');
+    }
+
+    /**
+     * E4-D — switch renewal reminder EMAILS to customers on or off. Bills raised
+     * ahead, banners and the operator's Due soon list run either way.
+     */
+    public function renewalReminders(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'enabled' => ['required', 'boolean'],
+            'reason' => ['required', 'string', 'max:500'],
+        ]);
+
+        $before = PlatformSetting::renewalRemindersOn();
+        PlatformSetting::set(PlatformSetting::RENEWAL_REMINDERS, (bool) $validated['enabled']);
+
+        AdminAuditLog::record(
+            'platform.renewal_reminders',
+            $validated['enabled'] ? 'Renewal reminder emails ON' : 'Renewal reminder emails OFF',
+            null,
+            ['reason' => $validated['reason'], 'before' => $before, 'after' => (bool) $validated['enabled']],
+        );
+
+        return back()->with('status', $validated['enabled']
+            ? 'Renewal reminders are on. Customers are emailed from the next morning run.'
+            : 'Renewal reminders are off. No customer will be emailed about renewals.');
+    }
+
+    /**
+     * E4-D — what a customer would receive, before anyone is emailed. Sample values;
+     * renders the real template. Read-only.
+     */
+    public function reminderPreview(Request $request): \App\Mail\RenewalReminderMail
+    {
+        $stage = in_array($request->query('stage'), \App\Models\BillingReminder::STAGES, true) ? $request->query('stage') : 'due_7';
+        $days = ['due_7' => 7, 'due_1' => 1, 'due_0' => 0, 'grace' => -2, 'locked' => -9][$stage];
+        $due = \Illuminate\Support\Carbon::today(config('billing.timezone'))->addDays($days);
+
+        return new \App\Mail\RenewalReminderMail($stage, 'Asha Mehta', 998.00, $due->toDateString(), $days,
+            $due->copy()->addDays((int) config('billing.grace_days', 7))->toDateString(), 'CHG-2026-0042',
+            // What customers would actually get today: no Pay button while supervised mode is on
+            // or no gateway is configured (?by_hand=1 shows that version regardless).
+            $request->boolean('by_hand') || PlatformSetting::supervisedGlobally() || ! app(\App\Services\BillingService::class)->isConfigured());
     }
 
     /** Supervise (or release) one customer, independently of the global switch. */

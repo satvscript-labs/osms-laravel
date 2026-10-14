@@ -309,6 +309,11 @@ class SubscriptionLifecycle
 
         $this->locked($subscription, fn (Subscription $row) => $this->apply($row, $action, $input, audit: true));
 
+        // E4-B — what they will pay next changed: the open renewal bill says so too.
+        if (in_array($action, ['set_price', 'clear_price', 'switch_interval'], true)) {
+            BillingEngine::requoteAfterCommit($subscription->account_id, ['via' => 'operator']);
+        }
+
         // E1.10 / rule 5 — an ending reaches the gateway, AFTER the commit: the
         // operator's decision is never blocked or undone by a gateway hiccup.
         if ($action === 'cancel') {
@@ -495,6 +500,9 @@ class SubscriptionLifecycle
             // period they already paid for. This is the default, humane path.
             $s->cancel_at_period_end = true;
             $s->applyOverride('cancellation', $s->current_period_end, $reason);
+
+            // E4-G — no renewal is coming, so no renewal bill is owed.
+            app(BillingEngine::class)->voidOpen($s, "Cancels at the end of the period: {$reason}", ['first_term', 'renewal'], keepReopened: true);
 
             return;
         }
@@ -734,6 +742,8 @@ class SubscriptionLifecycle
             $s->save();
 
             $this->auditAs('system', 'subscription.trial_expired', 'Trial ended without a payment', $s, $before);
+            // E4-G — a first-term bill they opened and never paid is not owed for ever.
+            app(BillingEngine::class)->voidOpen($s, 'Trial ended without a payment', ['first_term', 'renewal'], ['actor' => 'system'], keepReopened: true);
 
             return true;
         });
@@ -784,6 +794,9 @@ class SubscriptionLifecycle
 
             $this->auditAs('system', 'subscription.churned', 'Unpaid past the grace window and '
                 . $graceToCancelDays . ' days more — treated as churn', $s, $before);
+            // E4-G — the renewal they never paid is no longer chased. Branch and reopened
+            // bills stay: those are for time already used.
+            app(BillingEngine::class)->voidOpen($s, 'Not renewed — treated as churn', ['first_term', 'renewal'], ['actor' => 'system'], keepReopened: true);
 
             return true;
         });
@@ -812,6 +825,8 @@ class SubscriptionLifecycle
                 ? "Owner cancelled the pending switch and stays on {$interval} billing"
                 : "Owner switched to {$interval} billing from their next renewal", $s, $before);
         });
+
+        BillingEngine::requoteAfterCommit($subscription->account_id, ['via' => 'owner']);   // E4-B
     }
 
     /** W8 — the owner cancelled; access continues to the end of what they paid for. */
@@ -823,6 +838,9 @@ class SubscriptionLifecycle
             $s->save();
 
             $this->auditAs('owner', 'subscription.owner_cancel', 'Owner cancelled at the end of the current period', $s, $before);
+
+            // E4-G — no renewal is coming, so no renewal bill is owed.
+            app(BillingEngine::class)->voidOpen($s, 'They cancelled at the end of the period', ['first_term', 'renewal'], ['actor' => 'owner'], keepReopened: true);
         });
 
         // Rule 5 — a legacy autopay (if any) stops at the cycle end, after the commit.

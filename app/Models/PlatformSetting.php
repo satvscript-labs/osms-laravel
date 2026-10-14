@@ -28,6 +28,9 @@ class PlatformSetting extends Model
     public const SUPERVISED_MODE = 'supervised_mode';
     public const SELF_SERVE_ENABLED = 'self_serve_enabled';
 
+    /** E4-D — renewal reminder EMAILS to customers. Off until the operator turns them on. */
+    public const RENEWAL_REMINDERS = 'renewal_reminders';
+
     /**
      * P5 — the scheduler's heartbeat.
      *
@@ -81,5 +84,17 @@ class PlatformSetting extends Model
     public static function supervisedGlobally(): bool
     {
         return (bool) static::get(self::SUPERVISED_MODE, false);
+    }
+
+    /**
+     * E4-D — may the daily run email customers about renewals?
+     *
+     * ⚠ Default false: these go to live customers, so they start only when the
+     * operator has read a sample and switched them on. Bills, banners and the
+     * operator's list do not depend on this.
+     */
+    public static function renewalRemindersOn(): bool
+    {
+        return (bool) static::get(self::RENEWAL_REMINDERS, false);
     }
 }

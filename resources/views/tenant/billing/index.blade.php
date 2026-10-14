@@ -226,11 +226,11 @@
         </div>
     </div>
 
-    {{-- E2 — what they have been asked for and not yet paid, with the working.
-         Read-only: paying it online arrives with the online lane (E3). --}}
+    {{-- E2 — what they have been asked for and not yet paid, with the working; E3 — Pay.
+         E4 — a renewal is billed 7 days ahead, so this may not be due yet: "to pay", not "owed". --}}
     @if (($owed ?? collect())->isNotEmpty())
         <div class="mt-5 animate-fade-up">
-            <p class="section-label mb-2">Owed</p>
+            <p class="section-label mb-2">Bills to pay</p>
             <div class="card border-0 shadow-sm rounded-4">
                 <div class="card-body p-4 d-flex flex-column gap-3">
                     @foreach ($owed as $charge)

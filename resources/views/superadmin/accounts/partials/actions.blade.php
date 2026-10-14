@@ -572,3 +572,17 @@ function paymentField(bills, prices, interval, forId) {
 </script>
 @endpush
 @endonce
+
+{{-- ── E4-I · Billing contact (reminder emails, WhatsApp nudge) ─────── --}}
+<x-operator-modal id="m-contact" title="Billing contact"
+    :action="route('superadmin.accounts.contact', $account)" method="PATCH"
+    label="Save" icon="bi-person-lines-fill"
+    intro="Renewal reminders go to the owner's email and this one. The phone is what the WhatsApp nudge on Today opens.">
+    <label class="form-label" for="ct-email">Billing email</label>
+    <input id="ct-email" name="billing_email" type="email" maxlength="255" class="form-control"
+           value="{{ old('billing_email', $account->billing_email) }}" placeholder="accounts@theirshop.in">
+    <label class="form-label mt-3" for="ct-phone">Phone (WhatsApp)</label>
+    <input id="ct-phone" name="billing_phone" type="tel" maxlength="30" class="form-control"
+           value="{{ old('billing_phone', $account->billing_phone) }}" placeholder="98765 43210">
+    <p class="text-muted-foreground text-xs mt-1 mb-0">Indian numbers need no country code.</p>
+</x-operator-modal>

@@ -30,7 +30,8 @@ class DashboardController extends Controller
 
     public function index(): View
     {
-        $today = now()->startOfDay();
+        // Rule 7 — a billing date is a day in the BILLING timezone (UTC was a day off before 05:30 IST).
+        $today = \Illuminate\Support\Carbon::today(config('billing.timezone', 'Asia/Kolkata'));
         $horizon = $today->copy()->addDays(self::HORIZON_DAYS);
 
         // ---- 1. Money -------------------------------------------------
@@ -83,22 +84,39 @@ class DashboardController extends Controller
         // A bounded worklist of rows the operator can act on, ordered by
         // urgency. Deliberately not a chart.
         $worklist = Subscription::withoutGlobalScopes()
-            ->with(['account:id,name,display_name,billing_email', 'plan'])
+            ->with(['account:id,name,display_name,billing_email,billing_phone,owner_user_id,supervised', 'account.owner:id,name', 'account.stores:id,account_id,store_status,is_billable', 'plan'])
             ->whereNotNull('account_id')
             ->where(function ($q) use ($horizon) {
                 $q->where('status', 'past_due')
                     ->orWhere(function ($w) use ($horizon) {
                         $w->whereIn('status', ['trialing', 'active'])
                             ->whereNotNull('current_period_end')
-                            ->where('current_period_end', '<=', $horizon->toDateString());
+                            ->whereDate('current_period_end', '<=', $horizon->toDateString());
                     });
             })
             ->orderByRaw("CASE status WHEN 'past_due' THEN 1 WHEN 'trialing' THEN 2 ELSE 3 END")
             ->orderBy('current_period_end')
             ->limit(25)
-            ->get()
-            ->map(function (Subscription $s) use ($today) {
-                $end = $s->current_period_end;
+            ->get();
+
+        // E4-I — what each one owes and when they were last reminded: one query each.
+        $ids = $worklist->pluck('account_id');
+        $openBills = \App\Models\BillingCharge::query()->pending()->whereIn('account_id', $ids)
+            ->selectRaw('account_id, SUM(amount) AS owed')->groupBy('account_id')->pluck('owed', 'account_id');
+        $reminded = \App\Models\BillingReminder::query()->whereIn('account_id', $ids)
+            ->orderByDesc('sent_at')->get()->unique('account_id')->keyBy('account_id');
+        $prices = app(\App\Services\PriceResolver::class);
+
+        $worklist = $worklist
+            ->map(function (Subscription $s) use ($today, $openBills, $reminded, $prices) {
+                $end = $s->current_period_end ? \Illuminate\Support\Carbon::parse($s->current_period_end->toDateString(), $today->getTimezone()) : null;
+                $account = $s->account;
+                $owed = isset($openBills[$s->account_id]) ? (float) $openBills[$s->account_id] : null;
+                $managed = $s->override_kind && ! in_array($s->override_kind, ['manual_renewal', 'suspension'], true)
+                    && ($s->override_until === null || ($end && $s->override_until->toDateString() >= $end->toDateString()));
+                $chase = $account && ! $s->isSuspended() && ! $managed && ! $s->cancel_at_period_end && $s->status !== 'trialing';
+                $amount = $owed ?? ($chase ? $prices->renewalPrice($s) : null);
+                $last = $reminded[$s->account_id] ?? null;
 
                 return [
                     'account' => $s->account?->displayName() ?? '—',
@@ -106,15 +124,25 @@ class DashboardController extends Controller
                     'status' => $s->displayStatus(),
                     'access' => $s->accessState(),
                     'ends' => $end?->format('d M Y'),
-                    'days_left' => $end ? (int) $today->diffInDays($end->startOfDay(), false) : null,
+                    'days_left' => $end ? (int) $today->diffInDays($end, false) : null,
                     // QA-06 — a suspension needs a decision, not a payment chase.
                     'why' => match (true) {
                         $s->isSuspended() => 'Suspended by you',
+                        // E4-F — a period you gave: the next step is yours, not a chase.
+                        $managed && $s->override_kind === 'comp' => 'Free period ends — decide',
+                        $managed && $s->override_kind === 'extension' => 'Extension ends — decide',
+                        $managed || (bool) $s->cancel_at_period_end => 'Cancels — no renewal',
                         $s->status === 'past_due' => 'Payment overdue',
                         $s->status === 'trialing' => 'Trial ending',
                         default => 'Renewal due',
                     },
                     'url' => $s->account ? route('superadmin.accounts.show', $s->account_id) : null,
+                    // E4-I — the amount, the last reminder, and the WhatsApp nudge.
+                    'amount' => $chase ? $amount : null,
+                    'billed' => $owed !== null,
+                    'reminded' => $last ? $last->label() . ' ' . $last->sent_at->diffForHumans() : null,
+                    'whatsapp' => $chase ? \App\Support\RenewalNudge::whatsappUrl($account, $amount, $end, $s->status === 'past_due' || ($end && $end->lt($today))) : null,
+                    'no_phone' => $chase && blank($account?->billing_phone),
                 ];
             })
             ->filter(fn ($r) => $r['url'] !== null)

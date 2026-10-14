@@ -73,6 +73,45 @@
         </div>
     </div>
 
+    {{-- ---- E4-D · Renewal reminder emails ---- --}}
+    <div class="card border-0 shadow-sm rounded-4 mb-4">
+        <div class="card-body p-4">
+            <div class="d-flex flex-wrap align-items-start justify-content-between gap-3">
+                <div class="min-w-0">
+                    <p class="section-label mb-2">Renewal reminders</p>
+                    <h2 class="h6 fw-semibold font-display mb-1">
+                        @if ($remindersOn)
+                            <span class="osms-badge osms-badge-green"><span class="osms-badge-dot"></span>On</span>
+                            Customers are emailed before and after their renewal
+                        @else
+                            <span class="osms-badge osms-badge-amber"><span class="osms-badge-dot"></span>Off</span>
+                            No renewal emails go to customers
+                        @endif
+                    </h2>
+                    <p class="text-muted-foreground text-sm mb-0" style="max-width:44rem;">
+                        Seven days before a period ends the renewal bill is raised, and the owner sees it in the app
+                        whatever this says. With this on, the owner is also emailed 7 days before, the day before, on
+                        the day, during grace, and when access pauses — each once.
+                    </p>
+                    <p class="text-sm mt-2 mb-0">
+                        <span class="text-muted-foreground">Read them first:</span>
+                        @foreach (['due_7' => '7 days before', 'due_1' => 'the day before', 'due_0' => 'on the day', 'grace' => 'overdue', 'locked' => 'paused'] as $stage => $label)
+                            <a href="{{ route('superadmin.platform.reminder-preview', ['stage' => $stage]) }}" target="_blank" rel="noopener">{{ $label }}</a>{{ $loop->last ? '' : ' · ' }}
+                        @endforeach
+                        · <a href="{{ route('superadmin.platform.reminder-preview', ['stage' => 'due_7', 'by_hand' => 1]) }}" target="_blank" rel="noopener">billed by hand</a>
+                    </p>
+                </div>
+
+                <button type="button"
+                        class="btn {{ $remindersOn ? 'btn-light' : 'btn-primary' }} flex-shrink-0"
+                        data-bs-toggle="modal" data-bs-target="#m-reminders">
+                    <i class="bi {{ $remindersOn ? 'bi-bell-slash' : 'bi-bell' }} me-1"></i>
+                    {{ $remindersOn ? 'Turn off' : 'Turn on' }}
+                </button>
+            </div>
+        </div>
+    </div>
+
     {{-- ---- Customers supervised individually ---- --}}
     <p class="section-label mb-2">Billed by hand</p>
     <div class="card border-0 shadow-sm rounded-4 overflow-hidden mb-4">
@@ -135,5 +174,20 @@
     <label class="form-label" for="sv-reason">Why <span style="color:var(--tone-red);">*</span></label>
     <input id="sv-reason" name="reason" type="text" required maxlength="500" class="form-control"
            placeholder="e.g. gateway outage — taking payments by hand">
+</x-operator-modal>
+
+<x-operator-modal id="m-reminders"
+    :title="$remindersOn ? 'Turn renewal reminders off' : 'Turn renewal reminders on'"
+    :action="route('superadmin.platform.renewal-reminders')" method="PATCH"
+    :label="$remindersOn ? 'Stop the emails' : 'Start the emails'"
+    dismiss="Never mind"
+    icon="bi-bell"
+    :intro="$remindersOn
+        ? 'No customer will be emailed about renewals. Bills and in-app reminders carry on.'
+        : 'From the next morning run, owners are emailed about renewals due within 7 days and payments overdue — each reminder once.'">
+    <input type="hidden" name="enabled" value="{{ $remindersOn ? 0 : 1 }}">
+    <label class="form-label" for="rr-reason">Why <span style="color:var(--tone-red);">*</span></label>
+    <input id="rr-reason" name="reason" type="text" required maxlength="500" class="form-control"
+           placeholder="e.g. read the sample — going live">
 </x-operator-modal>
 @endsection
