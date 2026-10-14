@@ -348,6 +348,22 @@ class Phase88E4ClockTest extends TestCase
         $this->assertStringContainsString('DRY RUN', $out);
     }
 
+    public function test_a_future_morning_can_be_previewed_but_never_run_for_real(): void
+    {
+        $this->customer('2026-11-20');
+        Carbon::setTestNow();   // the real clock: the customer is far off
+
+        $this->assertSame(2, Artisan::call('billing:daily', ['--as-of' => '2026-11-15']), 'a pretend date never runs for real');
+        $this->assertSame(0, BillingCharge::count());
+
+        $this->assertSame(0, Artisan::call('billing:daily', ['--dry-run' => true, '--as-of' => '2026-11-15']));
+        $out = Artisan::output();
+        $this->assertStringContainsString('As of 2026-11-15 08:00', $out);
+        $this->assertStringContainsString('would raise ₹499.00', $out);
+        $this->assertSame(0, BillingCharge::count());
+        $this->assertFalse(Carbon::hasTestNow(), 'the clock is put back');
+    }
+
     public function test_a_stage_already_logged_by_another_run_is_not_sent_again(): void
     {
         $hq = $this->customer('2026-11-08');
