@@ -312,6 +312,20 @@ class Phase88E4ClockTest extends TestCase
         });
     }
 
+    public function test_the_pay_button_is_promised_only_when_they_can_pay_online(): void
+    {
+        $this->customer('2026-11-08', 'Online', 'online@clock.test');
+        \Tests\Fakes\FakeRazorpay::install($this->app);
+        $this->clock();
+        Mail::assertQueued(RenewalReminderMail::class, fn ($m) => $m->hasTo('online@clock.test') && ! $m->billedByHand);
+
+        $this->customer('2026-11-08', 'Nokeys', 'nokeys@clock.test');
+        config(['services.razorpay.key' => null]);
+        $this->app->forgetInstance(\App\Services\BillingService::class);
+        $this->clock();
+        Mail::assertQueued(RenewalReminderMail::class, fn ($m) => $m->hasTo('nokeys@clock.test') && $m->billedByHand);
+    }
+
     public function test_no_email_on_file_is_said_not_silently_skipped(): void
     {
         $hq = $this->customer('2026-11-08');

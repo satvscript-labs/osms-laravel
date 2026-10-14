@@ -42,6 +42,8 @@
                 'owner' => $osmsAccount && $osmsAccount->owner_user_id === auth()->id(),
                 'ownerName' => $osmsAccount?->owner?->name,
                 'supervised' => (bool) $osmsAccount?->isSupervised(),
+                // No gateway keys: there is no online payment to send them to.
+                'online' => app(\App\Services\BillingService::class)->isConfigured(),
             ];
 
             // Store staff can't act on a renewal that is still to come; grace concerns everyone.
@@ -102,7 +104,7 @@
 
                 @if (! auth()->user()->isStoreAdmin())
                     Please let your store admin know.
-                @elseif ($r['supervised'])
+                @elseif ($r['supervised'] || ! $r['online'])
                     Our team handles your billing — <a href="{{ route('tenant.billing.index') }}" class="alert-link">see how to pay</a>.
                 @elseif ($r['owner'] && $amountText)
                     <a href="{{ route('tenant.billing.index') }}" class="alert-link">Pay now</a>

@@ -30,6 +30,7 @@ class Phase88E4BannerTest extends TestCase
         parent::setUp();
         $this->seed(\Database\Seeders\PlanSeeder::class);
         Plan::where('code', 'basic')->update(['monthly_price' => 499, 'yearly_price' => 4999, 'price_tiers' => null]);
+        \Tests\Fakes\FakeRazorpay::install($this->app);   // online payment configured
         Carbon::setTestNow(Carbon::parse('2026-11-01 10:00:00', config('billing.timezone')));
 
         $this->actingAs(User::factory()->create(['role' => 'superadmin', 'tenant_id' => null]));
@@ -111,6 +112,14 @@ class Phase88E4BannerTest extends TestCase
             ->assertDontSee("didn't go through", false);
 
         $this->page($staff)->assertSee('Your plan ended on')->assertSee('Please let your store admin know.');
+    }
+
+    public function test_without_online_payment_nobody_is_sent_to_a_pay_button_that_is_not_there(): void
+    {
+        config(['services.razorpay.key' => null, 'services.razorpay.secret' => null]);
+        $this->app->forgetInstance(\App\Services\BillingService::class);   // the real gateway: no keys
+
+        $this->page($this->owner)->assertSee('Your renewal of', false)->assertSee('Our team handles your billing')->assertDontSee('Pay now');
     }
 
     public function test_a_supervised_account_is_told_how_to_pay(): void

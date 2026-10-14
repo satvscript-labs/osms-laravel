@@ -246,7 +246,8 @@ final class RenewalClock
             daysLeft: $days,
             accessUntil: $end->copy()->addDays($s->graceDays())->toDateString(),
             billNumber: $bill->number,
-            billedByHand: $account->isSupervised(),
+            // No Pay button to promise when they can't pay online (supervised, or no gateway keys).
+            billedByHand: $account->isSupervised() || ! app(BillingService::class)->isConfigured(),
         );
 
         try {
