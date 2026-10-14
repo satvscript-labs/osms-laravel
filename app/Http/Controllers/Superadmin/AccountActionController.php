@@ -196,6 +196,32 @@ class AccountActionController extends Controller
         return back()->with('status', "Waived — a ₹0 entry ({$invoice->receipt_no}) records it.");
     }
 
+    /** E3 — put money received online (unapplied) on one of this customer's bills. Previewed. */
+    public function applyUnapplied(Request $request, Account $account, string $unapplied): RedirectResponse
+    {
+        $validated = $request->validate([
+            'charge' => ['required', 'string', 'max:64'],
+            'note' => ['required', 'string', 'max:500'],
+        ]);
+
+        $u = \App\Models\UnappliedPayment::query()->whereKey($unapplied)->where('account_id', $account->id)->first();
+        abort_unless($u, 404);
+
+        if ($validated['charge'] === 'renewal' && ! $account->subscription) {
+            return back()->with('error', 'This customer has no subscription, so there is no renewal to pay.');
+        }
+
+        try {
+            $row = $validated['charge'] === 'renewal'
+                ? $this->settlement->applyUnappliedToRenewal($u, $account->subscription, $validated['note'])
+                : $this->settlement->applyUnapplied($u, $this->chargeOf($account, $validated['charge']), $validated['note']);
+        } catch (InvalidArgumentException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return back()->with('status', "Applied — receipt {$row->receipt_no}. The bill is paid.");
+    }
+
     /** A charge of THIS account, or 404 — a valid id from another account never resolves (isolation). */
     private function chargeOf(Account $account, string $id): BillingCharge
     {

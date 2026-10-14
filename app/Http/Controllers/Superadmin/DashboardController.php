@@ -57,14 +57,18 @@ class DashboardController extends Controller
         // $byStatus so the subtraction below is exact (one query, not two).
         $suspended = Subscription::withoutGlobalScopes()->where('status', 'past_due')->suspended()->count();
 
+        // Collected this month and all time in ONE query (the page has a query budget).
+        $collected = SubscriptionInvoice::withoutGlobalScopes()->collected()
+            ->selectRaw('COALESCE(SUM(amount), 0) AS total, COALESCE(SUM(CASE WHEN paid_at BETWEEN ? AND ? THEN amount ELSE 0 END), 0) AS month',
+                [now()->startOfMonth(), now()->endOfMonth()])
+            ->first();
+
         $stats = [
             'mrr' => round($mrr, 2),
             'arr' => round($mrr * 12, 2),
             'comped' => $comped,
-            'collected_month' => (float) SubscriptionInvoice::withoutGlobalScopes()->collected()
-                ->whereBetween('paid_at', [now()->startOfMonth(), now()->endOfMonth()])
-                ->sum('amount'),
-            'collected_all' => (float) SubscriptionInvoice::withoutGlobalScopes()->collected()->sum('amount'),
+            'collected_month' => (float) $collected->month,
+            'collected_all' => (float) $collected->total,
             'accounts' => Account::count(),
             'stores' => Tenant::count(),
             'active' => (int) ($byStatus['active'] ?? 0),
@@ -129,6 +133,12 @@ class DashboardController extends Controller
             // P6 / §8 — the two metrics the one ledger and the account layer
             // made possible. Both state their own limits on the surface.
             'collection' => $metrics->collection(),
+            // E3 — money received online that is on no bill: a person must decide.
+            'unapplied' => (function () {
+                $row = \App\Models\UnappliedPayment::open()->selectRaw('COUNT(*) AS c, COALESCE(SUM(amount), 0) AS t')->first();
+
+                return ['count' => (int) $row->c, 'total' => (float) $row->t];   // one query
+            })(),
             // E2 — bills raised and not yet paid, by age.
             'owed' => app(\App\Services\BillingEngine::class)->owedSummary(),
             'churn' => $metrics->churn(),

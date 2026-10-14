@@ -93,12 +93,13 @@ class Proration
             ?? ($subscription->current_period_start
                 ? Carbon::parse($subscription->current_period_start->toDateString(), $tz)->startOfDay()
                 : null)
-            ?? BillingCycle::add($periodEnd, $interval, -1);
+            ?? BillingCycle::add($periodEnd, $interval, -1, BillingCycle::anchorOf($subscription, $periodEnd));
         $chargedFrom = $joinedOn->greaterThan($coverStart) ? $joinedOn->copy() : $coverStart->copy();
 
         // Cycle boundaries FORWARD from the cover start, with the clock's own
         // arithmetic (BillingCycle), the last one clipped to the period end.
-        $segments = $this->segments($coverStart, $periodEnd, $chargedFrom, $interval, $unit * $branches);
+        $segments = $this->segments($coverStart, $periodEnd, $chargedFrom, $interval, $unit * $branches,
+            BillingCycle::anchorOf($subscription, $coverStart));
 
         if ($segments === []) {
             return $this->notApplicable('Their current period has already ended — the new branch will be billed in full at the next renewal.',
@@ -137,7 +138,7 @@ class Proration
      * @return list<array{cycle_start: Carbon, cycle_end: Carbon, cycle_days: int, from: Carbon, to: Carbon,
      *                    days: int, whole: bool, amount: float}>
      */
-    private function segments(Carbon $start, Carbon $end, Carbon $chargedFrom, string $interval, float $perCycle): array
+    private function segments(Carbon $start, Carbon $end, Carbon $chargedFrom, string $interval, float $perCycle, int $anchor): array
     {
         $out = [];
 
@@ -149,13 +150,13 @@ class Proration
                 throw new \LogicException("Cannot split {$start->toDateString()} → {$end->toDateString()} into {$interval} cycles.");
             }
 
-            $cycleStart = BillingCycle::add($start, $interval, $k);
+            $cycleStart = BillingCycle::add($start, $interval, $k, $anchor);
 
             if ($cycleStart->gte($end)) {
                 break;
             }
 
-            $cycleEnd = BillingCycle::add($start, $interval, $k + 1);
+            $cycleEnd = BillingCycle::add($start, $interval, $k + 1, $anchor);
             $to = $cycleEnd->min($end);
             $from = $cycleStart->max($chargedFrom);
 

@@ -90,6 +90,8 @@ class AccountController extends Controller
             'account' => $account,
             'subscription' => $subscription,
             'charges' => $charges,
+            // E3 — this customer's money received online that is on no bill yet.
+            'unapplied' => \App\Models\UnappliedPayment::open()->where('account_id', $account->id)->orderByDesc('created_at')->get(),
             'owed' => app(BillingEngine::class)->owed($account->id),
             'price' => $subscription
                 ? app(PriceResolver::class)->breakdown($subscription)

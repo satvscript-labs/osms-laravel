@@ -16,6 +16,7 @@
         filterKey: 'method',
         serverTotal: {{ $rows->total() }},
         noun: 'entry',
+        nouns: 'entries',
      })">
 
     <div class="mb-4">
@@ -25,6 +26,8 @@
             Every payment, comp and reversal — one ledger, every channel.
         </p>
     </div>
+
+    @include('superadmin.billing.partials.unapplied')
 
     <div class="row g-3 mb-4 stagger">
         <div class="col-6 col-lg-3">

@@ -39,13 +39,8 @@ return [
         'key' => env('RAZORPAY_KEY'),
         'secret' => env('RAZORPAY_SECRET'),
         'webhook_secret' => env('RAZORPAY_WEBHOOK_SECRET'),
-        // Razorpay Plan IDs — single Basic tier, one plan per billing interval.
-        'plans' => [
-            'basic' => [
-                'monthly' => env('RAZORPAY_PLAN_BASIC_MONTHLY'),
-                'yearly' => env('RAZORPAY_PLAN_BASIC_YEARLY'),
-            ],
-        ],
+        // E3-E — no Razorpay Plan IDs: every online payment is an Order for the
+        // engine's price (D-1 = B). RAZORPAY_PLAN_* in an old .env are ignored.
     ],
 
 ];

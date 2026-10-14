@@ -29,6 +29,7 @@ class Phase71SuperadminBoundaryTest extends TestCase
     private User $owner;
     private \App\Models\SubscriptionInvoice $invoice;
     private \App\Models\BillingCharge $charge;
+    private \App\Models\UnappliedPayment $unapplied;
 
     protected function setUp(): void
     {
@@ -50,6 +51,12 @@ class Phase71SuperadminBoundaryTest extends TestCase
             'account_id' => $this->tenant->account_id, 'number' => 'CHG-TEST-0001', 'kind' => 'renewal',
             'status' => 'pending', 'amount' => 499, 'raised_via' => 'operator',
         ]);
+
+        // E3 — real unapplied money, so its routes resolve and their gates are exercised.
+        $this->unapplied = \App\Models\UnappliedPayment::create([
+            'account_id' => $this->tenant->account_id, 'gateway_payment_id' => 'pay_BOUNDARY',
+            'amount' => 499, 'reason' => 'boundary fixture', 'status' => 'open',
+        ]);
     }
 
     /**
@@ -69,6 +76,7 @@ class Phase71SuperadminBoundaryTest extends TestCase
             'store' => $this->tenant->id,
             'invoice' => $this->invoice->id,
             'charge' => $this->charge->id,
+            'unapplied' => $this->unapplied->id,
             // P5 — the credential and view-as routes act on a person.
             'user' => $this->owner->id,
         ];
@@ -174,6 +182,7 @@ class Phase71SuperadminBoundaryTest extends TestCase
         $this->assertSame($reversedBefore, $this->invoice->fresh()->reversed_at);
         // E2 — and what is owed is untouched: not voided, not waived, not paid.
         $this->assertSame('pending', $this->charge->fresh()->status);
+        $this->assertSame('open', $this->unapplied->fresh()->status, 'unapplied money untouched');
         // And no per-store lever moved either.
         $this->assertSame('active', $this->tenant->fresh()->store_status);
         $this->assertTrue((bool) $this->tenant->fresh()->is_billable);

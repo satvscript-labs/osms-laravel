@@ -3,9 +3,12 @@
 namespace App\Http\Controllers\Tenant;
 
 use App\Http\Controllers\Controller;
+use App\Models\BillingCharge;
 use App\Models\Subscription;
 use App\Models\SubscriptionInvoice;
+use App\Services\BillingEngine;
 use App\Services\BillingService;
+use App\Services\Settlement;
 use App\Services\SubscriptionLifecycle;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -14,6 +17,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Log;
+use InvalidArgumentException;
 use Illuminate\View\View;
 
 class BillingController extends Controller
@@ -100,9 +104,21 @@ class BillingController extends Controller
             ? $account->charges()->pending()->with('tenant:id,store_name')->orderBy('created_at')->get()
             : collect();
 
+        // E3.5 / FB-07 — what THEY pay, from the engine (branches, tiers, negotiated
+        // price): never config('billing.plans'), which knows none of that.
+        $resolver = app(\App\Services\PriceResolver::class);
+        $prices = $subscription ? [
+            'monthly' => $resolver->renewalPrice($subscription, 'monthly'),
+            'yearly' => $resolver->renewalPrice($subscription, 'yearly'),
+        ] : null;
+
         return view('tenant.billing.index', [
             'subscription' => $subscription,
             'owed' => $owed,
+            'prices' => $prices,
+            'branches' => $account ? max(1, $account->billableStoreCount()) : 1,
+            // null = this person may pay online now; otherwise the sentence why not.
+            'payBlock' => $this->cannotPayOnline($request, $billing),
             'supervised' => $this->supervisionBlock($request),
             'plans' => $plans,
             'invoices' => $invoices,
@@ -127,82 +143,160 @@ class BillingController extends Controller
         ]);
     }
 
-    public function subscribe(Request $request, BillingService $billing): RedirectResponse|View
+    /** FB-11 — what a customer is told when the gateway fails. Details go to the log only. */
+    private const GATEWAY_TROUBLE = 'We could not reach the payment service just now. Nothing was charged — please try again in a few minutes.';
+
+    /**
+     * E3-I + D-3 + FB-11 — may THIS person pay online right now? Null = yes; otherwise
+     * the sentence that says why not. Enforced server-side for every pay door.
+     */
+    private function cannotPayOnline(Request $request, BillingService $billing): ?string
     {
         if ($blocked = $this->supervisionBlock($request)) {
-            return back()->with('error', $blocked);
+            return $blocked;
         }
-
-        $validated = $request->validate([
-            'tier' => ['required', 'in:basic'],
-            'interval' => ['required', 'in:monthly,yearly'],
-        ]);
 
         if (! $billing->isConfigured()) {
-            return back()->with('error', 'Online payments are not configured yet. Please contact support.');
+            return "Online payment isn't available right now. To pay, contact us at " . config('saas.support_email') . '.';
         }
 
-        // Block only a genuinely paid (active) subscription — a trialing store
-        // must be able to convert to paid.
-        $existing = $this->subscription($request);
+        $account = $request->user()?->tenant?->account;
 
-        // E1.3 (W7) — every account has its one subscription from birth. If it is
-        // somehow missing, refuse BEFORE opening anything at the gateway; never
-        // mint a second clock here (L-3).
-        if (! $existing) {
+        if (! $account) {
+            return 'We could not find your account. Please contact us and we will sort it out.';
+        }
+
+        // FB-05 — money for the account is the payer's decision, not any branch admin's.
+        if ((int) $account->owner_user_id !== (int) $request->user()->id) {
+            return 'Only the account owner' . ($account->owner?->name ? " ({$account->owner->name})" : '')
+                . ' can pay online. Ask them, or contact us.';
+        }
+
+        return null;
+    }
+
+    /**
+     * E3 — pay for the next term (their first, after a trial) with a Razorpay
+     * ORDER for the engine's price. Nothing about access changes until the money
+     * is confirmed (rule 2). The route keeps its old name; the lane behind it is
+     * new (D-1 = B: no Razorpay plans or subscriptions).
+     */
+    public function subscribe(Request $request, BillingService $billing): RedirectResponse|View
+    {
+        if ($why = $this->cannotPayOnline($request, $billing)) {
+            return back()->with('error', $why);
+        }
+
+        $validated = $request->validate(['interval' => ['required', 'in:monthly,yearly']]);
+        $subscription = $this->subscription($request);
+
+        if (! $subscription) {
             return back()->with('error', 'We could not find your subscription. Please contact us and we will sort it out.');
         }
 
-        if ($existing->status === 'active') {
-            return back()->with('error', 'You already have an active subscription. Manage it from billing.');
-        }
-
-        $tenant = $request->user()->tenant;
-
-        // BIZ-04 — a store re-subscribing while `past_due` (or carrying a stale
-        // pending reference) would leave the PREVIOUS Razorpay subscription live and
-        // get billed twice. Cancel it first; best-effort so a Razorpay hiccup can't
-        // block the store from paying.
-        if ($existing?->razorpay_subscription_id
-            && $existing->status !== 'canceled'
-            && $billing->isConfigured()) {
-            try {
-                $billing->cancelSubscription($existing->razorpay_subscription_id);
-            } catch (\Throwable $e) {
-                Log::warning('Could not cancel the previous Razorpay subscription before re-subscribing.', [
-                    'tenant_id' => $tenant->id,
-                    'razorpay_subscription_id' => $existing->razorpay_subscription_id,
-                    'error' => $e->getMessage(),
-                ]);
-            }
-        }
-
         try {
-            $result = $billing->createSubscription($tenant, $validated['tier'], $validated['interval']);
-        } catch (\Throwable $e) {
-            return back()->with('error', 'Could not start checkout: ' . $e->getMessage());
+            $bill = app(BillingEngine::class)->raiseTerm($subscription, [
+                'interval' => $validated['interval'],
+                'via' => 'owner',
+                'by' => $request->user()->id,
+            ]);
+        } catch (InvalidArgumentException $e) {
+            return back()->with('error', $e->getMessage());   // the engine's sentences are written for people
         }
 
-        // E1.3 (W7) — link the gateway reference to the ACCOUNT's one subscription.
-        // Rule 2: nothing about access changes until the webhook confirms the money
-        // (this used to set status = trialing before any payment, and was keyed on
-        // tenant_id, so a second branch minted a second clock — L-3, L-4).
-        app(SubscriptionLifecycle::class)->linkCheckout(
-            $existing,
-            $result['subscription_id'],
-            $validated['interval'],
-            $validated['tier'],
-        );
+        return $this->openCheckout($request, $billing, $bill);
+    }
+
+    /** E3 — pay one open bill (a new branch's, a reopened one) online. */
+    public function pay(Request $request, BillingService $billing): RedirectResponse|View
+    {
+        if ($why = $this->cannotPayOnline($request, $billing)) {
+            return back()->with('error', $why);
+        }
+
+        $validated = $request->validate(['charge' => ['required', 'string', 'max:64']]);
+
+        // Through the payer's account only: another account's bill never resolves (404).
+        $bill = $request->user()->tenant->account->charges()->whereKey($validated['charge'])->first();
+        abort_unless($bill, 404);
+
+        return $this->openCheckout($request, $billing, $bill);
+    }
+
+    private function openCheckout(Request $request, BillingService $billing, BillingCharge $bill): RedirectResponse|View
+    {
+        try {
+            $bill = app(BillingEngine::class)->openCheckout($bill, fn (BillingCharge $locked) => $billing->createOrder($locked));
+        } catch (InvalidArgumentException $e) {
+            return back()->with('error', $e->getMessage());
+        } catch (\Throwable $e) {
+            Log::warning('Could not open online checkout.', ['charge' => $bill->number, 'error' => $e->getMessage()]);
+
+            return back()->with('error', self::GATEWAY_TROUBLE);
+        }
 
         return view('tenant.billing.checkout', [
-            'subscriptionId' => $result['subscription_id'],
+            'bill' => $bill,
+            'orderId' => $bill->gateway_order_id,
             'razorpayKey' => $billing->publicKey(),
-            'tier' => $validated['tier'],
-            'interval' => $validated['interval'],
             'user' => $request->user(),
         ]);
     }
 
+    /**
+     * E3 — Razorpay Checkout's callback. Only Razorpay's three ids are accepted from
+     * the browser; the signature is checked and the payment is fetched from Razorpay,
+     * so the amount and status are Razorpay's, never the browser's. Settlement
+     * makes it idempotent with the webhook (whichever lands first).
+     */
+    public function paid(Request $request, BillingService $billing, Settlement $settlement): RedirectResponse
+    {
+        $validated = $request->validate([
+            'razorpay_order_id' => ['required', 'string', 'max:64'],
+            'razorpay_payment_id' => ['required', 'string', 'max:64'],
+            'razorpay_signature' => ['required', 'string', 'max:128'],
+        ]);
+
+        $orderId = $validated['razorpay_order_id'];
+        $paymentId = $validated['razorpay_payment_id'];
+        $notConfirmed = 'We could not confirm that payment here. If money left your account, it will still reach us and show on this page within a few minutes — or contact us.';
+
+        if (! $billing->verifyPaymentSignature($orderId, $paymentId, $validated['razorpay_signature'])) {
+            Log::warning('Checkout callback with a bad signature.', ['order' => $orderId, 'payment' => $paymentId]);
+
+            return redirect()->route('tenant.billing.index')->with('error', $notConfirmed);
+        }
+
+        $account = $request->user()?->tenant?->account;
+        $bill = BillingCharge::query()->where('gateway_order_id', $orderId)->first();
+
+        if (! $account || ! $bill || $bill->account_id !== $account->id) {
+            return redirect()->route('tenant.billing.index')->with('error', $notConfirmed);
+        }
+
+        try {
+            $payment = $billing->fetchPayment($paymentId);
+        } catch (\Throwable $e) {
+            Log::warning('Could not fetch the payment after checkout; the webhook will confirm it.', ['payment' => $paymentId, 'error' => $e->getMessage()]);
+
+            return redirect()->route('tenant.billing.index')->with('status', 'Thank you — we are confirming your payment with the bank. It will show here within a few minutes.');
+        }
+
+        if (($payment['order_id'] ?? null) !== $orderId) {
+            Log::warning('Checkout callback: the payment belongs to another order.', ['order' => $orderId, 'payment' => $paymentId]);
+
+            return redirect()->route('tenant.billing.index')->with('error', $notConfirmed);
+        }
+
+        $result = $settlement->settleGateway($payment, 'callback');
+
+        return redirect()->route('tenant.billing.index')->with(...match ($result['outcome']) {
+            'settled', 'already' => ['status', 'Payment received — thank you. Receipt ' . $result['row']->receipt_no . ' is in your payment history.'],
+            'not_captured' => ['status', 'Thank you — we are confirming your payment with the bank. It will show here within a few minutes.'],
+            default => ['error', 'We received your payment of ₹ ' . number_format(((int) $payment['amount']) / 100, 2)
+                . ', but it did not match an open bill. We have been told and will sort it out — you do not need to pay again.'],
+        });
+    }
     /** Switch billing cycle (monthly <-> yearly), effective at the next renewal. */
     public function changeInterval(Request $request, BillingService $billing): RedirectResponse
     {
@@ -229,25 +323,8 @@ class BillingController extends Controller
             return back()->with('error', "You're already switching to {$validated['interval']} at your next renewal.");
         }
 
-        if ($billing->isConfigured() && $subscription->razorpay_subscription_id) {
-            try {
-                $billing->changeInterval(
-                    $subscription->razorpay_subscription_id,
-                    $subscription->tier ?? 'basic',
-                    $validated['interval'],
-                );
-            } catch (\Throwable $e) {
-                // Razorpay/RBI e-mandate rule: a card-authorized subscription's plan_id
-                // (and thus its billing interval) can't be changed in place — only
-                // offer_id can. Card customers must cancel and resubscribe on the new
-                // plan; UPI Autopay isn't affected by this restriction.
-                if (str_contains($e->getMessage(), 'Only offers can be updated')) {
-                    return back()->with('error', "Billing-cycle switching isn't supported for card payments. Please cancel your subscription and resubscribe on the {$validated['interval']} plan, or use UPI Autopay instead.");
-                }
-
-                return back()->with('error', 'Could not change your billing cycle: ' . $e->getMessage());
-            }
-        }
+        // E3-E — no Razorpay plan to switch any more: the next bill is priced at the
+        // new period by the engine when it is raised.
 
         // E1.3 (W8) — through the engine, audited as the owner.
         app(SubscriptionLifecycle::class)->ownerRequestInterval($subscription, $validated['interval']);
@@ -273,27 +350,12 @@ class BillingController extends Controller
             return back()->with('error', 'There is no active subscription to cancel.');
         }
 
-        if ($billing->isConfigured() && $subscription->razorpay_subscription_id) {
-            try {
-                $billing->cancelSubscription($subscription->razorpay_subscription_id);
-            } catch (\Throwable $e) {
-                return back()->with('error', 'Could not cancel your subscription: ' . $e->getMessage());
-            }
-        }
-
-        // E1.3 (W8) — through the engine, audited as the owner.
+        // E1.3 (W8) — through the engine, audited as the owner. Any legacy autopay is
+        // stopped by the engine at the cycle end (E1.10) — a gateway hiccup can no
+        // longer block a cancellation, nor be shown to the customer raw (FB-11).
         app(SubscriptionLifecycle::class)->ownerCancelAtPeriodEnd($subscription);
 
         return back()->with('status', 'Your subscription will cancel at the end of the current billing period.');
-    }
-
-    /** Razorpay redirects/callbacks here after a successful checkout. */
-    public function success(Request $request): RedirectResponse
-    {
-        // The authoritative state change happens via the webhook; this just
-        // gives the user friendly feedback.
-        return redirect()->route('tenant.billing.index')
-            ->with('status', 'Payment received — your subscription will activate momentarily.');
     }
 
     /**

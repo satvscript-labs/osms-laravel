@@ -99,9 +99,9 @@
                     <span class="meta-chip" title="On a hand-agreed price">⚑ bespoke</span>
                 @endif
                 @if ($s?->hasActiveOverride())
-                    <span class="meta-chip text-capitalize"
+                    <span class="meta-chip"
                           title="Operator override in force — automation will not change this">
-                        <i class="bi bi-hand-index-thumb"></i> {{ $s->override_kind }}
+                        <i class="bi bi-hand-index-thumb"></i> {{ $s->overrideLabel() }}
                     </span>
                 @endif
                 @if (($owed ?? 0) > 0)
@@ -371,7 +371,7 @@
                                 <div class="mt-4 p-3 rounded-3" style="background:var(--surface-sunken);">
                                     <p class="fw-semibold mb-1 text-sm">
                                         <i class="bi bi-hand-index-thumb me-1"></i>
-                                        Operator override in force — <span class="text-capitalize">{{ $s->override_kind }}</span>
+                                        Operator override in force — {{ $s->overrideLabel() }}
                                     </p>
                                     <p class="text-muted-foreground text-sm mb-0">
                                         Automation will not change this store's access
@@ -588,4 +588,21 @@
 
 {{-- P3 — every action's overlay, rendered once. Triggers live above. --}}
 @include('superadmin.accounts.partials.actions')
+
+@push('scripts')
+<script nonce="{{ csp_nonce() }}">
+    // A link or redirect to #tab-owed (E3: "Matched — apply it below") opens that tab,
+    // and the open tab stays in the URL so a reload lands on it again.
+    document.addEventListener('DOMContentLoaded', () => {
+        const fromUrl = /^#tab-[a-z]+$/.test(location.hash)
+            ? document.querySelector(`[data-bs-toggle="pill"][data-bs-target="${location.hash}"]`)
+            : null;
+        if (fromUrl) bootstrap.Tab.getOrCreateInstance(fromUrl).show();
+
+        document.querySelectorAll('[data-bs-toggle="pill"][data-bs-target^="#tab-"]').forEach((el) => {
+            el.addEventListener('shown.bs.tab', () => history.replaceState(null, '', el.dataset.bsTarget));
+        });
+    });
+</script>
+@endpush
 @endsection

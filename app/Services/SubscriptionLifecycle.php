@@ -230,6 +230,15 @@ class SubscriptionLifecycle
             return [];
         }
 
+        if ($action === 'apply_unapplied') {
+            $u = $this->accountUnapplied($row, (string) ($input['unapplied'] ?? ''));
+            ($input['charge'] ?? '') === 'renewal'
+                ? app(Settlement::class)->applyUnappliedToRenewal($u, $row, (string) ($input['note'] ?? ''))
+                : app(Settlement::class)->applyUnapplied($u, $this->accountCharge($row, (string) ($input['charge'] ?? '')), (string) ($input['note'] ?? ''));
+
+            return [];
+        }
+
         if ($action === 'waive_charge') {
             app(Settlement::class)->waive($this->accountCharge($row, (string) ($input['charge'] ?? '')), (string) ($input['reason'] ?? ''));
 
@@ -257,13 +266,29 @@ class SubscriptionLifecycle
         return $isTerm ? 'renew' : $action;
     }
 
+    /** Unapplied money already matched to this subscription's account — never another's. */
+    private function accountUnapplied(Subscription $s, string $id): \App\Models\UnappliedPayment
+    {
+        $u = $id === '' ? null : \App\Models\UnappliedPayment::query()->whereKey($id)->where('account_id', $s->account_id)->first();
+
+        if (! $u) {
+            throw new InvalidArgumentException('That payment is not on this customer\'s account.');
+        }
+
+        return $u;
+    }
+
     /** A charge of this subscription's account — never another's (isolation). */
     private function accountCharge(Subscription $s, string $id): BillingCharge
     {
-        $charge = $id === '' ? null : BillingCharge::query()->whereKey($id)->where('account_id', $s->account_id)->first();
+        if ($id === '') {
+            throw new InvalidArgumentException('Choose the bill this is for.');
+        }
+
+        $charge = BillingCharge::query()->whereKey($id)->where('account_id', $s->account_id)->first();
 
         if (! $charge) {
-            throw new InvalidArgumentException('Choose what this payment is for — that bill is not on this customer\'s account.');
+            throw new InvalidArgumentException('That bill is not on this customer\'s account.');
         }
 
         return $charge;
@@ -386,7 +411,9 @@ class SubscriptionLifecycle
         }
 
         $s->current_period_start = $base->toDateString();
-        $s->current_period_end = $base->copy()->addMonths($months);
+        $anchor = BillingCycle::anchorOf($s, $base);   // FB-32: never overflow (31 Jan + 1 month is 28 Feb)
+        $s->current_period_end = BillingCycle::add($base, 'monthly', $months, $anchor);
+        $s->billing_anchor_day = $anchor;
         $s->cancel_at_period_end = false;
         $s->applyOverride('comp', $s->current_period_end, $reason);
 
@@ -548,7 +575,10 @@ class SubscriptionLifecycle
 
             $interval = $charge->interval ?: ($s->interval ?: 'monthly');
             $base = $this->clockBase($s);
-            $end = BillingCycle::add($base, $interval, max(1, (int) $charge->cycles));
+            // FB-32 — clamped to the anchor day, and the anchor remembered for the next renewal.
+            $anchor = BillingCycle::anchorOf($s, $base);
+            $end = BillingCycle::add($base, $interval, max(1, (int) $charge->cycles), $anchor);
+            $s->billing_anchor_day = $anchor;
 
             $s->status = 'active';
             $s->interval = $interval;
@@ -564,90 +594,14 @@ class SubscriptionLifecycle
                 'account_id' => $s->account_id,
                 'reason' => $reason ?: null,
                 'charge' => $charge->number,
+                // E1.12 — paid online: the audit names the gateway, not "System".
+                'actor' => $input['actor'] ?? null,
                 'input' => collect($input)->except(['password', 'password_confirmation', '_token', '_once'])->all(),
                 'before' => $before,
                 'after' => $this->snapshot($s),
             ]);
 
             return [$base, $end];
-        });
-    }
-
-    // ---------------------------------------------------------------
-    // Gateway lane (P0) — unchanged contract
-    // ---------------------------------------------------------------
-
-    /**
-     * Apply a gateway event's entitlement changes — unless an operator override
-     * is in force, in which case the subscription is left exactly as the human
-     * left it.
-     *
-     * ⚠ ENTITLEMENT ONLY. The caller records the payment in the ledger BEFORE
-     * calling this and must keep doing so: money that actually changed hands is
-     * always recorded, whatever the operator decided about access.
-     *
-     * @return bool true if the gateway's values were applied, false if suppressed.
-     */
-    public function applyGatewayEntitlement(
-        Subscription $subscription,
-        ?string $status,
-        ?Carbon $periodEnd,
-        ?string $interval,
-    ): bool {
-        // E1.2 — locked like every other write: a webhook and an operator action
-        // for the same customer must not interleave (FB-15).
-        return $this->locked($subscription, function (Subscription $s) use ($status, $periodEnd, $interval) {
-            if ($s->hasActiveOverride()) {
-                $this->auditSuppression($s, $status, $periodEnd);
-
-                return false;
-            }
-
-            $before = $this->snapshot($s);
-
-            if ($status) {
-                $s->status = $status;
-
-                if ($status === 'canceled') {
-                    $s->cancel_at_period_end = false;
-                }
-            }
-
-            if ($periodEnd) {
-                $old = $s->current_period_end;
-
-                if (! $old || ! $old->isSameDay($periodEnd)) {
-                    // E1.1 — a renewal starts where the old period ended; anything
-                    // else (first payment, early activation) starts today.
-                    $tz = config('billing.timezone', 'Asia/Kolkata');
-                    $today = Carbon::today($tz);
-                    $s->current_period_start = ($old && $old->lte($today) && $old->lt($periodEnd))
-                        ? $old->toDateString()
-                        : $today->toDateString();
-                }
-
-                $s->current_period_end = $periodEnd;
-            }
-
-            if ($interval) {
-                $s->interval = $interval;
-
-                if ($s->pending_interval === $interval) {
-                    $s->pending_interval = null;
-                }
-            }
-
-            if (! $s->isDirty()) {
-                return true;
-            }
-
-            $s->save();
-
-            // FB-23 / W2 — an APPLIED gateway change used to leave no audit row;
-            // only suppressed ones did.
-            $this->auditAs('gateway', 'subscription.gateway_applied', 'Razorpay update applied', $s, $before);
-
-            return true;
         });
     }
 
@@ -841,35 +795,6 @@ class SubscriptionLifecycle
         return $changed;
     }
 
-    /**
-     * W7 — the owner opened an online checkout. Rule 2: an unpaid action changes
-     * NOTHING about access. Only the gateway reference and the period they asked
-     * for (as pending) are recorded; status, dates and price move only when the
-     * webhook confirms the money.
-     *
-     * L-3: always the ACCOUNT's one subscription — the old updateOrCreate keyed on
-     * tenant_id minted a second clock for a second branch or after a purge.
-     */
-    public function linkCheckout(Subscription $subscription, string $gatewaySubscriptionId, string $interval, ?string $tier = null): void
-    {
-        $this->locked($subscription, function (Subscription $s) use ($gatewaySubscriptionId, $interval, $tier) {
-            $before = $this->snapshot($s);
-
-            $s->razorpay_subscription_id = $gatewaySubscriptionId;
-            $s->pending_interval = $interval === ($s->interval ?: 'monthly') ? null : $interval;
-
-            if ($tier) {
-                $s->tier = $tier;
-            }
-
-            $s->save();
-
-            $this->auditAs('owner', 'subscription.checkout_started', 'Owner opened an online checkout ('
-                . $interval . ') — nothing changes until the payment is confirmed', $s, $before,
-                ['gateway_subscription_id' => $gatewaySubscriptionId]);
-        });
-    }
-
     /** W8 — the owner asked to switch billing period, from their next renewal (E1.4). */
     public function ownerRequestInterval(Subscription $subscription, string $interval): void
     {
@@ -899,6 +824,9 @@ class SubscriptionLifecycle
 
             $this->auditAs('owner', 'subscription.owner_cancel', 'Owner cancelled at the end of the current period', $s, $before);
         });
+
+        // Rule 5 — a legacy autopay (if any) stops at the cycle end, after the commit.
+        $this->stopGatewayCharging($subscription, immediately: false, why: 'cancelled by the owner');
     }
 
     /**
@@ -1060,6 +988,8 @@ class SubscriptionLifecycle
     {
         return [
             'status' => $s->status,
+            // What the preview SHOWS: a suspension is stored as past_due (house rule, QA-06).
+            'display_status' => $s->displayStatus(),
             'access' => $s->accessState(),
             'interval' => $s->interval,
             'pending_interval' => $s->pending_interval,
@@ -1097,7 +1027,11 @@ class SubscriptionLifecycle
         return match ($action) {
             'extend' => "Extended {$who} by {$input['days']} days",
             'comp' => "Granted {$who} {$input['months']} months of free access",
-            'renew' => "Renewed {$who} manually",
+            'renew' => match ($input['source'] ?? null) {
+                'gateway' => "Renewed {$who} — paid online",
+                'unapplied' => "Renewed {$who} from money received online",
+                default => "Renewed {$who} manually",
+            },
             'set_price' => "Set {$who} to a negotiated price of ₹{$input['price']}",
             'clear_price' => "Cleared {$who}'s negotiated price — back to list",
             'suspend' => "Suspended {$who}",
@@ -1109,29 +1043,5 @@ class SubscriptionLifecycle
             'waive' => "Waived {$who}'s outstanding payment",
             default => "{$action} on {$who}",
         };
-    }
-
-    private function auditSuppression(Subscription $subscription, ?string $status, ?Carbon $periodEnd): void
-    {
-        AdminAuditLog::record(
-            'subscription.webhook_suppressed',
-            "Razorpay update ignored — {$subscription->override_kind} override is in force",
-            $subscription->tenant_id,
-            [
-                'override' => [
-                    'kind' => $subscription->override_kind,
-                    'until' => $subscription->override_until?->toDateString(),
-                    'reason' => $subscription->override_reason,
-                ],
-                'kept' => [
-                    'status' => $subscription->status,
-                    'current_period_end' => $subscription->current_period_end?->toDateString(),
-                ],
-                'ignored' => [
-                    'status' => $status,
-                    'current_period_end' => $periodEnd?->toDateString(),
-                ],
-            ],
-        );
     }
 }

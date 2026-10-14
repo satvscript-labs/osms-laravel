@@ -34,9 +34,11 @@ class Phase26SubscriptionChangeTest extends TestCase
 
     public function test_active_subscriber_can_schedule_a_cycle_switch(): void
     {
+        // E3-E — no Razorpay plan to switch: the engine prices the next bill at the
+        // new period. Nothing may be sent to the gateway.
         $this->mock(BillingService::class, function ($m) {
             $m->shouldReceive('isConfigured')->andReturn(true);
-            $m->shouldReceive('changeInterval')->with('sub_ABC', 'basic', 'yearly')->once();
+            $m->shouldNotReceive('cancelSubscription');
         });
 
         $this->actingAs($this->admin)->post(route('tenant.billing.change-interval'), ['interval' => 'yearly'])
@@ -61,7 +63,12 @@ class Phase26SubscriptionChangeTest extends TestCase
             ->assertSessionHas('error');
     }
 
-    public function test_webhook_applies_interval_and_clears_pending(): void
+    /**
+     * E3-E — the retired autopay lane no longer switches anyone's billing period: a
+     * pending switch lands only when they pay their next renewal (E1.4). The money
+     * in the charge is kept for the operator.
+     */
+    public function test_a_legacy_webhook_never_switches_the_billing_period(): void
     {
         config([
             'services.razorpay.webhook_secret' => 'whsec_test',
@@ -85,7 +92,8 @@ class Phase26SubscriptionChangeTest extends TestCase
         )->assertOk();
 
         $fresh = $this->subscription->fresh();
-        $this->assertSame('yearly', $fresh->interval);
-        $this->assertNull($fresh->pending_interval);
+        $this->assertNotSame('yearly', $fresh->interval, 'the running period is untouched');
+        $this->assertSame('yearly', $fresh->pending_interval, 'the switch still waits for the renewal');
+        $this->assertSame(4999.0, (float) \App\Models\UnappliedPayment::where('gateway_payment_id', 'pay_cycle')->value('amount'));
     }
 }

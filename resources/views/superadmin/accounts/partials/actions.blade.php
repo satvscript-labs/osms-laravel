@@ -235,6 +235,45 @@
 </x-operator-modal>
 @endforeach
 
+{{-- ── E3 · Money received online, on no bill: apply (previewed) or record a refund ── --}}
+@foreach (($unapplied ?? collect()) as $u)
+<x-operator-modal :id="'m-apply-' . $u->id" title="Apply ₹ {{ number_format($u->amount, 2) }} to a bill"
+    :action="route('superadmin.accounts.unapplied.apply', [$account, $u->id])"
+    preview="apply_unapplied" :account="$account"
+    label="Apply" icon="bi-box-arrow-in-down"
+    intro="It settles the bill exactly as if it had arrived for it. Only a bill of the same amount can take it.">
+    <input type="hidden" name="unapplied" value="{{ $u->id }}">
+    <label class="form-label" for="ap-bill-{{ $u->id }}">Bill</label>
+    <select id="ap-bill-{{ $u->id }}" name="charge" class="form-select" required>
+        <option value="">Choose…</option>
+        @foreach (($charges ?? collect())->where('status', 'pending') as $open)
+            <option value="{{ $open->id }}" @disabled(abs((float) $open->amount - (float) $u->amount) > 0.005)>
+                {{ $open->number }} · {{ $open->label() }} — ₹ {{ number_format($open->amount, 2) }}{{ abs((float) $open->amount - (float) $u->amount) > 0.005 ? ' (different amount)' : '' }}
+            </option>
+        @endforeach
+        {{-- No open bill can take it (an unknown order, legacy autopay): their next renewal can, if the price matches. --}}
+        @if ($subscription)
+            @php($renewal = (float) ($renewPrices[$payInterval] ?? 0))
+            <option value="renewal" @disabled(abs($renewal - (float) $u->amount) > 0.005)>
+                Their next renewal ({{ $payInterval }}) — ₹ {{ number_format($renewal, 2) }}{{ abs($renewal - (float) $u->amount) > 0.005 ? ' (different amount)' : '' }}
+            </option>
+        @endif
+    </select>
+    <label class="form-label mt-3" for="ap-note-{{ $u->id }}">Why this bill <span style="color:var(--tone-red);">*</span></label>
+    <input id="ap-note-{{ $u->id }}" name="note" type="text" required maxlength="500" class="form-control"
+           placeholder="e.g. paid after the bill was replaced">
+</x-operator-modal>
+
+<x-operator-modal :id="'m-refunded-' . $u->id" title="Record a refund"
+    :action="route('superadmin.unapplied.refunded', $u->id)"
+    label="Record refund" dismiss="Never mind" icon="bi-arrow-return-left" tone="danger"
+    intro="Refund ₹ {{ number_format($u->amount, 2) }} in the Razorpay dashboard first, then record it here. Nothing changes for their access.">
+    <label class="form-label" for="rfc-note-{{ $u->id }}">Refund reference <span style="color:var(--tone-red);">*</span></label>
+    <input id="rfc-note-{{ $u->id }}" name="note" type="text" required maxlength="500" class="form-control"
+           placeholder="e.g. rfnd_ABC123 — paid twice">
+</x-operator-modal>
+@endforeach
+
 {{-- ── Row 10 · Suspend / reactivate ────────────────────────────── --}}
 @if ($subscription?->override_kind === 'suspension')
 <x-operator-modal id="m-reactivate" title="Reactivate" :action="$act" preview="reactivate" :account="$account"

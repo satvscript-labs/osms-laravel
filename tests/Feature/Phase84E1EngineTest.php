@@ -261,18 +261,23 @@ class Phase84E1EngineTest extends TestCase
     // E1.3 W2 — gateway updates are locked and audited
     // ------------------------------------------------------------------
 
-    public function test_an_applied_gateway_update_is_audited_and_starts_the_period(): void
+    public function test_an_online_payment_is_audited_as_the_gateway_and_starts_the_period(): void
     {
+        // E3 — the gateway lane is Orders through Settlement (applyGatewayEntitlement retired).
         $hq = $this->paying('Online', daysAhead: 0);
         $oldEnd = $this->sub($hq)->current_period_end->copy();
+        $bill = app(\App\Services\BillingEngine::class)->raiseTerm($this->sub($hq), ['via' => 'owner']);
+        \App\Services\MoneyWrite::during(fn () => $bill->forceFill(['gateway_order_id' => 'order_E1'])->save());
 
-        $this->assertTrue($this->lifecycle()->applyGatewayEntitlement(
-            $this->sub($hq), 'active', $oldEnd->copy()->addMonth(), 'monthly',
-        ));
+        $result = app(\App\Services\Settlement::class)->settleGateway([
+            'id' => 'pay_E1', 'order_id' => 'order_E1', 'amount' => 49900, 'currency' => 'INR',
+            'status' => 'captured', 'created_at' => now()->timestamp,
+        ], 'webhook', 'order.paid');
 
+        $this->assertSame('settled', $result['outcome']);
         $sub = $this->sub($hq);
         $this->assertSame($oldEnd->toDateString(), $sub->current_period_start->toDateString(), 'a renewal starts where the old period ended');
-        $row = AdminAuditLog::where('action', 'subscription.gateway_applied')->firstOrFail();
+        $row = AdminAuditLog::where('action', 'subscription.renew')->firstOrFail();
         $this->assertSame('gateway', $row->meta['actor']);
     }
 
@@ -294,22 +299,24 @@ class Phase84E1EngineTest extends TestCase
         $sub = $this->sub($hq);
         $this->assertSame('past_due', $sub->status, 'rule 2: an unpaid checkout changes nothing');
         $this->assertSame($before, $sub->accessState());
-        $this->assertSame('sub_fake_1', $sub->razorpay_subscription_id);
-        $this->assertSame('yearly', $sub->pending_interval);
+        $this->assertNull($sub->razorpay_subscription_id, 'E3: no Razorpay subscription is created any more');
         $this->assertSame(1, Subscription::withoutGlobalScopes()->where('account_id', $hq->account_id)->count());
-        $this->assertSame('owner', AdminAuditLog::where('action', 'subscription.checkout_started')->firstOrFail()->meta['actor']);
+        $bill = \App\Models\BillingCharge::where('account_id', $hq->account_id)->sole();
+        $this->assertSame('order_fake_1', $bill->gateway_order_id);
+        $this->assertSame('owner', $bill->raised_via);
     }
 
-    public function test_a_checkout_from_a_branch_whose_origin_was_purged_links_to_the_same_clock(): void
+    public function test_a_payment_from_a_branch_whose_origin_was_purged_is_billed_to_the_same_clock(): void
     {
         $hq = $this->store('Origin');
         $this->store('Branch', $hq->account->fresh());
         Subscription::withoutGlobalScopes()->where('account_id', $hq->account_id)->update(['tenant_id' => null]);
 
-        $this->lifecycle()->linkCheckout($this->sub($hq), 'sub_branch', 'monthly');
+        $bill = app(\App\Services\BillingEngine::class)->raiseTerm($this->sub($hq), ['via' => 'owner']);
 
         $this->assertSame(1, Subscription::withoutGlobalScopes()->where('account_id', $hq->account_id)->count());
-        $this->assertSame('sub_branch', $this->sub($hq)->razorpay_subscription_id);
+        $this->assertSame($hq->account_id, $bill->account_id);
+        $this->assertSame($this->sub($hq)->id, $bill->subscription_id);
     }
 
     public function test_the_owners_interval_switch_and_cancel_are_audited(): void
@@ -544,12 +551,10 @@ class FakeGateway extends BillingService
         return true;
     }
 
-    public function createSubscription(Tenant $tenant, string $tier, string $interval = 'monthly'): array
+    public function createOrder(\App\Models\BillingCharge $charge): string
     {
-        return ['subscription_id' => 'sub_fake_' . (++$this->created)];
+        return 'order_fake_' . (++$this->created);
     }
-
-    public function changeInterval(string $razorpaySubscriptionId, string $tier, string $interval): void {}
 
     public function cancelSubscription(string $razorpaySubscriptionId, bool $atCycleEnd = true): void
     {

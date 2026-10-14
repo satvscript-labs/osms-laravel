@@ -57,7 +57,7 @@ class BillingEngine
         $amount = round($perCycle * $cycles, 2);
 
         $start = $this->clockBase($s);
-        $end = BillingCycle::add($start, $interval, $cycles);
+        $end = BillingCycle::add($start, $interval, $cycles, BillingCycle::anchorOf($s, $start));   // FB-32
         $unit = $interval === 'yearly' ? 'year' : 'month';
 
         $lines = [
@@ -233,11 +233,17 @@ class BillingEngine
             && $open->interval === $fields['interval'];
     }
 
-    /** HostelEase M4 — never replace a charge the gateway may be collecting right now (E3). */
+    /**
+     * HostelEase M4 / E3-B — never replace or void a bill the owner may be paying
+     * online right now (checkout opened within the window). Outside the window the
+     * bill is free again; a payment that still arrives later lands as unapplied.
+     */
     private function assertNotInFlight(BillingCharge $charge): void
     {
-        if ($charge->gateway_order_id) {
-            throw new InvalidArgumentException("A payment for {$charge->number} is being processed online. Give it a minute, then try again.");
+        if ($charge->isBeingPaidOnline()) {
+            throw new InvalidArgumentException("{$charge->number} is being paid online right now (checkout opened at "
+                . $charge->gateway_checkout_at->timezone(config('billing.timezone', 'Asia/Kolkata'))->format('H:i')
+                . '). Give it a few minutes, then try again.');
         }
     }
 
@@ -264,7 +270,12 @@ class BillingEngine
                     throw new InvalidArgumentException("{$row->number} is {$row->statusLabel()}, so there is nothing to void.");
                 }
 
-                $this->assertNotInFlight($row);
+                // An operator's own void waits for an online payment in progress; an
+                // ending (cancel now, end access) or a grant does not (`force`) — the
+                // operator's decision wins, and late money is recorded as unapplied.
+                if (! ($options['force'] ?? false)) {
+                    $this->assertNotInFlight($row);
+                }
 
                 $row->forceFill([
                     'status' => 'void',
@@ -308,11 +319,51 @@ class BillingEngine
         $count = 0;
 
         foreach ($query->get() as $charge) {
-            $this->void($charge, $reason, $options);
+            $this->void($charge, $reason, $options + ['force' => true]);
             $count++;
         }
 
         return $count;
+    }
+
+    // ---------------------------------------------------------------
+    // E3 — the owner opens online checkout for a bill
+    // ---------------------------------------------------------------
+
+    /**
+     * Attach the bill's ONE Razorpay order (created on first use, reused after —
+     * a bill's amount never changes, so its order never goes stale: E3-A) and
+     * stamp the time, which starts the "being paid online" window (E3-B).
+     *
+     * Under the account lock, so two clicks can't create two orders.
+     *
+     * @param  \Closure(BillingCharge): string  $createOrder  the gateway call, given the locked bill
+     */
+    public function openCheckout(BillingCharge $charge, \Closure $createOrder): BillingCharge
+    {
+        $subscription = Subscription::withoutGlobalScopes()->where('account_id', $charge->account_id)->first();
+
+        if (! $subscription) {
+            throw new InvalidArgumentException('We could not find your subscription. Please contact us and we will sort it out.');
+        }
+
+        return $this->withLockedSubscription($subscription, fn () => MoneyWrite::during(function () use ($charge, $createOrder) {
+            $row = BillingCharge::query()->whereKey($charge->getKey())->lockForUpdate()->firstOrFail();
+
+            if (! $row->isPending()) {
+                throw new InvalidArgumentException("{$row->number} is already " . mb_strtolower($row->statusLabel()) . ' — there is nothing to pay.');
+            }
+
+            $fields = ['gateway_checkout_at' => now()];
+
+            if (! $row->gateway_order_id) {
+                $fields['gateway_order_id'] = $createOrder($row);
+            }
+
+            $row->forceFill($fields)->save();
+
+            return $row;
+        }));
     }
 
     /** What the account owes right now: the sum of its pending charges. */

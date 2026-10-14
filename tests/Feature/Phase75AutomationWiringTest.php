@@ -80,16 +80,39 @@ class Phase75AutomationWiringTest extends TestCase
         ];
     }
 
+    /** E3 — a bill with a Razorpay order on it, as the owner's Pay button leaves it. */
+    private function billWithOrder(Tenant $tenant, string $orderId): \App\Models\BillingCharge
+    {
+        $bill = app(\App\Services\BillingEngine::class)->raiseTerm($tenant->account->subscription()->first(), ['via' => 'owner']);
+        \App\Services\MoneyWrite::during(fn () => $bill->forceFill(['gateway_order_id' => $orderId])->save());
+
+        return $bill->fresh();
+    }
+
+    private function orderPaidPayload(string $orderId, string $paymentId, int $paise = 49900): array
+    {
+        return [
+            'event' => 'order.paid',
+            'payload' => [
+                'payment' => ['entity' => [
+                    'id' => $paymentId, 'order_id' => $orderId, 'amount' => $paise, 'currency' => 'INR',
+                    'status' => 'captured', 'created_at' => now()->timestamp,
+                ]],
+                'order' => ['entity' => ['id' => $orderId, 'amount' => $paise, 'status' => 'paid']],
+            ],
+        ];
+    }
+
     // ================================================================
-    // One ledger, one shape — the automated lane included
+    // One ledger, one shape — the online lane included (E3: Orders)
     // ================================================================
 
     public function test_a_gateway_payment_gets_a_receipt_number_like_every_other_payment(): void
     {
         [$tenant] = $this->store();
-        $tenant->account->subscription->update(['razorpay_subscription_id' => 'sub_LIVE']);
+        $bill = $this->billWithOrder($tenant, 'order_LIVE');
 
-        $this->webhook($this->chargePayload('sub_LIVE', 'pay_1'))->assertOk();
+        $this->webhook($this->orderPaidPayload('order_LIVE', 'pay_1'))->assertOk();
 
         $row = SubscriptionInvoice::withoutGlobalScopes()->first();
 
@@ -99,19 +122,22 @@ class Phase75AutomationWiringTest extends TestCase
         $this->assertNotNull($row->receipt_no);
         $this->assertStringStartsWith('OSMS-', $row->receipt_no);
         $this->assertSame('razorpay', $row->method);
-        $this->assertSame('webhook', $row->source);
+        $this->assertSame('gateway', $row->source);
         $this->assertNull($row->recorded_by, 'Nobody typed this; the gateway told us.');
         $this->assertSame($tenant->account_id, $row->account_id);
+        $this->assertSame($bill->id, $row->charge_id, 'and it says which bill it paid');
     }
 
     public function test_a_retried_webhook_never_records_or_numbers_twice(): void
     {
         [$tenant] = $this->store();
-        $tenant->account->subscription->update(['razorpay_subscription_id' => 'sub_LIVE']);
+        $this->billWithOrder($tenant, 'order_LIVE');
 
-        // Razorpay retries. Same payment id, different event id each time.
-        $this->webhook($this->chargePayload('sub_LIVE', 'pay_SAME'))->assertOk();
-        $this->webhook($this->chargePayload('sub_LIVE', 'pay_SAME'))->assertOk();
+        // Razorpay retries, and sends both order.paid and payment.captured. Same
+        // payment id, different event id each time.
+        $this->webhook($this->orderPaidPayload('order_LIVE', 'pay_SAME'))->assertOk();
+        $this->webhook($this->orderPaidPayload('order_LIVE', 'pay_SAME'))->assertOk();
+        $this->webhook(['event' => 'payment.captured'] + $this->orderPaidPayload('order_LIVE', 'pay_SAME'))->assertOk();
 
         $this->assertSame(1, SubscriptionInvoice::withoutGlobalScopes()->count());
     }
@@ -120,10 +146,10 @@ class Phase75AutomationWiringTest extends TestCase
     {
         [$tenant] = $this->store();
         $sub = $tenant->account->subscription;
-        $sub->update(['razorpay_subscription_id' => 'sub_LIVE']);
 
         app(\App\Services\PaymentRecorder::class)->record($sub, 4999, 'cash');
-        $this->webhook($this->chargePayload('sub_LIVE', 'pay_1'))->assertOk();
+        $this->billWithOrder($tenant, 'order_LIVE');
+        $this->webhook($this->orderPaidPayload('order_LIVE', 'pay_1'))->assertOk();
         app(\App\Services\PaymentRecorder::class)->record($sub->fresh(), 4999, 'upi');
 
         $numbers = SubscriptionInvoice::withoutGlobalScopes()->orderBy('receipt_no')->pluck('receipt_no')->all();
@@ -140,6 +166,9 @@ class Phase75AutomationWiringTest extends TestCase
     {
         // Constraint C1. Nothing in P4 may change this without an operator
         // deliberately turning it off.
+        // E3 — with the gateway configured (the page no longer offers a button
+        // that can only fail when it is not).
+        \Tests\Fakes\FakeRazorpay::install($this->app);
         [$tenant, $owner] = $this->store();
 
         $this->assertFalse($tenant->account->isSupervised());

@@ -60,17 +60,22 @@ class Phase24BillingManagementTest extends TestCase
         ];
     }
 
-    // ---- webhook: charge → invoice + activation ---------------------------
+    // ---- webhook: a legacy autopay charge ---------------------------------
+    // E3-E — the Razorpay subscriptions lane is retired: its money is KEPT (as
+    // unapplied, for the operator to apply or refund) and changes no access.
 
-    public function test_charge_webhook_creates_invoice_and_activates(): void
+    public function test_a_legacy_autopay_charge_is_kept_and_changes_nothing(): void
     {
+        $status = $this->subscription->fresh()->status;
+
         $this->postWebhook($this->chargePayload())->assertOk();
 
-        $this->assertDatabaseCount('subscription_invoices', 1);
-        $invoice = SubscriptionInvoice::withoutGlobalScopes()->first();
-        $this->assertSame('499.00', (string) $invoice->amount);
-        $this->assertSame($this->tenant->id, $invoice->tenant_id);
-        $this->assertSame('active', $this->subscription->fresh()->status);
+        $this->assertDatabaseCount('subscription_invoices', 0);
+        $kept = \App\Models\UnappliedPayment::sole();
+        $this->assertSame('499.00', (string) $kept->amount);
+        $this->assertSame('pay_1', $kept->gateway_payment_id);
+        $this->assertStringContainsString('old Razorpay autopay', $kept->reason);
+        $this->assertSame($status, $this->subscription->fresh()->status, 'no access change from the retired lane');
     }
 
     public function test_duplicate_event_id_is_ignored(): void
@@ -78,16 +83,16 @@ class Phase24BillingManagementTest extends TestCase
         $this->postWebhook($this->chargePayload(), 'evt_dup')->assertOk();
         $this->postWebhook($this->chargePayload(), 'evt_dup')->assertOk(); // same event id
 
-        $this->assertDatabaseCount('subscription_invoices', 1);
+        $this->assertDatabaseCount('unapplied_payments', 1);
     }
 
-    public function test_same_payment_not_invoiced_twice_across_events(): void
+    public function test_same_payment_not_recorded_twice_across_events(): void
     {
-        // Different event ids, same payment id → still one invoice (payment-id guard).
+        // Different event ids, same payment id → still one record (payment-id guard).
         $this->postWebhook($this->chargePayload('pay_same'), 'evt_a')->assertOk();
         $this->postWebhook($this->chargePayload('pay_same'), 'evt_b')->assertOk();
 
-        $this->assertDatabaseCount('subscription_invoices', 1);
+        $this->assertDatabaseCount('unapplied_payments', 1);
     }
 
     public function test_bad_signature_is_rejected(): void
@@ -130,19 +135,21 @@ class Phase24BillingManagementTest extends TestCase
 
     public function test_trialing_store_can_subscribe(): void
     {
-        $this->mock(BillingService::class, function ($m) {
-            $m->shouldReceive('isConfigured')->andReturn(true);
-            $m->shouldReceive('createSubscription')
-                ->with(\Mockery::any(), 'basic', 'yearly')
-                ->once()
-                ->andReturn(['subscription_id' => 'sub_NEW', 'short_url' => null]);
-            $m->shouldReceive('publicKey')->andReturn('rzp_test_x');
-        });
+        // E3 — the trial converts by paying its first term: an Order for the
+        // engine's price, opened by the account owner. Nothing changes until paid.
+        $rzp = \Tests\Fakes\FakeRazorpay::install($this->app);
+        $this->seed(\Database\Seeders\PlanSeeder::class);
+        $owner = User::factory()->create(['tenant_id' => null, 'role' => 'store_admin']);
+        $store = app(\App\Services\StoreProvisioner::class)->provision($owner, ['store_name' => 'Converting Optical']);
+        $sub = Subscription::withoutGlobalScopes()->where('account_id', $store->account_id)->first();
 
-        $this->actingAs($this->user)->post(route('tenant.billing.subscribe'), ['tier' => 'basic', 'interval' => 'yearly'])
-            ->assertOk()->assertSee('Pay with Razorpay');
+        $this->actingAs($owner->fresh())->post(route('tenant.billing.subscribe'), ['interval' => 'yearly'])
+            ->assertOk()->assertSee('Pay ₹ 4,999.00');
 
-        $this->assertSame('sub_NEW', $this->subscription->fresh()->razorpay_subscription_id);
+        $bill = \App\Models\BillingCharge::where('account_id', $store->account_id)->sole();
+        $this->assertSame('first_term', $bill->kind);
+        $this->assertSame(499900, $rzp->ordersCreated[0]['amount'], 'the order is for the bill, in paise');
+        $this->assertSame('trialing', $sub->fresh()->status, 'rule 2: nothing changes until the money lands');
     }
 
     // ---- invoices --------------------------------------------------------

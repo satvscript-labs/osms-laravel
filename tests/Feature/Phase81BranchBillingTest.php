@@ -440,35 +440,35 @@ class Phase81BranchBillingTest extends TestCase
     |--------------------------------------------------------------------------
     */
 
-    public function test_a_multi_branch_customer_is_supervised_automatically(): void
+    public function test_a_multi_branch_customer_pays_online_for_every_branch(): void
     {
+        // E3-F — the multi-branch guard (B6) is retired: the old lane charged
+        // quantity 1 (FB-06); an Order is priced by the engine for every branch.
+        $rzp = \Tests\Fakes\FakeRazorpay::install($this->app);
         $subscription = $this->payingCustomer();
         $account = $subscription->account;
+        $this->basic()->update(['monthly_price' => 500, 'price_tiers' => null]);
+        $this->tenant('Alpha — Adajan', $account);
 
         $this->assertFalse($account->fresh()->isSupervised());
 
-        $this->tenant('Alpha — Adajan', $account);
+        $this->actingAs($account->fresh()->owner)->post(route('tenant.billing.subscribe'), ['interval' => 'monthly'])->assertOk();
 
-        // BillingService sends Razorpay a hardcoded quantity of 1, so a
-        // multi-branch customer self-serving would pay for one branch. Until
-        // PR-14 lands they are billed by hand.
-        $this->assertTrue($account->fresh()->isSupervised());
-        $this->assertStringContainsString('more than one store', $account->fresh()->supervisionReason());
+        $this->assertSame(100000, $rzp->ordersCreated[0]['amount'], 'two branches × ₹500, not one');
     }
 
-    public function test_the_guard_actually_closes_their_checkout(): void
+    public function test_only_the_account_owner_can_pay_online(): void
     {
+        // E3-I / FB-05 — a branch's admin sees the bill but cannot start a payment.
+        $rzp = \Tests\Fakes\FakeRazorpay::install($this->app);
         $subscription = $this->payingCustomer();
-        $account = $subscription->account;
-        $branch = $this->tenant('Alpha — Adajan', $account);
+        $branch = $this->tenant('Alpha — Adajan', $subscription->account);
+        $branchAdmin = User::withoutGlobalScopes()->where('tenant_id', $branch->id)->firstOrFail();
 
-        $owner = User::withoutGlobalScopes()->where('tenant_id', $branch->id)->firstOrFail();
+        $this->actingAs($branchAdmin)->post(route('tenant.billing.subscribe'), ['interval' => 'monthly'])
+            ->assertRedirect()->assertSessionHas('error', fn ($m) => str_contains($m, 'Only the account owner'));
 
-        $this->actingAs($owner)->post(route('tenant.billing.subscribe'))
-            ->assertRedirect();
-
-        // Nothing was started at the gateway on their behalf.
-        $this->assertNull($subscription->fresh()->razorpay_subscription_id);
+        $this->assertSame([], $rzp->ordersCreated, 'nothing was started at the gateway');
     }
 
     public function test_a_single_branch_customer_can_still_pay_online(): void
@@ -480,16 +480,17 @@ class Phase81BranchBillingTest extends TestCase
         $this->assertFalse($subscription->account->fresh()->isSupervised());
     }
 
-    public function test_closing_a_branch_reopens_self_serve(): void
+    public function test_the_branch_count_never_decides_who_can_pay_online(): void
     {
+        // E3-F — with or without a second branch, open or closed, self-serve is
+        // decided only by supervised mode (yours, or the platform's).
         $subscription = $this->payingCustomer();
         $account = $subscription->account;
         $branch = $this->tenant('Alpha — Adajan', $account);
-        $this->assertTrue($account->fresh()->isSupervised());
+        $this->assertFalse($account->fresh()->isSupervised());
 
         app(StoreClosure::class)->close($branch, 'shut');
 
-        // Back to one billable store, so the guard lifts on its own.
         $this->assertFalse($account->fresh()->isSupervised());
     }
 

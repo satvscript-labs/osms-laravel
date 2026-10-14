@@ -6,6 +6,7 @@ use App\Models\AdminAuditLog;
 use App\Models\BillingCharge;
 use App\Models\Subscription;
 use App\Models\SubscriptionInvoice;
+use App\Models\UnappliedPayment;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
@@ -49,6 +50,7 @@ class Settlement
     {
         return MoneyWrite::transaction(function () use ($charge, $payment) {
             [$sub, $row] = $this->lockForSettle($charge);
+            $this->assertNotBeingPaidOnline($row, $payment);
 
             $amount = $this->amountFor($row, $payment);
             $method = (string) ($payment['method'] ?? 'cash');
@@ -80,6 +82,7 @@ class Settlement
                 'reason' => $payment['reason'] ?? null,
                 'paid_at' => $paidAt,
                 'source' => $payment['source'] ?? 'operator',
+                'razorpay_payment_id' => $payment['gateway_payment_id'] ?? null,
                 'period_start' => $grantStart ?? $row->granted_start ?? $row->period_start,
                 'period_end' => $grantEnd ?? $row->granted_end ?? $row->period_end,
                 'granted_start' => $grantStart,
@@ -103,6 +106,8 @@ class Settlement
                     'method' => $method,
                     'over_the_bill' => $amount > (float) $row->amount + 0.005 ? round($amount - (float) $row->amount, 2) : null,
                     'no_new_coverage' => $grantEnd === null && $row->kind !== 'branch_join' ? 'already granted before a reversal' : null,
+                    'gateway_payment_id' => $payment['gateway_payment_id'] ?? null,
+                    'actor' => $payment['actor'] ?? null,   // "gateway" when Razorpay confirmed it
                 ], fn ($v) => $v !== null));
 
             return $invoice;
@@ -123,6 +128,7 @@ class Settlement
 
         return MoneyWrite::transaction(function () use ($charge, $reason, $input) {
             [$sub, $row] = $this->lockForSettle($charge);
+            $this->assertNotBeingPaidOnline($row, $input);
 
             [$grantStart, $grantEnd] = $this->grant($sub, $row, $input['action'] ?? 'waive', $reason, free: true, input: $input);
 
@@ -192,6 +198,305 @@ class Settlement
                 ? $this->waive($charge, $reason, ['action' => 'waive'] + $input)
                 : $this->settle($charge, ['action' => $action] + $input);
         });
+    }
+
+    // ---------------------------------------------------------------
+    // E3 — the gateway door: Razorpay says money arrived
+    // ---------------------------------------------------------------
+
+    /**
+     * Settle the bill a Razorpay payment was for — or, if it can't buy that bill,
+     * keep the money as UNAPPLIED and say so (rule 4: never a silent drop).
+     *
+     * Called by the checkout callback AND the webhook, in either order and possibly
+     * at the same moment: idempotent on the payment id, checked under the lock
+     * (and backed by the ledger's unique key).
+     *
+     * @param  array{id: string, order_id: ?string, amount: int, currency: string, status: ?string, created_at: ?int}  $payment  as Razorpay recorded it (amount in paise)
+     * @return array{outcome: string, row: ?SubscriptionInvoice, unapplied: ?UnappliedPayment}
+     *         outcome: settled · already · unapplied · not_captured
+     */
+    public function settleGateway(array $payment, string $via, ?string $event = null): array
+    {
+        $paymentId = (string) ($payment['id'] ?? '');
+        $orderId = $payment['order_id'] ?? null;
+        $rupees = round(((int) ($payment['amount'] ?? 0)) / 100, 2);
+
+        if ($paymentId === '') {
+            throw new InvalidArgumentException('A gateway payment without an id cannot be recorded.');
+        }
+
+        if (($payment['status'] ?? null) !== 'captured') {
+            // Authorized-but-not-captured (or failed): nothing is ours yet. With
+            // automatic capture the webhook brings the captured payment shortly.
+            return ['outcome' => 'not_captured', 'row' => null, 'unapplied' => null];
+        }
+
+        $charge = $orderId ? BillingCharge::query()->where('gateway_order_id', $orderId)->first() : null;
+
+        if (! $charge) {
+            return $this->unappliedOutcome($payment, null, null, $orderId
+                ? "Paid online for order {$orderId}, which OSMS has no bill for."
+                : 'Paid online with no order attached.', $event);
+        }
+
+        return MoneyWrite::transaction(function () use ($payment, $paymentId, $rupees, $charge, $via, $event) {
+            $sub = $this->lockSubscriptionOf($charge->account_id);
+            $row = BillingCharge::query()->whereKey($charge->getKey())->lockForUpdate()->firstOrFail();
+
+            $already = SubscriptionInvoice::withoutGlobalScopes()->where('razorpay_payment_id', $paymentId)->first();
+
+            if ($already) {
+                return ['outcome' => 'already', 'row' => $already, 'unapplied' => null];
+            }
+
+            if ($open = UnappliedPayment::query()->where('gateway_payment_id', $paymentId)->first()) {
+                return ['outcome' => 'unapplied', 'row' => null, 'unapplied' => $open];
+            }
+
+            if (! $sub || ! $row->isPending()) {
+                return $this->unappliedOutcome($payment, $row, $row->account_id,
+                    "Paid online for {$row->number}, which is " . mb_strtolower($row->statusLabel())
+                    . ' — refund it, or apply it to another bill.', $event);
+            }
+
+            // A-14 — bills are in rupees; anything else is not compared as if it were.
+            if (strtoupper((string) ($payment['currency'] ?? 'INR')) !== 'INR') {
+                return $this->unappliedOutcome($payment, $row, $row->account_id,
+                    "Paid in {$payment['currency']} for {$row->number} — bills are in rupees. Refund it, or apply it by hand.", $event);
+            }
+
+            if (abs($rupees - (float) $row->amount) > 0.005) {
+                return $this->unappliedOutcome($payment, $row, $row->account_id,
+                    'Paid ₹ ' . number_format($rupees, 2) . " online for {$row->number}, but the bill is ₹ "
+                    . number_format((float) $row->amount, 2) . ' — the amounts differ.', $event);
+            }
+
+            try {
+                $ledger = $this->settle($row, [
+                    'amount' => $rupees,
+                    'method' => 'razorpay',
+                    'source' => 'gateway',
+                    'actor' => 'gateway',
+                    'reference' => $row->gateway_order_id,
+                    'gateway_payment_id' => $paymentId,
+                    'paid_at' => isset($payment['created_at']) ? Carbon::createFromTimestamp((int) $payment['created_at']) : null,
+                    'reason' => 'Paid online (' . $via . ')',
+                ]);
+            } catch (InvalidArgumentException $e) {
+                // A-13 — a business refusal must never become a webhook retry loop
+                // that ends with the money recorded nowhere. Keep it, say why.
+                return $this->unappliedOutcome($payment, $row, $row->account_id,
+                    "Paid online for {$row->number}, but it could not be applied: " . $e->getMessage(), $event);
+            }
+
+            return ['outcome' => 'settled', 'row' => $ledger, 'unapplied' => null];
+        });
+    }
+
+    /**
+     * Keep gateway money that bought nothing — once per payment — and alert.
+     * Not collected revenue until a person applies it (06 §7).
+     */
+    public function recordUnapplied(array $payment, ?BillingCharge $charge, ?string $accountId, string $reason, ?string $event = null): UnappliedPayment
+    {
+        return MoneyWrite::transaction(fn () => MoneyWrite::during(function () use ($payment, $charge, $accountId, $reason, $event) {
+            $existing = UnappliedPayment::query()->where('gateway_payment_id', (string) $payment['id'])->lockForUpdate()->first();
+
+            if ($existing) {
+                return $existing;
+            }
+
+            $row = UnappliedPayment::create([
+                'account_id' => $accountId,
+                'charge_id' => $charge?->id,
+                'gateway' => 'razorpay',
+                'gateway_payment_id' => (string) $payment['id'],
+                'gateway_order_id' => $payment['order_id'] ?? null,
+                'gateway_event' => $event,
+                'amount' => round(((int) ($payment['amount'] ?? 0)) / 100, 2),
+                'currency' => (string) ($payment['currency'] ?? 'INR'),
+                'reason' => mb_substr($reason, 0, 500),
+                'status' => 'open',
+                'paid_at' => isset($payment['created_at']) ? Carbon::createFromTimestamp((int) $payment['created_at']) : now(),
+            ]);
+
+            AdminAuditLog::record('payment.unapplied', '₹' . number_format((float) $row->amount, 2)
+                . " received online and not applied: {$reason}", $charge?->tenant_id, array_filter([
+                    'account_id' => $accountId,
+                    'gateway_payment_id' => $row->gateway_payment_id,
+                    'gateway_order_id' => $row->gateway_order_id,
+                    'charge' => $charge?->number,
+                    'actor' => 'gateway',
+                ], fn ($v) => $v !== null));
+
+            return $row;
+        }));
+    }
+
+    /**
+     * The operator puts unapplied money on the customer's NEXT RENEWAL when no open
+     * bill can take it — the usual case for an unknown order or a legacy autopay
+     * charge. The renewal bill is raised and settled in one transaction: if the
+     * amount differs, nothing is raised and the money stays unapplied.
+     */
+    public function applyUnappliedToRenewal(UnappliedPayment $unapplied, Subscription $subscription, string $note): SubscriptionInvoice
+    {
+        if (trim($note) === '') {
+            throw new InvalidArgumentException('Say why this money belongs to this bill — the record has to explain it later.');
+        }
+
+        return MoneyWrite::transaction(function () use ($unapplied, $subscription, $note) {
+            // The money row first, then the subscription — the same order applyUnapplied() takes (A-10).
+            UnappliedPayment::query()->whereKey($unapplied->getKey())->lockForUpdate()->firstOrFail();
+
+            $charge = $this->engine->raiseTerm($subscription, ['via' => 'operator']);
+
+            return $this->applyUnapplied($unapplied, $charge, $note);
+        });
+    }
+
+    /**
+     * The operator puts unapplied money on a bill: it settles that bill exactly as
+     * if it had arrived for it (once). The amount must equal the bill (E3-C).
+     */
+    public function applyUnapplied(UnappliedPayment $unapplied, BillingCharge $charge, string $note): SubscriptionInvoice
+    {
+        $note = trim($note);
+
+        if ($note === '') {
+            throw new InvalidArgumentException('Say why this money belongs to this bill — the record has to explain it later.');
+        }
+
+        return MoneyWrite::transaction(function () use ($unapplied, $charge, $note) {
+            $u = UnappliedPayment::query()->whereKey($unapplied->getKey())->lockForUpdate()->firstOrFail();
+
+            if (! $u->isOpen()) {
+                throw new InvalidArgumentException('That payment has already been ' . $u->status . '.');
+            }
+
+            if ($u->account_id && $u->account_id !== $charge->account_id) {
+                throw new InvalidArgumentException('That payment came from a different customer. Apply it to one of their bills.');
+            }
+
+            if (abs((float) $u->amount - (float) $charge->amount) > 0.005) {
+                throw new InvalidArgumentException('₹ ' . number_format((float) $u->amount, 2) . ' does not match the bill of ₹ '
+                    . number_format((float) $charge->amount, 2) . '. Apply it to a bill of the same amount, or refund it.');
+            }
+
+            $ledger = $this->settle($charge, [
+                'amount' => (float) $u->amount,
+                'method' => 'razorpay',
+                'source' => 'unapplied',
+                'reference' => $u->gateway_order_id,
+                'gateway_payment_id' => $u->gateway_payment_id,
+                'paid_at' => $u->paid_at,
+                'reason' => "Applied by hand: {$note}",
+            ]);
+
+            MoneyWrite::during(fn () => $u->forceFill([
+                'status' => 'applied',
+                'account_id' => $charge->account_id,
+                'charge_id' => $charge->id,
+                'ledger_row_id' => $ledger->id,
+                'resolved_by' => auth()->id(),
+                'resolved_at' => now(),
+                'resolution_note' => $note,
+            ])->save());
+
+            AdminAuditLog::record('payment.unapplied_applied', '₹' . number_format((float) $u->amount, 2)
+                . " received online applied to {$charge->number}: {$note}", $charge->tenant_id,
+                ['account_id' => $charge->account_id, 'charge' => $charge->number, 'gateway_payment_id' => $u->gateway_payment_id, 'receipt_no' => $ledger->receipt_no]);
+
+            $unapplied->setRawAttributes($u->getAttributes(), true);
+
+            return $ledger;
+        });
+    }
+
+    /**
+     * Money from an order OSMS didn't know has no customer yet: the operator says
+     * whose it is (with why), so it can be applied on that customer's page.
+     */
+    public function assignUnapplied(UnappliedPayment $unapplied, string $accountId, string $note): UnappliedPayment
+    {
+        $note = trim($note);
+
+        if ($note === '') {
+            throw new InvalidArgumentException('Say how you know whose payment this is — the record has to explain it later.');
+        }
+
+        return MoneyWrite::transaction(fn () => MoneyWrite::during(function () use ($unapplied, $accountId, $note) {
+            $u = UnappliedPayment::query()->whereKey($unapplied->getKey())->lockForUpdate()->firstOrFail();
+
+            if (! $u->isOpen()) {
+                throw new InvalidArgumentException('That payment has already been ' . $u->status . '.');
+            }
+
+            if ($u->account_id) {
+                throw new InvalidArgumentException('That payment is already matched to a customer.');
+            }
+
+            $u->forceFill(['account_id' => $accountId, 'resolution_note' => $note])->save();
+
+            AdminAuditLog::record('payment.unapplied_assigned', '₹' . number_format((float) $u->amount, 2)
+                . " received online matched to a customer: {$note}", null,
+                ['account_id' => $accountId, 'gateway_payment_id' => $u->gateway_payment_id]);
+
+            $unapplied->setRawAttributes($u->getAttributes(), true);
+
+            return $u;
+        }));
+    }
+
+    /** E3-D — refunded in the Razorpay dashboard; OSMS records that it was. */
+    public function markRefunded(UnappliedPayment $unapplied, string $note): UnappliedPayment
+    {
+        $note = trim($note);
+
+        if ($note === '') {
+            throw new InvalidArgumentException('Note the refund (e.g. the Razorpay refund id) — the record has to explain it later.');
+        }
+
+        return MoneyWrite::transaction(fn () => MoneyWrite::during(function () use ($unapplied, $note) {
+            $u = UnappliedPayment::query()->whereKey($unapplied->getKey())->lockForUpdate()->firstOrFail();
+
+            if (! $u->isOpen()) {
+                throw new InvalidArgumentException('That payment has already been ' . $u->status . '.');
+            }
+
+            $u->forceFill(['status' => 'refunded', 'resolved_by' => auth()->id(), 'resolved_at' => now(), 'resolution_note' => $note])->save();
+
+            AdminAuditLog::record('payment.unapplied_refunded', '₹' . number_format((float) $u->amount, 2)
+                . " received online recorded as refunded: {$note}", null,
+                array_filter(['account_id' => $u->account_id, 'gateway_payment_id' => $u->gateway_payment_id], fn ($v) => $v !== null));
+
+            $unapplied->setRawAttributes($u->getAttributes(), true);
+
+            return $u;
+        }));
+    }
+
+    /** @return array{outcome: string, row: null, unapplied: UnappliedPayment} */
+    private function unappliedOutcome(array $payment, ?BillingCharge $charge, ?string $accountId, string $reason, ?string $event): array
+    {
+        return ['outcome' => 'unapplied', 'row' => null, 'unapplied' => $this->recordUnapplied($payment, $charge, $accountId, $reason, $event)];
+    }
+
+    /**
+     * E3-B — a person (operator, or applying unapplied money) must not settle or waive
+     * a bill the owner may be paying online this very minute: that is how one bill
+     * gets paid twice. The gateway itself is exempt — it IS that payment.
+     */
+    private function assertNotBeingPaidOnline(BillingCharge $row, array $input): void
+    {
+        if (($input['source'] ?? 'operator') === 'gateway' || ! $row->isBeingPaidOnline()) {
+            return;
+        }
+
+        throw new InvalidArgumentException("{$row->number} is being paid online right now (checkout opened at "
+            . $row->gateway_checkout_at->timezone(config('billing.timezone', 'Asia/Kolkata'))->format('H:i')
+            . '). Give it a few minutes — if their payment does not arrive, record it then.');
     }
 
     // ---------------------------------------------------------------
@@ -345,7 +650,10 @@ class Settlement
         $tz = config('billing.timezone', 'Asia/Kolkata');
         $date = $given instanceof Carbon ? $given->copy() : Carbon::parse((string) $given, $tz);
 
-        if ($date->copy()->startOfDay()->greaterThan(Carbon::today($tz))) {
+        // The DAY it was paid, on the billing clock. A gateway timestamp is a UTC
+        // instant: taking its day in UTC and comparing it with today in IST
+        // refused real payments for 5½ hours a day (found while building E3).
+        if ($date->copy()->timezone($tz)->startOfDay()->greaterThan(Carbon::today($tz))) {
             throw new InvalidArgumentException('A payment cannot be dated in the future.');
         }
 

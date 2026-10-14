@@ -32,6 +32,7 @@ function superadminList(config) {
         filter: config.filter || 'all',
         filterKey: config.filterKey || 'filter',
         noun: config.noun || 'result',
+        nouns: config.nouns || (config.noun || 'result') + 's',
         rows: [],
         loading: false,
         total: config.serverTotal || 0,
@@ -79,7 +80,7 @@ function superadminList(config) {
 
         displayTotal() {
             const n = this.mode === 'idle' ? (config.serverTotal || 0) : this.total;
-            return n + ' ' + (n === 1 ? this.noun : this.noun + 's');
+            return n + ' ' + (n === 1 ? this.noun : this.nouns);
         },
 
         initial(name) { return (name || '?').trim().charAt(0).toUpperCase(); },

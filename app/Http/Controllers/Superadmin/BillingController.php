@@ -54,7 +54,14 @@ class BillingController extends Controller
         // Aggregates in SQL. Reversed rows never count toward collected revenue.
         $live = SubscriptionInvoice::withoutGlobalScopes()->whereNull('reversed_at');
 
+        // E3 — received online, on no bill: listed first, resolved by a person.
+        $unapplied = \App\Models\UnappliedPayment::open()->with('account:id,name,display_name')->orderByDesc('created_at')->get();
+
         return view('superadmin.billing.index', [
+            'unapplied' => $unapplied,
+            'customers' => $unapplied->contains(fn ($u) => ! $u->account_id)
+                ? \App\Models\Account::query()->orderBy('name')->get(['id', 'name', 'display_name'])
+                : collect(),
             'rows' => $rows,
             'liveRows' => $rows->getCollection()->map(fn ($r) => $this->row($r)),
             'method' => $method,

@@ -34,7 +34,7 @@ class BillingCharge extends Model
         'period_start', 'period_end', 'due_on', 'open_key', 'raised_by', 'raised_via',
         'paid_at', 'granted_start', 'granted_end',
         'voided_at', 'voided_by', 'void_reason', 'superseded_by', 'reopened_at',
-        'gateway_order_id', 'gateway_link_id',
+        'gateway_order_id', 'gateway_link_id', 'gateway_checkout_at',
     ];
 
     protected $casts = [
@@ -51,6 +51,7 @@ class BillingCharge extends Model
         'granted_end' => 'date',
         'voided_at' => 'datetime',
         'reopened_at' => 'datetime',
+        'gateway_checkout_at' => 'datetime',
     ];
 
     public function account(): BelongsTo
@@ -100,6 +101,21 @@ class BillingCharge extends Model
     public function hasDiscount(): bool
     {
         return false;
+    }
+
+    /** E3-B — how long after the owner opens checkout a bill counts as "being paid online". */
+    public const CHECKOUT_WINDOW_MINUTES = 15;
+
+    /**
+     * E3-B — the owner opened online checkout for this bill moments ago, so it may be
+     * being paid right now: the operator must not record cash for it, void it or
+     * replace it until the window passes (an ending still voids it; a late online
+     * payment then lands as unapplied, never lost).
+     */
+    public function isBeingPaidOnline(): bool
+    {
+        return $this->gateway_checkout_at !== null
+            && $this->gateway_checkout_at->gt(now()->subMinutes(self::CHECKOUT_WINDOW_MINUTES));
     }
 
     /** E2-G — has this charge already granted coverage (possibly before a reversal)? */

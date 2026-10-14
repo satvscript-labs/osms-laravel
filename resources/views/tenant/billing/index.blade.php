@@ -69,7 +69,10 @@
         $interval = $subscription?->interval;
         $basic = $plans['basic'];
         $otherInterval = $interval === 'yearly' ? 'monthly' : 'yearly';
-        $yearlySave = (int) round((1 - $basic['yearly_price'] / ($basic['monthly_price'] * 12)) * 100);
+        // FB-07 — the saving on THEIR prices (branches, agreed price), not the config list.
+        $yearlySave = ($prices['monthly'] ?? 0) > 0
+            ? (int) round((1 - ($prices['yearly'] ?? 0) / ($prices['monthly'] * 12)) * 100)
+            : 0;
     @endphp
 
     {{-- Current subscription --}}
@@ -81,9 +84,8 @@
                     <span class="h4 fw-semibold font-display mb-0 text-capitalize">
                         {{ $subscription?->tier ?? 'None' }}@if ($interval)<span class="text-muted-foreground fw-normal"> · {{ ucfirst($interval) }}</span>@endif
                     </span>
-                    <span class="badge {{ in_array($s, ['active','trialing']) ? 'text-bg-success' : ($s === 'past_due' ? 'text-bg-warning' : 'text-bg-secondary') }}">
-                        {{ $s ?? 'inactive' }}
-                    </span>
+                    {{-- Never the raw column (house rule, QA-06): a pause is not "past_due". --}}
+                    @include('superadmin.partials.status-pill', ['status' => $subscription?->displayStatus() ?? 'none', 'access' => $state])
                 </div>
                 @if ($subscription?->cancel_at_period_end && $subscription?->current_period_end)
                     <p class="text-warning-emphasis mb-0 mt-1" style="font-size:var(--text-sm);">
@@ -92,7 +94,14 @@
                     </p>
                 @elseif ($subscription?->current_period_end)
                     <p class="text-muted-foreground mb-0 mt-1" style="font-size:var(--text-sm);">
-                        {{ $subscription->status === 'trialing' ? 'Trial ends' : 'Next billing' }}
+                        {{-- Never "Next billing" on a date already gone: a lapsed owner reads it as nothing being owed. --}}
+                        {{ match (true) {
+                            $subscription->isSuspended() => 'Paid through',
+                            $state === 'locked' => $subscription->status === 'trialing' ? 'Trial ended' : 'Access ended',
+                            $state === 'grace' => 'Payment was due',
+                            $subscription->status === 'trialing' => 'Trial ends',
+                            default => 'Next billing',
+                        } }}
                         {{ $subscription->current_period_end->format('d M Y') }}
                     </p>
                 @endif
@@ -151,10 +160,17 @@
         </div>
     @endunless
 
-    {{-- Plan --}}
+    {{-- Plan — E3.5: priced by the engine for THIS account (FB-07). --}}
     @php
         $basic = $plans['basic'];
-        $save = (int) round((1 - $basic['yearly_price'] / ($basic['monthly_price'] * 12)) * 100);
+        $monthly = (float) ($prices['monthly'] ?? 0);
+        $yearly = (float) ($prices['yearly'] ?? 0);
+        $save = $monthly > 0 ? (int) round((1 - $yearly / ($monthly * 12)) * 100) : 0;
+        $payLabel = match (true) {
+            $s === 'trialing' => 'Start your paid plan',
+            in_array($s, ['past_due', 'canceled'], true) => 'Pay to restore access',
+            default => 'Pay your next renewal early',
+        };
     @endphp
     {{-- Opens on the period they are on, so "Current plan" sits under the price they pay. --}}
     <div class="row g-3" x-data="{ interval: @js($interval ?: 'monthly') }">
@@ -172,15 +188,18 @@
                         </div>
                     </div>
 
-                    <p class="mb-3">
-                        <span x-show="interval === 'monthly'" x-cloak>
-                            <span class="h3 fw-semibold font-display">₹{{ number_format($basic['monthly_price']) }}</span>
+                    <p class="mb-1">
+                        <span x-show="interval === 'monthly'" x-cloak x-transition.opacity>
+                            <span class="h3 fw-semibold font-display">₹{{ number_format($monthly, 2) }}</span>
                             <span class="text-muted-foreground">/mo</span>
                         </span>
-                        <span x-show="interval === 'yearly'" x-cloak>
-                            <span class="h3 fw-semibold font-display">₹{{ number_format($basic['yearly_price']) }}</span>
+                        <span x-show="interval === 'yearly'" x-cloak x-transition.opacity>
+                            <span class="h3 fw-semibold font-display">₹{{ number_format($yearly, 2) }}</span>
                             <span class="text-muted-foreground">/yr</span>
                         </span>
+                    </p>
+                    <p class="text-sm text-muted-foreground mb-3">
+                        For {{ $branches }} {{ Str::plural('branch', $branches) }}@if ($subscription?->hasNegotiatedPrice()) · your agreed price @endif
                     </p>
 
                     <ul class="list-unstyled d-flex flex-column gap-2 mb-4 flex-grow-1" style="font-size:var(--text-md);">
@@ -189,15 +208,18 @@
                         @endforeach
                     </ul>
 
-                    @if (empty($supervised))
-                    <form method="POST" action="{{ route('tenant.billing.subscribe') }}">
-                        @csrf
-                        <input type="hidden" name="tier" value="basic">
-                        <input type="hidden" name="interval" :value="interval">
-                        <button type="submit" class="btn btn-primary w-100" {{ $s === 'active' ? 'disabled' : '' }}>
-                            {{ $s === 'active' ? 'Current plan' : 'Subscribe' }}
-                        </button>
-                    </form>
+                    @if ($payBlock === null && $subscription)
+                        {{-- E3 — an Order for exactly this price; nothing changes until it is paid. --}}
+                        <form method="POST" action="{{ route('tenant.billing.subscribe') }}">
+                            @csrf
+                            <input type="hidden" name="interval" :value="interval">
+                            <button type="submit" class="btn btn-primary w-100">
+                                {{ $payLabel }} ·
+                                <span x-text="interval === 'yearly' ? @js('₹ ' . number_format($yearly, 2)) : @js('₹ ' . number_format($monthly, 2))"></span>
+                            </button>
+                        </form>
+                    @elseif ($payBlock && empty($supervised))
+                        <p class="text-sm text-muted-foreground mb-0"><i class="bi bi-info-circle me-1"></i>{{ $payBlock }}</p>
                     @endif
                 </div>
             </div>
@@ -222,12 +244,23 @@
                                 @if ($charge->due_on) · due {{ $charge->due_on->format('d M Y') }}@endif
                             </div>
                             @include('partials.charge-working', ['invoice' => $charge])
+                            @if ($payBlock === null)
+                                <form method="POST" action="{{ route('tenant.billing.pay') }}" class="mt-2">
+                                    @csrf
+                                    <input type="hidden" name="charge" value="{{ $charge->id }}">
+                                    <button type="submit" class="btn btn-primary btn-sm">
+                                        <i class="bi bi-lock me-1"></i>Pay ₹ {{ number_format($charge->amount, 2) }} now
+                                    </button>
+                                </form>
+                            @endif
                         </div>
                     @endforeach
-                    <p class="text-sm text-muted-foreground mb-0">
-                        <i class="bi bi-info-circle me-1"></i>
-                        To pay, contact us at <strong>{{ config('saas.support_email') }}</strong> — we will record it and send your receipt.
-                    </p>
+                    @if ($payBlock !== null)
+                        <p class="text-sm text-muted-foreground mb-0">
+                            <i class="bi bi-info-circle me-1"></i>
+                            {{ $payBlock }}
+                        </p>
+                    @endif
                 </div>
             </div>
         </div>

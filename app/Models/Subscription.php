@@ -32,6 +32,8 @@ class Subscription extends Model
         'cancel_at_period_end' => 'boolean',
         'manual' => 'boolean',
         'quantity' => 'integer',
+        // FB-32 — the day it renews on; NULL until the engine next sets a period (BillingCycle).
+        'billing_anchor_day' => 'integer',
         'negotiated_price' => 'decimal:2',
         'negotiated_at' => 'datetime',
         'override_until' => 'date',
@@ -236,6 +238,20 @@ class Subscription extends Model
     public function isSuspended(): bool
     {
         return $this->override_kind === 'suspension' && $this->hasActiveOverride();
+    }
+
+    /** The override as a person reads it — never the column value ("manual_renewal"). */
+    public function overrideLabel(): string
+    {
+        return match ($this->override_kind) {
+            // Since E3 an online payment lands here too: a paid renewal, by hand or online.
+            'manual_renewal' => 'Paid renewal',
+            'comp' => 'Complimentary',
+            'extension' => 'Extended',
+            'suspension' => 'Suspended',
+            'cancellation' => 'Cancelled',
+            default => ucfirst(str_replace('_', ' ', (string) $this->override_kind)),
+        };
     }
 
     /** The state to SHOW and COUNT: `suspended` beats the `past_due` it is stored as. */
