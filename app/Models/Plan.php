@@ -32,6 +32,19 @@ class Plan extends Model
         'is_active' => 'boolean',
     ];
 
+    /**
+     * E4-B — a list price changed on the Plans page: every open renewal bill not
+     * on an agreed price is re-quoted (after the save commits; never fails it).
+     */
+    protected static function booted(): void
+    {
+        static::updated(function (Plan $plan) {
+            if ($plan->wasChanged(['monthly_price', 'yearly_price', 'price_tiers'])) {
+                \App\Services\BillingEngine::requoteEveryOpenTermAfterCommit(['via' => 'operator']);
+            }
+        });
+    }
+
     public function subscriptions(): HasMany
     {
         return $this->hasMany(Subscription::class);

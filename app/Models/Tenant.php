@@ -72,7 +72,22 @@ class Tenant extends Model
             // and keeps P.2 (one free trial per account, durably). One subscription
             // per ACCOUNT: a second branch joins its payer's clock (REQ-12).
             app(\App\Services\SubscriptionLifecycle::class)->startTrial($tenant);
+            \App\Services\BillingEngine::requoteAfterCommit($tenant->account_id);   // E4-B: a branch joined
         });
+
+        // E4-B — the branches being paid for changed (closed, reopened, excluded,
+        // moved to another payer): the open renewal bill must bill what is true now.
+        static::updated(function (Tenant $tenant) {
+            if ($tenant->wasChanged(['is_billable', 'store_status', 'account_id'])) {
+                \App\Services\BillingEngine::requoteAfterCommit($tenant->account_id);
+
+                if ($tenant->wasChanged('account_id')) {
+                    \App\Services\BillingEngine::requoteAfterCommit($tenant->getOriginal('account_id'));
+                }
+            }
+        });
+
+        static::deleted(fn (Tenant $tenant) => \App\Services\BillingEngine::requoteAfterCommit($tenant->account_id));
     }
 
     public function users(): HasMany

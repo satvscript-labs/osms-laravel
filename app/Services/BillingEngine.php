@@ -119,20 +119,94 @@ class BillingEngine
         return $this->withLockedSubscription($subscription, function (Subscription $s) use ($options) {
             $quote = $this->quoteTerm($s, $options['interval'] ?? null, (int) ($options['cycles'] ?? 1));
 
-            return $this->raise($s, [
-                'kind' => $quote['kind'],
-                'amount' => $quote['amount'],
-                'cycles' => $quote['cycles'],
-                'interval' => $quote['interval'],
-                'quantity' => $quote['quantity'],
-                'unit_price' => $quote['unit_price'],
-                'tier_label' => $quote['tier_label'],
-                'calculation' => $quote['calculation'],
-                'period_start' => $quote['period_start'],
-                'period_end' => $quote['period_end'],
-                'due_on' => $quote['period_start'],
-                'open_key' => $quote['open_key'],
-            ], $options);
+            return $this->raise($s, $this->termFields($quote), $options);
+        });
+    }
+
+    /** A term quote as the columns of a charge. */
+    private function termFields(array $quote): array
+    {
+        return [
+            'kind' => $quote['kind'],
+            'amount' => $quote['amount'],
+            'cycles' => $quote['cycles'],
+            'interval' => $quote['interval'],
+            'quantity' => $quote['quantity'],
+            'unit_price' => $quote['unit_price'],
+            'tier_label' => $quote['tier_label'],
+            'calculation' => $quote['calculation'],
+            'period_start' => $quote['period_start'],
+            'period_end' => $quote['period_end'],
+            'due_on' => $quote['period_start'],
+            'open_key' => $quote['open_key'],
+        ];
+    }
+
+    /**
+     * E4-B — keep the open term bill honest: it is replaced by a fresh quote when
+     * what they would pay (amount, period, cycles) differs, or when their clock
+     * moved under it (an extension, free months) so its dates are stale. raise()
+     * keeps the same bill when nothing moved.
+     *
+     * Left alone: no open term bill, a bill being paid online right now (E3-B; a
+     * later run retries), a REOPENED bill (debt for time already given, E2-G).
+     * Paying late is not a reason: the clock has not moved (A-7 re-dates it when
+     * they pay). Returns the open bill afterwards.
+     */
+    public function requoteOpenTerm(Subscription $subscription, array $options = []): ?BillingCharge
+    {
+        if (! $subscription->account_id) {
+            return null;
+        }
+
+        return $this->withLockedSubscription($subscription, function (Subscription $s) use ($options) {
+            $open = BillingCharge::query()->where('account_id', $s->account_id)->pending()
+                ->whereIn('kind', ['first_term', 'renewal'])
+                ->whereNull('reopened_at')->whereNotNull('open_key')
+                ->lockForUpdate()->first();
+
+            if (! $open || $open->isBeingPaidOnline()) {
+                return $open;
+            }
+
+            $fields = $this->termFields($this->quoteTerm($s, null, max(1, (int) $open->cycles)));
+
+            return $this->raise($s, $fields, $options);
+        });
+    }
+
+    /**
+     * E4-B — re-quote this account's open term bill once the current transaction
+     * has committed. Never fails the change that triggered it (a store closure, a
+     * price edit): a refusal is logged, and the daily run re-quotes again.
+     */
+    public static function requoteAfterCommit(?string $accountId, array $options = []): void
+    {
+        if (! $accountId) {
+            return;
+        }
+
+        DB::afterCommit(function () use ($accountId, $options) {
+            try {
+                $sub = Subscription::withoutGlobalScopes()->where('account_id', $accountId)->first();
+
+                if ($sub) {
+                    app(self::class)->requoteOpenTerm($sub, $options);
+                }
+            } catch (\Throwable $e) {
+                \Illuminate\Support\Facades\Log::warning('Could not re-quote the open renewal bill; the daily run will retry.',
+                    ['account' => $accountId, 'error' => $e->getMessage()]);
+            }
+        });
+    }
+
+    /** E4-B — every account with an open term bill (a list price changed). */
+    public static function requoteEveryOpenTermAfterCommit(array $options = []): void
+    {
+        DB::afterCommit(function () use ($options) {
+            BillingCharge::query()->pending()->whereIn('kind', ['first_term', 'renewal'])
+                ->whereNull('reopened_at')->distinct()->pluck('account_id')
+                ->each(fn ($id) => self::requoteAfterCommit($id, $options));
         });
     }
 
