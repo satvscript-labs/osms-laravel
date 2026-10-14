@@ -173,6 +173,11 @@ class Phase88E4OperatorTest extends TestCase
         }
         $this->get(route('superadmin.platform.reminder-preview', ['stage' => 'due_7', 'by_hand' => 1]))->assertSee('billed directly by our team');
 
+        // By default the preview is what customers would get today: no gateway here, so no Pay button.
+        $this->get(route('superadmin.platform.reminder-preview'))->assertSee('billed directly by our team')->assertDontSee('Pay ₹');
+        \Tests\Fakes\FakeRazorpay::install($this->app);
+        $this->get(route('superadmin.platform.reminder-preview'))->assertSee('Pay ₹ 998.00')->assertDontSee('billed directly by our team');
+
         $this->actingAs(User::factory()->create(['role' => 'store_admin']))
             ->get(route('superadmin.platform.reminder-preview'))->assertForbidden();
     }

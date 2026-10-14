@@ -117,7 +117,10 @@ class PlatformController extends Controller
         $due = \Illuminate\Support\Carbon::today(config('billing.timezone'))->addDays($days);
 
         return new \App\Mail\RenewalReminderMail($stage, 'Asha Mehta', 998.00, $due->toDateString(), $days,
-            $due->copy()->addDays((int) config('billing.grace_days', 7))->toDateString(), 'CHG-2026-0042', (bool) $request->boolean('by_hand'));
+            $due->copy()->addDays((int) config('billing.grace_days', 7))->toDateString(), 'CHG-2026-0042',
+            // What customers would actually get today: no Pay button while supervised mode is on
+            // or no gateway is configured (?by_hand=1 shows that version regardless).
+            $request->boolean('by_hand') || PlatformSetting::supervisedGlobally() || ! app(\App\Services\BillingService::class)->isConfigured());
     }
 
     /** Supervise (or release) one customer, independently of the global switch. */
