@@ -29,6 +29,13 @@ Schedule::call(ScheduledTask::command('purge-trashed', 'model:purge-trashed'))
 Schedule::call(ScheduledTask::command('reconcile-subscriptions', 'subscriptions:reconcile'))
     ->name('reconcile-subscriptions')->dailyAt('02:15');
 
+// E4 — the billing clock: renewal bills raised 7 days ahead, open ones kept honest, and
+// the day's renewal reminder (emails only when Platform → Renewal reminders is on).
+// After reconcile (02:15) so a lapse is already recorded. 02:30 UTC = 08:00 IST: a
+// morning email. Idempotent (a unique sent-log), so a rerun or an overlap is harmless.
+Schedule::call(ScheduledTask::command('billing-daily', 'billing:daily'))
+    ->name('billing-daily')->dailyAt('02:30')->withoutOverlapping(30);
+
 // FT-WhatsApp — sweep due scheduled messages onto the queue every minute (the
 // 60s undo window resolves on the next tick; no persistent worker needed).
 //

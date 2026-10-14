@@ -51,6 +51,8 @@ class Phase82SchedulerInProcessTest extends TestCase
         'monitor-backups' => ['0 9 * * *', true],
         // Super Admin (P5): the panel's "is the cron alive?" heartbeat. In-process, never a child process.
         'scheduler-heartbeat' => ['*/5 * * * *', true],
+        // E4: the billing clock (raise ahead, reminders). In-process, after reconcile.
+        'billing-daily' => ['30 2 * * *', true],
     ];
 
     // ------------------------------------------------------------------
@@ -294,6 +296,7 @@ class Phase82SchedulerInProcessTest extends TestCase
         (ScheduledTask::command('monitor-failed-jobs', 'inspire'))();
         (ScheduledTask::command('monitor-backups', 'inspire'))();
         (ScheduledTask::call('scheduler-heartbeat', fn () => null))();
+        (ScheduledTask::command('billing-daily', 'inspire'))();
 
         Artisan::call('osms:scheduler-status');
         $out = Artisan::output();

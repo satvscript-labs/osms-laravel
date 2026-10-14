@@ -414,7 +414,7 @@ class Subscription extends Model
         return max(0, (int) $today->diffInDays($end, false));
     }
 
-    private function graceDays(): int
+    public function graceDays(): int
     {
         return (int) config('billing.grace_days', 7);
     }
