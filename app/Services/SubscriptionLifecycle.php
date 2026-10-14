@@ -390,11 +390,21 @@ class SubscriptionLifecycle
         $s->current_period_end = $base->copy()->addDays($days);
         $s->cancel_at_period_end = false;
 
+        // F5 (audit) — extending a customer who has PAID before is more paid-for time, not a
+        // trial: as "trialing" they were told their free trial was ending and offered to
+        // subscribe. Only an account that never paid goes back to a trial.
         if ($s->status === 'canceled') {
-            $s->status = 'trialing';
+            $s->status = $this->hasEverPaid($s) ? 'active' : 'trialing';
         }
 
         $s->applyOverride('extension', $s->current_period_end, $reason);
+    }
+
+    /** Money really received from this account at some point (reversed and ₹0 rows aside). */
+    private function hasEverPaid(Subscription $s): bool
+    {
+        return $s->account_id !== null && SubscriptionInvoice::withoutGlobalScopes()
+            ->where('account_id', $s->account_id)->collected()->where('amount', '>', 0)->exists();
     }
 
     // ---- Row 6 · Comp / favour --------------------------------------
@@ -482,7 +492,9 @@ class SubscriptionLifecycle
 
         // Their paid period may still be running; if so they are simply active
         // again, and nothing was lost by the suspension.
-        $s->status = $s->current_period_end && $s->current_period_end->gte(now()->startOfDay())
+        // F3 (audit) — "still running" on the BILLING clock (rule 7), not UTC's.
+        $s->status = $s->current_period_end
+            && $s->current_period_end->toDateString() >= Carbon::today(config('billing.timezone', 'Asia/Kolkata'))->toDateString()
             ? 'active'
             : 'past_due';
 
@@ -588,13 +600,22 @@ class SubscriptionLifecycle
             $end = BillingCycle::add($base, $interval, max(1, (int) $charge->cycles), $anchor);
             $s->billing_anchor_day = $anchor;
 
-            $s->status = 'active';
+            // F7 (audit) — money never lifts a SUSPENSION. Suspension preserves the paid-through
+            // date by design, so a payment that lands while suspended (a checkout opened before,
+            // a webhook after; an operator recording it) extends that date — and the customer
+            // stays suspended until a person reactivates them.
+            $suspended = $s->isSuspended();
+
             $s->interval = $interval;
             $s->pending_interval = null;
             $s->current_period_start = $base->toDateString();
             $s->current_period_end = $end;
-            $s->cancel_at_period_end = false;
-            $s->applyOverride($free ? 'comp' : 'manual_renewal', $end, $reason !== '' ? $reason : 'Manual renewal');
+
+            if (! $suspended) {
+                $s->status = 'active';
+                $s->cancel_at_period_end = false;
+                $s->applyOverride($free ? 'comp' : 'manual_renewal', $end, $reason !== '' ? $reason : 'Manual renewal');
+            }
             $s->manual = true;
             $s->save();
 
@@ -602,6 +623,7 @@ class SubscriptionLifecycle
                 'account_id' => $s->account_id,
                 'reason' => $reason ?: null,
                 'charge' => $charge->number,
+                'still_suspended' => $suspended ?: null,
                 // E1.12 — paid online: the audit names the gateway, not "System".
                 'actor' => $input['actor'] ?? null,
                 'input' => collect($input)->except(['password', 'password_confirmation', '_token', '_once'])->all(),
@@ -744,6 +766,35 @@ class SubscriptionLifecycle
             $this->auditAs('system', 'subscription.trial_expired', 'Trial ended without a payment', $s, $before);
             // E4-G — a first-term bill they opened and never paid is not owed for ever.
             app(BillingEngine::class)->voidOpen($s, 'Trial ended without a payment', ['first_term', 'renewal'], ['actor' => 'system'], keepReopened: true);
+
+            return true;
+        });
+    }
+
+    /**
+     * F8 (audit) — they chose to leave at the end of the period, and it has ended:
+     * cancelled now, as asked. Not a lapse — no grace (access ran to the end of what
+     * they paid for, decision C3), never "Payment overdue". Audited as `system`;
+     * churn is stamped by the model as for any cancellation.
+     */
+    public function endScheduledCancellation(Subscription $subscription): bool
+    {
+        return $this->locked($subscription, function (Subscription $s) {
+            $today = Carbon::today(config('billing.timezone', 'Asia/Kolkata'))->toDateString();
+
+            if (! $s->cancel_at_period_end || ! in_array($s->status, ['active', 'past_due'], true)
+                || $s->isSuspended() || ! $s->current_period_end
+                || $s->current_period_end->toDateString() >= $today) {
+                return false;
+            }
+
+            $before = $this->snapshot($s);
+            $s->status = 'canceled';
+            $s->cancel_at_period_end = false;
+            $s->save();
+
+            $this->auditAs('system', 'subscription.cancelled_at_period_end',
+                'Cancelled at the end of the period, as they asked', $s, $before);
 
             return true;
         });

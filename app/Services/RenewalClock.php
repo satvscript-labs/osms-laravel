@@ -95,10 +95,22 @@ final class RenewalClock
 
         // 2 · The reminder.
         $stage = ($skip === null && $days !== null) ? $this->stage($s, $days) : null;
+
+        // A-22 (owner decision, audit) — a free period you gave (free months, an extension,
+        // a waived renewal) is not billed ahead, but its end is not silent either: the owner
+        // hears "due tomorrow" and "due today", at today's price. Nothing else.
+        $free = $skip !== null && $days !== null && $this->freePeriodEnding($s, $end);
+
+        if ($free && in_array($stage = $this->stage($s, $days), ['due_1', 'due_0'], true)) {
+            $bill ??= new BillingCharge(['amount' => $this->engine->quoteTerm($s)['amount']]);
+        } elseif ($free) {
+            $stage = null;
+        }
+
         $email = '—';
 
         if ($stage !== null && $bill !== null) {
-            $email = $this->remind($s, $bill, $stage, $end, $days, $dryRun, $emailsOn);
+            $email = $this->remind($s, $bill, $stage, $end, $days, $dryRun, $emailsOn, freePeriod: $free);
         }
 
         return $this->line($s, $days, $billText, $stage, $email, $skip);
@@ -125,6 +137,17 @@ final class RenewalClock
         };
     }
 
+    /**
+     * A-22 — a paying customer's FREE period (comp, extension, a waived renewal) ends with
+     * this cycle. Not a suspension or a cancellation: those are not chased at all.
+     */
+    public function freePeriodEnding(Subscription $s, ?Carbon $end): bool
+    {
+        return $end !== null && $s->status === 'active' && ! $s->cancel_at_period_end
+            && in_array($s->override_kind, ['comp', 'extension'], true) && $this->operatorManaged($s, $end)
+            && $s->account && $s->account->billableStoreCount() > 0;
+    }
+
     /** E4-F — a cycle ending under a comp, extension, suspension or cancellation. */
     private function operatorManaged(Subscription $s, ?Carbon $end): bool
     {
@@ -148,7 +171,8 @@ final class RenewalClock
         }
 
         return BillingCharge::query()->where('account_id', $s->account_id)->where('status', 'void')
-            ->whereIn('kind', self::TERM_KINDS)->whereNotNull('voided_by')
+            // F4 — only a person's own Void; an ending's (cancel, free months) is undone with it.
+            ->whereIn('kind', self::TERM_KINDS)->where('voided_via', 'operator')
             ->where('voided_at', '>=', $end->copy()->subDays(self::LEAD_DAYS)->startOfDay())
             ->exists();
     }
@@ -213,7 +237,7 @@ final class RenewalClock
     }
 
     /** E4-C / E4-D / E4-E — email the payer once for this stage of this cycle. */
-    private function remind(Subscription $s, BillingCharge $bill, string $stage, Carbon $end, int $days, bool $dryRun, bool $emailsOn): string
+    private function remind(Subscription $s, BillingCharge $bill, string $stage, Carbon $end, int $days, bool $dryRun, bool $emailsOn, bool $freePeriod = false): string
     {
         $account = $s->account;
         $cycleEnd = $end->toDateString();
@@ -248,6 +272,7 @@ final class RenewalClock
             billNumber: $bill->number,
             // No Pay button to promise when they can't pay online (supervised, or no gateway keys).
             billedByHand: $account->isSupervised() || ! app(BillingService::class)->isConfigured(),
+            freePeriod: $freePeriod,
         );
 
         try {

@@ -3,6 +3,9 @@
 
 Hi {{ $customerName }},
 
+@if ($freePeriod)
+The free period on your OSMS plan ends **{{ $stage === 'due_0' ? 'today' : 'tomorrow, ' . $dueText }}**. To carry on without a break, your plan is **{{ $amountText }}**.
+@else
 @switch($stage)
 @case('due_7')
 Your OSMS plan renews on **{{ $dueText }}** — in {{ $daysLeft }} {{ \Illuminate\Support\Str::plural('day', $daysLeft) }}. The amount due is **{{ $amountText }}**.
@@ -19,6 +22,7 @@ Your OSMS plan ended on **{{ $dueText }}** and the renewal of **{{ $amountText }
 @default
 Your OSMS plan ended on **{{ $dueText }}** and the renewal was not paid, so access to your store is paused. Your data is safe. Pay **{{ $amountText }}** and you can carry on where you left off.
 @endswitch
+@endif
 
 @if ($billNumber)
 Bill: {{ $billNumber }}

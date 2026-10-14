@@ -111,6 +111,12 @@ class RazorpayWebhookController extends Controller
             return true;
         }
 
+        // F2 (audit) — money we already hold is ours, whatever its bill says now.
+        if (\App\Models\SubscriptionInvoice::withoutGlobalScopes()->where('razorpay_payment_id', $payment['id'])->exists()
+            || \App\Models\UnappliedPayment::query()->where('gateway_payment_id', $payment['id'])->exists()) {
+            return true;
+        }
+
         $orderNotes = (array) $request->input('payload.order.entity.notes', []);
         $paymentNotes = (array) $request->input('payload.payment.entity.notes', []);
         $receipt = (string) $request->input('payload.order.entity.receipt', '');

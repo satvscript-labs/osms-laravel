@@ -33,7 +33,7 @@ class BillingCharge extends Model
         'amount', 'cycles', 'interval', 'quantity', 'unit_price', 'tier_label', 'calculation',
         'period_start', 'period_end', 'due_on', 'open_key', 'raised_by', 'raised_via',
         'paid_at', 'granted_start', 'granted_end',
-        'voided_at', 'voided_by', 'void_reason', 'superseded_by', 'reopened_at',
+        'voided_at', 'voided_by', 'voided_via', 'void_reason', 'superseded_by', 'reopened_at',
         'gateway_order_id', 'gateway_link_id', 'gateway_checkout_at',
     ];
 
