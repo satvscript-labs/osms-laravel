@@ -65,7 +65,9 @@ exactly **one** subscription (one clock, one renewal date). Design and status:
    Money rows are never deleted: no `cascadeOnDelete` from stores into billing tables.
 7. **Assert what the customer can do**, not which column changed: billing tests assert
    `accessState()`, rupees owed and rupees collected. Any `now()` touching a billing date uses
-   `config('billing.timezone')`.
+   `config('billing.timezone')`. Every cycle boundary comes from `App\Services\BillingCycle::add()`
+   with the subscription's anchor (`BillingCycle::anchorOf()`): month ends clamp (31 Jan → 28 Feb →
+   31 Mar), never `addMonths()` overflow (FB-32; `Phase87MonthEndTest` bans it in billing code).
 8. **Customer data is never lost to a code change.** Production holds real customers' records
    (patients, prescriptions, revenue history). Migrations are additive (new tables, nullable columns;
    no dropped columns or tables without an explicit decision and a verified backup), every `down()`

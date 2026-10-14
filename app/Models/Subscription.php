@@ -32,6 +32,8 @@ class Subscription extends Model
         'cancel_at_period_end' => 'boolean',
         'manual' => 'boolean',
         'quantity' => 'integer',
+        // FB-32 — the day it renews on; NULL until the engine next sets a period (BillingCycle).
+        'billing_anchor_day' => 'integer',
         'negotiated_price' => 'decimal:2',
         'negotiated_at' => 'datetime',
         'override_until' => 'date',

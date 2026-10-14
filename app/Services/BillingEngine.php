@@ -57,7 +57,7 @@ class BillingEngine
         $amount = round($perCycle * $cycles, 2);
 
         $start = $this->clockBase($s);
-        $end = BillingCycle::add($start, $interval, $cycles);
+        $end = BillingCycle::add($start, $interval, $cycles, BillingCycle::anchorOf($s, $start));   // FB-32
         $unit = $interval === 'yearly' ? 'year' : 'month';
 
         $lines = [

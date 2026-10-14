@@ -411,7 +411,9 @@ class SubscriptionLifecycle
         }
 
         $s->current_period_start = $base->toDateString();
-        $s->current_period_end = $base->copy()->addMonths($months);
+        $anchor = BillingCycle::anchorOf($s, $base);   // FB-32: never overflow (31 Jan + 1 month is 28 Feb)
+        $s->current_period_end = BillingCycle::add($base, 'monthly', $months, $anchor);
+        $s->billing_anchor_day = $anchor;
         $s->cancel_at_period_end = false;
         $s->applyOverride('comp', $s->current_period_end, $reason);
 
@@ -573,7 +575,10 @@ class SubscriptionLifecycle
 
             $interval = $charge->interval ?: ($s->interval ?: 'monthly');
             $base = $this->clockBase($s);
-            $end = BillingCycle::add($base, $interval, max(1, (int) $charge->cycles));
+            // FB-32 — clamped to the anchor day, and the anchor remembered for the next renewal.
+            $anchor = BillingCycle::anchorOf($s, $base);
+            $end = BillingCycle::add($base, $interval, max(1, (int) $charge->cycles), $anchor);
+            $s->billing_anchor_day = $anchor;
 
             $s->status = 'active';
             $s->interval = $interval;
