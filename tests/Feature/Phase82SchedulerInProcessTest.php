@@ -52,7 +52,7 @@ class Phase82SchedulerInProcessTest extends TestCase
         // Super Admin (P5): the panel's "is the cron alive?" heartbeat. In-process, never a child process.
         'scheduler-heartbeat' => ['*/5 * * * *', true],
         // E4: the billing clock (raise ahead, reminders). In-process, after reconcile.
-        'billing-daily' => ['30 2 * * *', true],
+        'billing-daily' => ['0 8 * * *', true],   // in the billing timezone (Asia/Kolkata)
     ];
 
     // ------------------------------------------------------------------

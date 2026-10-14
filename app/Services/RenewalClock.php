@@ -119,6 +119,7 @@ final class RenewalClock
             $s->status === 'canceled' => 'Cancelled',
             (bool) $s->cancel_at_period_end => 'Cancels at the end of the period',
             $this->operatorManaged($s, $end) => 'Decided by you: ' . $s->overrideLabel(),
+            $this->voidedByAPerson($s, $end) => 'You voided this renewal — not raised again this cycle',
             $account->billableStoreCount() === 0 => 'No store being billed',
             default => null,
         };
@@ -133,6 +134,23 @@ final class RenewalClock
 
         return $s->override_until === null || ! $end
             || $s->override_until->toDateString() >= $end->toDateString();
+    }
+
+    /**
+     * A-16 — a person voided this cycle's renewal bill ("not owed", "no longer
+     * chased"). The clock must not raise it again the next morning: automation never
+     * overrules a person (playbook §5.2 rule 2). The next cycle starts afresh.
+     */
+    private function voidedByAPerson(Subscription $s, ?Carbon $end): bool
+    {
+        if (! $end) {
+            return false;
+        }
+
+        return BillingCharge::query()->where('account_id', $s->account_id)->where('status', 'void')
+            ->whereIn('kind', self::TERM_KINDS)->whereNotNull('voided_by')
+            ->where('voided_at', '>=', $end->copy()->subDays(self::LEAD_DAYS)->startOfDay())
+            ->exists();
     }
 
     /** E4-C — today's stage for a cycle `$days` from its end (negative once ended). */

@@ -180,6 +180,41 @@ class Phase88E4ClockTest extends TestCase
         $this->assertNotNull($this->open($hq), 'the bill itself was raised');
     }
 
+    public function test_a_renewal_a_person_voided_is_not_raised_again_that_cycle(): void
+    {
+        // A-16 — automation never overrules a person.
+        $hq = $this->customer('2026-11-08');
+        $this->clock();                                       // bill + due_7
+        $operator = User::factory()->create(['role' => 'superadmin', 'tenant_id' => null]);
+        $this->actingAs($operator);
+        app(BillingEngine::class)->void($this->open($hq), 'paying by cheque on the day');
+        auth()->logout();
+
+        foreach (['2026-11-02', '2026-11-07'] as $day) {
+            $this->on($day);
+            $out = $this->clock();
+        }
+
+        $this->assertNull($this->open($hq), 'not raised again');
+        $this->assertSame(['due_7'], $this->stagesSent(), 'and not chased');
+        $this->assertStringContainsString('You voided this renewal', $out);
+
+        // Their next cycle is billed as normal.
+        $this->actingAs($operator);
+        app(Settlement::class)->payTerm($this->sub($hq), 'renew', ['method' => 'cheque', 'reference' => 'CHQ-1']);   // → 8 Dec
+        auth()->logout();
+        $this->on('2026-12-01');
+        $this->clock();
+        $this->assertNotNull($this->open($hq));
+    }
+
+    public function test_the_clock_runs_at_eight_in_the_morning_billing_time_whatever_the_server_zone(): void
+    {
+        $event = collect(app(\Illuminate\Console\Scheduling\Schedule::class)->events())->first(fn ($e) => $e->description === 'billing-daily');
+
+        $this->assertSame(['0 8 * * *', 'Asia/Kolkata'], [$event->expression, (string) $event->timezone]);
+    }
+
     public function test_paying_early_stops_the_ladder_for_that_cycle(): void
     {
         $hq = $this->customer('2026-11-08');
