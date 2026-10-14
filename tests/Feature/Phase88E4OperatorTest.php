@@ -110,6 +110,18 @@ class Phase88E4OperatorTest extends TestCase
         $this->today()->assertSee('Free period ends — decide')->assertDontSee('wa.me', false)->assertDontSee('Add phone');
     }
 
+    public function test_the_customer_page_says_due_for_a_bill_raised_ahead_and_owed_once_it_is_due(): void
+    {
+        $hq = $this->customer('2026-11-06');
+        app(BillingEngine::class)->raiseTerm($this->sub($hq), ['via' => 'system']);
+        $page = fn () => $this->withSession(['auth.password_confirmed_at' => time()])->get(route('superadmin.accounts.show', $hq->account_id))->assertOk();
+
+        $page()->assertSee('₹ 499.00 due 06 Nov')->assertDontSee('₹ 499.00 owed');
+
+        $this->on('2026-11-06 10:00');
+        $page()->assertSee('₹ 499.00 owed')->assertDontSee('₹ 499.00 due 06 Nov');
+    }
+
     public function test_a_bill_due_today_is_owed_now_whatever_the_hour(): void
     {
         $hq = $this->customer('2026-11-01');
@@ -132,17 +144,23 @@ class Phase88E4OperatorTest extends TestCase
 
     public function test_the_nudge_is_written_for_the_customer(): void
     {
+        \Tests\Fakes\FakeRazorpay::install($this->app);   // online payment configured
         $account = Account::create(['name' => 'Nudge', 'billing_phone' => '+44 7700 900123']);
         $due = Carbon::parse('2026-11-06');
 
         $url = RenewalNudge::whatsappUrl($account, 998, $due, false);
         $this->assertStringStartsWith('https://wa.me/447700900123?text=', $url, 'a foreign number keeps its own code');
-        $this->assertStringContainsString('is due on 6 Nov 2026. You can pay online here: ' . route('tenant.billing.index'),
+        $this->assertSame('Hello Nudge, this is OSMS. Your renewal of ₹998.00 is due on 6 Nov 2026. You can pay online here: ' . route('tenant.billing.index') . ' Thank you!',
             RenewalNudge::message($account, 998, $due, false));
         $this->assertStringContainsString('was due on 6 Nov 2026. Please pay it', RenewalNudge::message($account, 998, $due, true));
 
         $account->update(['supervised' => true]);
         $this->assertStringContainsString('Reply here and we will share how to pay.', RenewalNudge::message($account->fresh(), 998, $due, false));
+
+        $account->update(['supervised' => false]);
+        config(['services.razorpay.key' => null]);
+        $this->app->forgetInstance(\App\Services\BillingService::class);
+        $this->assertStringContainsString('Reply here and we will share how to pay.', RenewalNudge::message($account->fresh(), 998, $due, false), 'no gateway, no online promise');
 
         $account->update(['billing_phone' => '12']);
         $this->assertNull(RenewalNudge::whatsappUrl($account->fresh(), 998, $due, false), 'no usable number, no link');

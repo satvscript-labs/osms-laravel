@@ -33,15 +33,16 @@ final class RenewalNudge
         $url = route('tenant.billing.index');
 
         $body = match (true) {
-            $overdue && $date !== null => "your OSMS renewal of {$amountText} was due on {$date}. Please pay it to keep your store running",
-            $date !== null => "your OSMS renewal of {$amountText} is due on {$date}",
-            default => "your OSMS renewal of {$amountText} is due",
+            $overdue && $date !== null => "Your renewal of {$amountText} was due on {$date}. Please pay it to keep your store running",
+            $date !== null => "Your renewal of {$amountText} is due on {$date}",
+            default => "Your renewal of {$amountText} is due",
         };
 
-        $how = $account->isSupervised()
+        // Never point at online payment they cannot use (supervised, or no gateway keys).
+        $how = $account->isSupervised() || ! app(\App\Services\BillingService::class)->isConfigured()
             ? 'Reply here and we will share how to pay.'
             : "You can pay online here: {$url}";
 
-        return "Hello {$first}, this is OSMS — {$body}. {$how} Thank you!";
+        return "Hello {$first}, this is OSMS. {$body}. {$how} Thank you!";
     }
 }

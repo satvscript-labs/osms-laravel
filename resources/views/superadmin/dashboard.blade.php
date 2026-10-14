@@ -146,8 +146,8 @@
                         <p class="text-muted-foreground text-sm mb-0">
                             {{ $collection['due_soon_count'] }}
                             {{ Str::plural('renewal', $collection['due_soon_count']) }} at their current
-                            price — what they would pay. Each renewal is billed 7 days before it is due
-                            (E4), so the nearest ones are already on Owed as coming due.
+                            price — what they would pay. Each renewal is billed 7 days before it is due,
+                            so the nearest ones are already on Owed as coming due.
                         </p>
                     </div>
                 </div>

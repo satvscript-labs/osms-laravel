@@ -104,9 +104,21 @@
                         <i class="bi bi-hand-index-thumb"></i> {{ $s->overrideLabel() }}
                     </span>
                 @endif
-                @if (($owed ?? 0) > 0)
+                @php
+                    // E4-H — a renewal billed ahead is not late: amber only for what is due now.
+                    $todayIst = \Illuminate\Support\Carbon::today(config('billing.timezone', 'Asia/Kolkata'))->toDateString();
+                    $openBills = ($charges ?? collect())->where('status', 'pending');
+                    $upcomingBills = $openBills->filter(fn ($c) => $c->due_on && $c->due_on->toDateString() > $todayIst);
+                    $dueNow = round((float) ($owed ?? 0) - (float) $upcomingBills->sum('amount'), 2);
+                @endphp
+                @if ($dueNow > 0)
                     <span class="osms-badge osms-badge-amber" title="Open bills — see the Owed tab">
-                        <span class="osms-badge-dot"></span>₹ {{ number_format($owed, 2) }} owed
+                        <span class="osms-badge-dot"></span>₹ {{ number_format($dueNow, 2) }} owed
+                    </span>
+                @endif
+                @if ($upcomingBills->isNotEmpty())
+                    <span class="meta-chip" title="Billed ahead — not due yet">
+                        <i class="bi bi-calendar-check"></i> ₹ {{ number_format($upcomingBills->sum('amount'), 2) }} due {{ $upcomingBills->min('due_on')->format('d M') }}
                     </span>
                 @endif
                 <span class="meta-chip"><i class="bi bi-shop"></i> {{ $account->stores->count() }} {{ Str::plural('store', $account->stores->count()) }}</span>
