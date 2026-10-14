@@ -185,6 +185,9 @@ Route::middleware(['auth', 'superadmin', 'throttle:120,1'])
             Route::patch('/customers/{account}/notes', [SuperadminAccountAction::class, 'updateNotes'])->name('accounts.notes');
             Route::patch('/customers/{account}/supervised', [SuperadminPlatform::class, 'superviseAccount'])->name('accounts.supervised');
             Route::patch('/platform/supervised-mode', [SuperadminPlatform::class, 'supervisedMode'])->name('platform.supervised-mode');
+            // E4 — renewal reminder emails (off until switched on), and where billing messages go.
+            Route::patch('/platform/renewal-reminders', [SuperadminPlatform::class, 'renewalReminders'])->name('platform.renewal-reminders');
+            Route::patch('/customers/{account}/contact', [SuperadminAccountAction::class, 'updateContact'])->name('accounts.contact');
 
             /*
             | P5 — access & operations (matrix rows 1–2, 14, 16).

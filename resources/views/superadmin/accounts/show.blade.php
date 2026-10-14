@@ -123,6 +123,10 @@
                 @if ($account->billing_phone)
                     <span class="ms-2"><i class="bi bi-telephone me-1"></i>{{ $account->billing_phone }}</span>
                 @endif
+                {{-- E4-I — reminders and the WhatsApp nudge go here. --}}
+                <button type="button" class="btn btn-link btn-sm p-0 ms-2 align-baseline text-sm" data-bs-toggle="modal" data-bs-target="#m-contact">
+                    <i class="bi bi-pencil me-1"></i>{{ $account->billing_email || $account->billing_phone ? 'Edit contact' : 'Add billing contact' }}
+                </button>
             </p>
         </div>
     </div>

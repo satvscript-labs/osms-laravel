@@ -301,6 +301,41 @@ class AccountActionController extends Controller
         return back()->with('status', 'Notes saved.');
     }
 
+    /**
+     * E4-I — where billing messages go: the email reminders use (with the owner's)
+     * and the phone the WhatsApp nudge opens. Public sign-ups never collected a
+     * phone, so this is how one gets on file. Audited with before → after.
+     */
+    public function updateContact(Request $request, Account $account): RedirectResponse
+    {
+        $validated = $request->validate([
+            'billing_email' => ['nullable', 'email', 'max:255'],
+            'billing_phone' => ['nullable', 'string', 'max:30', function ($attribute, $value, $fail) {
+                if (filled($value) && ! \App\Support\Phone::isValid($value)) {
+                    $fail('That phone number does not look complete — include the country code if it is not Indian.');
+                }
+            }],
+        ]);
+
+        $before = $account->only(['billing_email', 'billing_phone']);
+        $account->update([
+            'billing_email' => filled($validated['billing_email'] ?? null) ? trim($validated['billing_email']) : null,
+            'billing_phone' => filled($validated['billing_phone'] ?? null) ? trim($validated['billing_phone']) : null,
+        ]);
+        $after = $account->only(['billing_email', 'billing_phone']);
+
+        if ($before !== $after) {
+            AdminAuditLog::record(
+                'account.contact_updated',
+                "Updated billing contact for {$account->displayName()}",
+                $account->stores()->value('id'),
+                ['account_id' => $account->id, 'before' => $before, 'after' => $after],
+            );
+        }
+
+        return back()->with('status', $before === $after ? 'Nothing changed.' : 'Billing contact saved.');
+    }
+
     private function confirmation(string $action): string
     {
         return match ($action) {

@@ -23,6 +23,7 @@ class PlatformController extends Controller
     {
         return view('superadmin.platform.index', [
             'supervisedGlobally' => PlatformSetting::supervisedGlobally(),
+            'remindersOn' => PlatformSetting::renewalRemindersOn(),
             // P5 — the ops surface. Everything here is a real measurement, not
             // an inference; see PlatformHealth for why each one is observable.
             'health' => app(PlatformHealth::class)->checks(),
@@ -77,6 +78,32 @@ class PlatformController extends Controller
         return back()->with('status', $validated['enabled']
             ? 'Supervised mode is on. Every customer now pays through you.'
             : 'Supervised mode is off. Customers can pay online again.');
+    }
+
+    /**
+     * E4-D — switch renewal reminder EMAILS to customers on or off. Bills raised
+     * ahead, banners and the operator's Due soon list run either way.
+     */
+    public function renewalReminders(Request $request): RedirectResponse
+    {
+        $validated = $request->validate([
+            'enabled' => ['required', 'boolean'],
+            'reason' => ['required', 'string', 'max:500'],
+        ]);
+
+        $before = PlatformSetting::renewalRemindersOn();
+        PlatformSetting::set(PlatformSetting::RENEWAL_REMINDERS, (bool) $validated['enabled']);
+
+        AdminAuditLog::record(
+            'platform.renewal_reminders',
+            $validated['enabled'] ? 'Renewal reminder emails ON' : 'Renewal reminder emails OFF',
+            null,
+            ['reason' => $validated['reason'], 'before' => $before, 'after' => (bool) $validated['enabled']],
+        );
+
+        return back()->with('status', $validated['enabled']
+            ? 'Renewal reminders are on. Customers are emailed from the next morning run.'
+            : 'Renewal reminders are off. No customer will be emailed about renewals.');
     }
 
     /** Supervise (or release) one customer, independently of the global switch. */
