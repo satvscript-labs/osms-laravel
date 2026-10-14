@@ -461,17 +461,30 @@ class BillingEngine
     {
         $today = Carbon::today(config('billing.timezone', 'Asia/Kolkata'));
         $aged = ['fresh' => 0.0, 'month' => 0.0, 'older' => 0.0];
+        $upcoming = 0.0;
         $open = BillingCharge::query()->pending()->get(['account_id', 'amount', 'due_on', 'created_at']);
 
         foreach ($open as $charge) {
             $due = $charge->due_on ?? $charge->created_at;
-            $days = $due ? max(0, (int) Carbon::parse($due->toDateString())->diffInDays($today, false)) : 0;
+
+            // E4-H — raised ahead and not yet due: owed, but nobody is late.
+            if ($due && $due->toDateString() > $today->toDateString()) {   // calendar dates, one timezone
+                $upcoming = round($upcoming + (float) $charge->amount, 2);
+
+                continue;
+            }
+
+            $days = $due ? max(0, (int) Carbon::parse($due->toDateString(), $today->getTimezone())->diffInDays($today, false)) : 0;
             $bucket = $days <= 7 ? 'fresh' : ($days <= 30 ? 'month' : 'older');
             $aged[$bucket] = round($aged[$bucket] + (float) $charge->amount, 2);
         }
 
+        $total = round((float) $open->sum('amount'), 2);
+
         return [
-            'total' => round((float) $open->sum('amount'), 2),
+            'total' => $total,
+            'due_now' => round($total - $upcoming, 2),   // due today or earlier, aged below
+            'upcoming' => $upcoming,                     // E4-H — coming due (raised ahead)
             'bills' => $open->count(),
             'accounts' => $open->pluck('account_id')->unique()->count(),
             'aged' => $aged,

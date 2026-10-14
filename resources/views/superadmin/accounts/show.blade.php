@@ -603,6 +603,10 @@
             : null;
         if (fromUrl) bootstrap.Tab.getOrCreateInstance(fromUrl).show();
 
+        // E4-I — "Add phone" on Today lands here with the contact form open.
+        const contact = location.hash === '#contact' ? document.getElementById('m-contact') : null;
+        if (contact) bootstrap.Modal.getOrCreateInstance(contact).show();
+
         document.querySelectorAll('[data-bs-toggle="pill"][data-bs-target^="#tab-"]').forEach((el) => {
             el.addEventListener('shown.bs.tab', () => history.replaceState(null, '', el.dataset.bsTarget));
         });

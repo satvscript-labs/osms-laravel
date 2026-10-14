@@ -92,9 +92,13 @@
                         Seven days before a period ends the renewal bill is raised, and the owner sees it in the app
                         whatever this says. With this on, the owner is also emailed 7 days before, the day before, on
                         the day, during grace, and when access pauses — each once.
-                        @if (Route::has('superadmin.platform.reminder-preview'))
-                            <a href="{{ route('superadmin.platform.reminder-preview') }}" target="_blank" rel="noopener">Preview the email</a>.
-                        @endif
+                    </p>
+                    <p class="text-sm mt-2 mb-0">
+                        <span class="text-muted-foreground">Read them first:</span>
+                        @foreach (['due_7' => '7 days before', 'due_1' => 'the day before', 'due_0' => 'on the day', 'grace' => 'overdue', 'locked' => 'paused'] as $stage => $label)
+                            <a href="{{ route('superadmin.platform.reminder-preview', ['stage' => $stage]) }}" target="_blank" rel="noopener">{{ $label }}</a>{{ $loop->last ? '' : ' · ' }}
+                        @endforeach
+                        · <a href="{{ route('superadmin.platform.reminder-preview', ['stage' => 'due_7', 'by_hand' => 1]) }}" target="_blank" rel="noopener">billed by hand</a>
                     </p>
                 </div>
 

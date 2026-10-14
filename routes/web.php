@@ -143,6 +143,7 @@ Route::middleware(['auth', 'superadmin', 'throttle:120,1'])
 
         // P4 — the knobs, and the health of the automated lane.
         Route::get('/platform', [SuperadminPlatform::class, 'index'])->name('platform.index');
+        Route::get('/platform/reminder-preview', [SuperadminPlatform::class, 'reminderPreview'])->name('platform.reminder-preview');
 
         // Audit trail (read-only)
         Route::get('/audit', [SuperadminAuditLog::class, 'index'])->name('audit.index');

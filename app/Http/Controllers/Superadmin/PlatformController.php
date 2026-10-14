@@ -106,6 +106,20 @@ class PlatformController extends Controller
             : 'Renewal reminders are off. No customer will be emailed about renewals.');
     }
 
+    /**
+     * E4-D — what a customer would receive, before anyone is emailed. Sample values;
+     * renders the real template. Read-only.
+     */
+    public function reminderPreview(Request $request): \App\Mail\RenewalReminderMail
+    {
+        $stage = in_array($request->query('stage'), \App\Models\BillingReminder::STAGES, true) ? $request->query('stage') : 'due_7';
+        $days = ['due_7' => 7, 'due_1' => 1, 'due_0' => 0, 'grace' => -2, 'locked' => -9][$stage];
+        $due = \Illuminate\Support\Carbon::today(config('billing.timezone'))->addDays($days);
+
+        return new \App\Mail\RenewalReminderMail($stage, 'Asha Mehta', 998.00, $due->toDateString(), $days,
+            $due->copy()->addDays((int) config('billing.grace_days', 7))->toDateString(), 'CHG-2026-0042', (bool) $request->boolean('by_hand'));
+    }
+
     /** Supervise (or release) one customer, independently of the global switch. */
     public function superviseAccount(Request $request, Account $account): RedirectResponse
     {
