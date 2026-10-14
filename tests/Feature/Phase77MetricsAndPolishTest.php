@@ -231,12 +231,15 @@ class Phase77MetricsAndPolishTest extends TestCase
     {
         $this->paying('Somebody');
 
-        // OSMS raises no invoices in advance, so there is no receivable. Saying
-        // "outstanding" would invite the number to be read as a debtors' book.
+        // It is a forecast at today's prices, not a debtors' book: "outstanding" would
+        // invite that reading. E4 bills each renewal 7 days ahead, and says so — the
+        // bills themselves are counted on Owed, as coming due.
         $this->asOperator()->get(route('superadmin.dashboard'))
             ->assertOk()
             ->assertSee('Expected in 30 days')
-            ->assertSee('not a bill anyone has sent', false)
+            ->assertSee('what they would pay', false)
+            ->assertSee('billed 7 days before it is due', false)
+            ->assertDontSee('Nothing is invoiced in advance')
             ->assertDontSee('Outstanding');
     }
 
