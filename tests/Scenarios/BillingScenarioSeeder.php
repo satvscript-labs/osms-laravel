@@ -73,6 +73,7 @@ class BillingScenarioSeeder extends Seeder
         $this->e2();
         $this->e3();
         $this->e4();
+        $this->e5();
 
         // The morning clock, once, as it would run today: renewals due within 7 days get
         // their bills (reminder EMAILS follow the Platform switch — off unless you turned it on).
@@ -250,6 +251,35 @@ class BillingScenarioSeeder extends Seeder
                 $end->addDay();
             }
             $this->set($hq, ['status' => 'active', 'interval' => 'monthly', 'current_period_end' => $end->toDateString(), 'billing_anchor_day' => 31]);
+        });
+    }
+
+    // ------------------------------------------------------------------
+    // E5 — polish: closing branches, re-matching money, trial emails
+    // ------------------------------------------------------------------
+
+    private function e5(): void
+    {
+        $this->scenario('E5_close_one_of_two_branches_test', 'e5.closebranch.owner', 'Close the Branch 2 store: the dialog shows ₹ 998 → ₹ 499 from the next renewal and the open renewal bill re-priced (FB-14)', function (Tenant $hq) {
+            $this->paidMonthly($hq, 6);
+            $this->user('e5.closebranch.admin', 'E5 Close Branch Admin', 'store_admin', null, function (User $admin) use ($hq) {
+                app(StoreProvisioner::class)->provision($admin, ['store_name' => 'E5_close_one_of_two_branches_test — Branch 2'], $hq->account->fresh());
+            });
+            app(BillingEngine::class)->raiseTerm($this->sub($hq), ['via' => 'system']);
+        });
+
+        $this->scenario('E5_close_last_store_test', 'e5.closelast.owner', 'Close their only store: "This is their last open store" + Cancel the customer instead (never automatic)', function (Tenant $hq) {
+            $this->paidMonthly($hq, 18);
+        });
+
+        $this->scenario('E5_unapplied_on_wrong_customer_test', 'e5.wrongcustomer.owner', '₹ 499 received online was matched here by mistake: Billing → Wrong customer? → move it to E5_close_last_store_test (reason required)', function (Tenant $hq) {
+            $this->paidMonthly($hq, 14);
+            app(Settlement::class)->recordUnapplied($this->payment('E5_unapplied_on_wrong_customer_test', null, 499), null, $hq->account_id,
+                'Scenario: matched to this customer by mistake — it belongs to E5_close_last_store_test.', 'order.paid');
+        });
+
+        $this->scenario('E5_trial_ends_in_3_days_test', 'e5.trial3.owner', '`php artisan subscriptions:reconcile` emails "trial ends in 3 days" once — run it twice, still one (E5-C)', function (Tenant $hq) {
+            $this->set($hq, ['current_period_end' => $this->day(3)]);
         });
     }
 
