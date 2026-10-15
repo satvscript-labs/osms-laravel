@@ -123,9 +123,12 @@ class AccountController extends Controller
                     $store->id => array_sum(app(StoreClosure::class)->inventory($store->id)),
                 ]),
             // E5-A / FB-14 — what closing each open store would do to their bill.
-            'closureImpact' => $account->stores
-                ->reject->isClosed()
-                ->mapWithKeys(fn ($store) => [$store->id => app(StoreClosure::class)->impact($store)]),
+            'closureImpact' => (function () use ($account) {
+                $closure = app(StoreClosure::class);   // one instance: the open renewal is asked once
+
+                return $account->stores->reject->isClosed()
+                    ->mapWithKeys(fn ($store) => [$store->id => $closure->impact($store, $account)]);
+            })(),
             'auditLogs' => \App\Models\AdminAuditLog::query()
                 ->whereIn('tenant_id', $account->stores->pluck('id'))
                 ->with('admin:id,name')

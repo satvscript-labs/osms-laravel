@@ -93,12 +93,39 @@ class Phase90E5ClosurePreviewTest extends TestCase
 
         $this->page()
             ->assertSee('This is their last open store.')
-            ->assertSee('keeps running — and keeps being billed — until you cancel the customer', false)
+            ->assertSee('no new renewal is raised while no store is open', false)
+            ->assertSee('To end it cleanly, cancel the customer.')
             ->assertSee('Cancel the customer instead');
 
         // A second store makes neither of them "last".
         $this->branch('Not last');
         $this->assertFalse(app(StoreClosure::class)->impact($this->hq->fresh())['last_open']);
+    }
+
+    public function test_closing_the_only_billed_store_says_no_renewal_will_be_raised(): void
+    {
+        // V4 — another store stays open, but it is excluded from billing.
+        $b2 = $this->branch('Unbilled B2');
+        $b2->fresh()->update(['is_billable' => false]);
+        $bill = app(BillingEngine::class)->raiseTerm($this->hq->account->subscription, ['via' => 'system']);
+
+        $impact = app(StoreClosure::class)->impact($this->hq->fresh());
+        $this->assertSame([true, false], [$impact['last_billed'], $impact['last_open']]);
+
+        $this->page()->assertSee('This is the only store they are billed for.')
+            ->assertSee('no renewal is raised', false)
+            ->assertSee("Their open renewal bill {$bill->number} stays owed until you void it.");
+    }
+
+    public function test_a_renewal_being_paid_online_is_said_to_keep_its_amount(): void
+    {
+        // V7 — E3-B: never re-priced under someone paying it.
+        $b2 = $this->branch('Paying B2');
+        $bill = app(BillingEngine::class)->raiseTerm($this->hq->account->subscription, ['via' => 'owner']);
+        \App\Services\MoneyWrite::during(fn () => $bill->forceFill(['gateway_checkout_at' => now()])->save());
+
+        $this->assertTrue(app(StoreClosure::class)->impact($b2->fresh())['renewal_in_flight']);
+        $this->page()->assertSee('is being paid online right now, so it', false)->assertDontSee('will be re-priced to match');
     }
 
     public function test_the_preview_writes_nothing(): void

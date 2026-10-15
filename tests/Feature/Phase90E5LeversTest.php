@@ -166,6 +166,34 @@ class Phase90E5LeversTest extends TestCase
         $this->assertSame(2, SubscriptionInvoice::withoutGlobalScopes()->count());
     }
 
+    public function test_only_a_number_clash_is_retried_never_another_duplicate(): void
+    {
+        // V2 — a duplicate Razorpay payment id is a real clash: thrown at once, no second number minted.
+        [$a] = $this->customer('Dup A');
+        $sub = Subscription::withoutGlobalScopes()->where('account_id', $a->account_id)->firstOrFail();
+        $recorder = new class extends PaymentRecorder {
+            public int $minted = 0;
+
+            public function __construct() {}
+
+            protected function nextReceiptNo(): string
+            {
+                $this->minted++;
+
+                return parent::nextReceiptNo();
+            }
+        };
+        $recorder->record($sub, 499, 'razorpay', ['razorpay_payment_id' => 'pay_DUP', 'source' => 'gateway']);
+        $recorder->minted = 0;
+
+        try {
+            $recorder->record($sub, 499, 'razorpay', ['razorpay_payment_id' => 'pay_DUP', 'source' => 'gateway']);
+            $this->fail('a duplicate payment id must be refused');
+        } catch (\Illuminate\Database\UniqueConstraintViolationException) {
+            $this->assertSame(1, $recorder->minted, 'not retried as if it were a receipt-number clash');
+        }
+    }
+
     public function test_the_owner_page_says_it_cannot_take_payment_online_once(): void
     {
         [$hq, $owner] = $this->customer('Once Optical');

@@ -522,7 +522,6 @@ class BillingEngine
         return $end->max($today);
     }
 
-    /** CHG-2026-0001, minted under a lock (same scheme and AUD-A12 ordering as receipts). */
     /**
      * E5-E — run a create that mints a sequential number; if that number was taken by a
      * concurrent create (a unique clash on it), mint again — once. Any other clash, or a
@@ -533,7 +532,9 @@ class BillingEngine
         try {
             return DB::transaction($create);   // a savepoint: the failed insert alone is undone
         } catch (\Illuminate\Database\UniqueConstraintViolationException $e) {
-            if (! str_contains($e->getMessage(), $column)) {
+            // The driver's own error names the violated key / column; the exception message
+            // quotes the whole INSERT (every column), so it cannot be used to tell.
+            if (! str_contains((string) ($e->errorInfo[2] ?? ''), $column)) {
                 throw $e;
             }
 
@@ -541,6 +542,7 @@ class BillingEngine
         }
     }
 
+    /** CHG-2026-0001, minted under a lock (same scheme and AUD-A12 ordering as receipts). */
     protected function nextNumber(): string
     {
         $prefix = 'CHG-' . now(config('billing.timezone', 'Asia/Kolkata'))->year . '-';
