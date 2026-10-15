@@ -31,12 +31,33 @@
                     <div class="d-flex gap-2 ms-2 flex-shrink-0">
                         @if ($u->account)
                             <a href="{{ route('superadmin.accounts.show', $u->account) }}#tab-owed" class="btn btn-primary btn-sm">Apply…</a>
+                            {{-- E5-B — matched to the wrong customer? Move it while it is still open. --}}
+                            <button type="button" class="btn btn-light btn-sm" data-bs-toggle="modal" data-bs-target="#m-rematch-{{ $u->id }}">Wrong customer?</button>
                         @else
                             <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#m-assign-{{ $u->id }}">Whose is it?</button>
                         @endif
                         <button type="button" class="btn btn-light btn-sm" data-bs-toggle="modal" data-bs-target="#m-refunded-{{ $u->id }}">Refunded</button>
                     </div>
                 </div>
+
+                @if ($u->account)
+                    <x-operator-modal :id="'m-rematch-' . $u->id" title="Move to another customer"
+                        :action="route('superadmin.unapplied.rematch', $u->id)"
+                        label="Move it" icon="bi-arrow-left-right"
+                        intro="₹ {{ number_format($u->amount, 2) }} is on {{ $u->account->displayName() }}. If it is someone else's, move it — then apply it on their page.">
+                        <label class="form-label" for="rm-acc-{{ $u->id }}">Customer</label>
+                        <select id="rm-acc-{{ $u->id }}" name="account" class="form-select" required>
+                            <option value="">Choose…</option>
+                            @foreach ($customers as $c)
+                                @continue($c->id === $u->account_id)
+                                <option value="{{ $c->id }}">{{ $c->displayName() }}</option>
+                            @endforeach
+                        </select>
+                        <label class="form-label mt-3" for="rm-note-{{ $u->id }}">Why <span style="color:var(--tone-red);">*</span></label>
+                        <input id="rm-note-{{ $u->id }}" name="note" type="text" required maxlength="500" class="form-control"
+                               placeholder="e.g. same surname — the receipt is from the other shop">
+                    </x-operator-modal>
+                @endif
 
                 @unless ($u->account)
                     <x-operator-modal :id="'m-assign-' . $u->id" title="Whose payment is this?"

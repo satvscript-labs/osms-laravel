@@ -180,6 +180,7 @@ Route::middleware(['auth', 'superadmin', 'throttle:120,1'])
             // the customer's page), say whose it is, or record that it was refunded.
             Route::post('/customers/{account}/unapplied/{unapplied}/apply', [SuperadminAccountAction::class, 'applyUnapplied'])->middleware('once')->name('accounts.unapplied.apply');
             Route::post('/unapplied/{unapplied}/assign', [\App\Http\Controllers\Superadmin\UnappliedController::class, 'assign'])->middleware('once')->name('unapplied.assign');
+            Route::post('/unapplied/{unapplied}/rematch', [\App\Http\Controllers\Superadmin\UnappliedController::class, 'rematch'])->middleware('once')->name('unapplied.rematch');
             Route::post('/unapplied/{unapplied}/refunded', [\App\Http\Controllers\Superadmin\UnappliedController::class, 'refunded'])->middleware('once')->name('unapplied.refunded');
             Route::patch('/customers/{account}/stores/{tenant}/status', [SuperadminAccountAction::class, 'storeStatus'])->name('accounts.store.status');
             Route::patch('/customers/{account}/stores/{tenant}/billable', [SuperadminAccountAction::class, 'storeBillable'])->name('accounts.store.billable');

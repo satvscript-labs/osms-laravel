@@ -84,7 +84,8 @@ class PaymentRecorder
         }
 
         return MoneyWrite::transaction(fn () => MoneyWrite::during(function () use ($subscription, $amount, $method, $options, $reason, $discount) {
-            return SubscriptionInvoice::withoutGlobalScopes()->create([
+            // E5-E — a receipt number taken by a concurrent payment: take the next one (O-1).
+            return BillingEngine::withFreshNumber(fn () => SubscriptionInvoice::withoutGlobalScopes()->create([
                 // A part-period charge belongs to the BRANCH that caused it, so
                 // "what did Branch 2 cost us?" stays answerable.
                 'tenant_id' => $options['tenant_id'] ?? $subscription->tenant_id,
@@ -111,7 +112,7 @@ class PaymentRecorder
                 'granted_end' => ($options['granted_end'] ?? null)?->toDateString(),
                 'paid_at' => $options['paid_at'] ?? now(),
                 'receipt_no' => $this->nextReceiptNo(),
-            ]);
+            ]), 'receipt_no');
         }));
     }
 
@@ -200,7 +201,7 @@ class PaymentRecorder
      * Computed inside the caller's transaction with a lock on the latest row so
      * two concurrent entries can't mint the same number.
      */
-    private function nextReceiptNo(): string
+    protected function nextReceiptNo(): string
     {
         $year = now(config('billing.timezone', 'Asia/Kolkata'))->year;
         $prefix = "OSMS-{$year}-";
