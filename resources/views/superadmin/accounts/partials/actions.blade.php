@@ -464,7 +464,10 @@
             @if ($impact)
                 <div class="p-3 rounded-3 mt-3" style="background:var(--surface-sunken);">
                     <p class="section-label mb-2">Their bill</p>
-                    @if ($impact['last_open'])
+                    @if ($impact['no_renewal'])
+                        {{-- V9 — nothing is coming to re-price. --}}
+                        <p class="text-sm mb-0">They {{ $subscription?->status === 'canceled' ? 'are cancelled' : 'cancel at the end of the period' }}, so no renewal is coming — closing this store changes nothing about billing.</p>
+                    @elseif ($impact['last_open'])
                         <p class="text-sm mb-2" style="color:var(--tone-amber);">
                             <i class="bi bi-exclamation-triangle me-1"></i>
                             <strong>This is their last open store.</strong> Closing it stops all their access, but does not

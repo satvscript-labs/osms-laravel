@@ -128,6 +128,19 @@ class Phase90E5ClosurePreviewTest extends TestCase
         $this->page()->assertSee('is being paid online right now, so it', false)->assertDontSee('will be re-priced to match');
     }
 
+    public function test_when_no_renewal_is_coming_closing_changes_nothing_about_billing(): void
+    {
+        // V9 — cancelling at the end of the period, then cancelled outright.
+        $b2 = $this->branch('Leaving B2');
+        app(\App\Services\SubscriptionLifecycle::class)->ownerCancelAtPeriodEnd($this->hq->account->subscription);
+
+        $this->assertTrue(app(StoreClosure::class)->impact($b2->fresh())['no_renewal']);
+        $this->page()->assertSee('They cancel at the end of the period, so no renewal is coming')->assertDontSee('From their next renewal');
+
+        app(\App\Services\SubscriptionLifecycle::class)->commit($this->hq->account->fresh()->subscription, 'cancel', ['reason' => 'gone']);
+        $this->page()->assertSee('They are cancelled, so no renewal is coming');
+    }
+
     public function test_the_preview_writes_nothing(): void
     {
         $b2 = $this->branch('Quiet B2');

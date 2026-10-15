@@ -103,7 +103,7 @@ class StoreClosure
      *
      * @return array{last_open: bool, billable: bool, interval: string, before: ?array, after: ?array,
      *               tier_changes: bool, open_renewal: ?BillingCharge, renewal_in_flight: bool,
-     *               last_billed: bool, branch_owed: float}
+     *               last_billed: bool, no_renewal: bool, branch_owed: float}
      */
     /** @var array<string, BillingCharge|false> impact()'s per-account memo (false = none open) */
     private array $openRenewals = [];
@@ -129,6 +129,8 @@ class StoreClosure
             : null;
 
         return [
+            // V9 — no renewal is coming: cancelled, or cancelling at the end of the period.
+            'no_renewal' => $sub && ($sub->status === 'canceled' || $sub->cancel_at_period_end),
             'last_open' => $openStores->count() <= 1,
             // V4 — other stores stay open but none is billed: the clock then raises no renewal.
             'last_billed' => $billable && $countAfter === 0 && $openStores->count() > 1,
