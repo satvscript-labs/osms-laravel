@@ -118,6 +118,14 @@ class ReconcileSubscriptions extends Command
             ->get();
 
         foreach ($candidates as $sub) {
+            // F8 (audit) — a cancellation they scheduled ends with the period: cancelled,
+            // not lapsed (no grace, never "overdue"). Re-checked under the lock.
+            if ($sub->cancel_at_period_end && $lifecycle->endScheduledCancellation($sub)) {
+                $changed++;
+
+                continue;
+            }
+
             // A cheap pre-filter only. The engine re-checks every condition on the
             // LOCKED row before changing anything, audits it as `system`, and tells
             // the gateway on churn (E1.3 / E1.10).

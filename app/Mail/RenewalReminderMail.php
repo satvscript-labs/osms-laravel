@@ -30,12 +30,19 @@ class RenewalReminderMail extends Mailable implements ShouldQueue
         public ?string $accessUntil,   // Y-m-d: the last day of grace
         public ?string $billNumber,
         public bool $billedByHand,     // supervised: no Pay button, "contact us"
+        public bool $freePeriod = false,   // A-22: a free period you gave is ending
     ) {}
 
     public function envelope(): Envelope
     {
         $amount = '₹' . number_format($this->amount, 2);
         $due = Carbon::parse($this->dueOn)->format('j M');
+
+        if ($this->freePeriod) {
+            return new Envelope(subject: $this->stage === 'due_0'
+                ? "Your free OSMS period ends today — {$amount} to carry on"
+                : "Your free OSMS period ends tomorrow — {$amount} to carry on");
+        }
 
         return new Envelope(subject: match ($this->stage) {
             'due_7' => "Your OSMS renewal of {$amount} is due on {$due}",
@@ -50,7 +57,9 @@ class RenewalReminderMail extends Mailable implements ShouldQueue
     public function content(): Content
     {
         return new Content(markdown: 'emails.renewal-reminder', with: [
-            'heading' => match ($this->stage) {
+            'heading' => $this->freePeriod
+                ? ($this->stage === 'due_0' ? 'Your free period ends today' : 'Your free period ends tomorrow')
+                : match ($this->stage) {
                 'due_7' => 'Your renewal is coming up',
                 'due_1' => 'Your renewal is due tomorrow',
                 'due_0' => 'Your renewal is due today',

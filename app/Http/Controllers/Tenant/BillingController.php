@@ -156,6 +156,11 @@ class BillingController extends Controller
             return $blocked;
         }
 
+        // F7 (audit) — paying can never lift a suspension; don't invite a payment that can't help.
+        if ($this->subscription($request)?->isSuspended()) {
+            return 'Your account is paused by our team. To sort it out, contact us at ' . config('saas.support_email') . '.';
+        }
+
         if (! $billing->isConfigured()) {
             return "Online payment isn't available right now. To pay, contact us at " . config('saas.support_email') . '.';
         }

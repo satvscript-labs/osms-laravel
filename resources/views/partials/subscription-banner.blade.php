@@ -22,7 +22,10 @@
         $osmsDays = (int) \Illuminate\Support\Carbon::today($osmsTz)->diffInDays($osmsEnd, false);
 
         if ($osmsState === 'grace' || ($osmsDays >= 0 && $osmsDays <= \App\Services\RenewalClock::LEAD_DAYS)) {
-            $osmsChased = app(\App\Services\RenewalClock::class)->skipReason($osmsSub, $osmsEnd) === null;
+            $osmsClock = app(\App\Services\RenewalClock::class);
+            // A-22 — a free period you gave is announced on its last two days, like the emails.
+            $osmsChased = $osmsClock->skipReason($osmsSub, $osmsEnd) === null
+                || ($osmsState === 'active' && $osmsDays >= 0 && $osmsDays <= 1 && $osmsClock->freePeriodEnding($osmsSub, $osmsEnd));
             $osmsBill = $osmsChased
                 ? \App\Models\BillingCharge::query()->where('account_id', $osmsSub->account_id)->pending()
                     ->whereIn('kind', ['first_term', 'renewal'])->whereNull('reopened_at')->latest()->first()

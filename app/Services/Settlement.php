@@ -232,6 +232,12 @@ class Settlement
             return ['outcome' => 'not_captured', 'row' => null, 'unapplied' => null];
         }
 
+        // F2 (audit) — a payment already on the ledger is never recorded again, even when
+        // its bill no longer carries the order (reopened after a reversal, F1).
+        if ($already = SubscriptionInvoice::withoutGlobalScopes()->where('razorpay_payment_id', $paymentId)->first()) {
+            return ['outcome' => 'already', 'row' => $already, 'unapplied' => null];
+        }
+
         $charge = $orderId ? BillingCharge::query()->where('gateway_order_id', $orderId)->first() : null;
 
         if (! $charge) {
@@ -514,7 +520,11 @@ class Settlement
         return MoneyWrite::transaction(function () use ($invoice, $reason) {
             $sub = $this->lockSubscriptionOf($invoice->account_id);
 
-            $reversed = $this->payments->reverse($invoice, $reason);
+            // F9 (audit) — the row as it is NOW, locked: two operators reversing the same
+            // payment at once must not both pass "already reversed?" on stale copies.
+            $locked = SubscriptionInvoice::withoutGlobalScopes()->whereKey($invoice->getKey())->lockForUpdate()->firstOrFail();
+            $reversed = $this->payments->reverse($locked, $reason);
+            $invoice->setRawAttributes($locked->getAttributes(), true);
 
             if (! $invoice->charge_id) {
                 return $reversed;   // a pre-engine row or a free-standing comp: nothing to reopen
@@ -531,7 +541,10 @@ class Settlement
 
                 // No open_key on a reopened charge: its purpose's key may have been
                 // taken since (edge 11) and the clock has moved on anyway.
-                $charge->forceFill(['status' => 'pending', 'paid_at' => null, 'reopened_at' => now(), 'open_key' => null])->save();
+                // F1 (audit) — and no Razorpay order: the old one is PAID at Razorpay, so paying
+                // the reopened bill online needs a new order (the old id stays on the ledger row).
+                $charge->forceFill(['status' => 'pending', 'paid_at' => null, 'reopened_at' => now(), 'open_key' => null,
+                    'gateway_order_id' => null, 'gateway_checkout_at' => null])->save();
 
                 AdminAuditLog::record('charge.reopened', "{$charge->number} is owed again (₹" . number_format((float) $charge->amount, 2)
                     . ") — its payment {$invoice->receipt_no} was reversed: {$reason}. Access unchanged.",

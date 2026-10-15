@@ -66,7 +66,8 @@ class TenantController extends Controller
             'tenant' => $tenant,
             'subscription' => $tenant->subscription,
             'owner' => $owner,
-            'plans' => config('billing.plans'),
+            // Rule 3 (audit) — no config prices here: the view never used them, and any
+            // price this page ever shows must come from PriceResolver.
         ]);
     }
 

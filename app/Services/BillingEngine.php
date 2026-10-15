@@ -356,6 +356,8 @@ class BillingEngine
                     'open_key' => null,
                     'voided_at' => now(),
                     'voided_by' => $options['by'] ?? auth()->id(),
+                    // F4 — a person's Void, an ending's, or the system's (the clock tells them apart).
+                    'voided_via' => $options['voided_via'] ?? (auth()->check() ? 'operator' : 'system'),
                     'void_reason' => $reason,
                 ])->save();
 
@@ -393,7 +395,7 @@ class BillingEngine
         $count = 0;
 
         foreach ($query->get() as $charge) {
-            $this->void($charge, $reason, $options + ['force' => true]);
+            $this->void($charge, $reason, $options + ['force' => true, 'voided_via' => 'ending']);
             $count++;
         }
 
