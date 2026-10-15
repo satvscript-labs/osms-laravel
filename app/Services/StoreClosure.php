@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\AdminAuditLog;
+use App\Models\BillingCharge;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Support\BackupStatus;
@@ -92,6 +93,44 @@ class StoreClosure
         );
 
         return $tenant;
+    }
+
+    /**
+     * E5-A / FB-14 — what closing this store does to the money, before anyone confirms.
+     * Read-only: priced by the engine (PriceResolver) for the branches that would be
+     * billed at the next renewal, at the interval that renewal will use.
+     *
+     * @return array{last_open: bool, billable: bool, interval: string, before: ?array, after: ?array,
+     *               tier_changes: bool, open_renewal: ?BillingCharge, branch_owed: float}
+     */
+    public function impact(Tenant $tenant): array
+    {
+        $account = $tenant->account;
+        $sub = $account?->subscription;
+        $openStores = $account ? $account->stores->filter(fn (Tenant $s) => ! $s->isClosed()) : collect([$tenant]);
+        $billable = (bool) $tenant->is_billable;
+        $interval = $sub ? ($sub->pending_interval ?: ($sub->interval ?: 'monthly')) : 'monthly';
+        $countNow = $account ? $account->stores->filter(fn (Tenant $s) => $s->is_billable && ! $s->isClosed())->count() : 1;
+        $countAfter = $billable ? $countNow - 1 : $countNow;
+        $prices = app(PriceResolver::class);
+
+        $before = $sub && $countNow > 0 ? $prices->breakdown($sub, $interval, $countNow) : null;
+        $after = $sub && $countAfter > 0 ? $prices->breakdown($sub, $interval, $countAfter) : null;
+
+        return [
+            'last_open' => $openStores->count() <= 1,
+            'billable' => $billable,
+            'interval' => $interval,
+            'before' => $before,
+            'after' => $after,
+            'tier_changes' => $before && $after && abs($before['unit_price'] - $after['unit_price']) > 0.005,
+            'open_renewal' => $account
+                ? BillingCharge::query()->where('account_id', $account->id)->pending()
+                    ->whereIn('kind', ['first_term', 'renewal'])->whereNull('reopened_at')->first()
+                : null,
+            'branch_owed' => round((float) BillingCharge::query()->where('tenant_id', $tenant->id)
+                ->where('kind', 'branch_join')->pending()->sum('amount'), 2),
+        ];
     }
 
     /** Undo a closure inside the window. Everything is exactly where it was. */
