@@ -150,15 +150,8 @@
         </div>
     </div>
 
-    @unless ($configured)
-        <div class="alert alert-info py-2 px-3 small rounded-3">
-            <i class="bi bi-info-circle me-1"></i>
-            {{-- UI-02 — written for the shop owner who reads it, not the developer who
-                 would fix it. (Gateway keys belong in the server's .env; that is our job.) --}}
-            Online payment isn't available right now. To pay or renew, contact us at
-            <a href="mailto:{{ config('saas.support_email') }}" class="alert-link">{{ config('saas.support_email') }}</a>.
-        </div>
-    @endunless
+    {{-- E5-D — "can't pay online" is said ONCE, on the plan card (the payBlock sentence,
+         which already covers missing gateway keys); supervised accounts get the box above. --}}
 
     {{-- Plan — E3.5: priced by the engine for THIS account (FB-07). --}}
     @php
@@ -255,12 +248,6 @@
                             @endif
                         </div>
                     @endforeach
-                    @if ($payBlock !== null)
-                        <p class="text-sm text-muted-foreground mb-0">
-                            <i class="bi bi-info-circle me-1"></i>
-                            {{ $payBlock }}
-                        </p>
-                    @endif
                 </div>
             </div>
         </div>

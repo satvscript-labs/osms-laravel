@@ -37,6 +37,24 @@ class UnappliedController extends Controller
             ->with('status', 'Matched to ' . Account::find($validated['account'])?->displayName() . ' — apply it to one of their bills below, or refund it.');
     }
 
+    /** E5-B — matched to the wrong customer: move it (open money only). */
+    public function rematch(Request $request, string $unapplied): RedirectResponse
+    {
+        $validated = $request->validate([
+            'account' => ['required', 'string', 'exists:accounts,id'],
+            'note' => ['required', 'string', 'max:500'],
+        ]);
+
+        try {
+            $this->settlement->rematchUnapplied(UnappliedPayment::findOrFail($unapplied), $validated['account'], $validated['note']);
+        } catch (InvalidArgumentException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return redirect()->to(route('superadmin.accounts.show', $validated['account']) . '#tab-owed')
+            ->with('status', 'Moved to ' . Account::find($validated['account'])?->displayName() . ' — apply it to one of their bills below, or refund it.');
+    }
+
     /** E3-D — refunded in the Razorpay dashboard; record it here. */
     public function refunded(Request $request, string $unapplied): RedirectResponse
     {

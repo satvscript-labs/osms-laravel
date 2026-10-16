@@ -455,6 +455,47 @@ class Settlement
         }));
     }
 
+    /**
+     * E5-B — matched to the wrong customer: move it to the right one. Only while it is
+     * still open (applied money is on a ledger; refunded money is gone), with the reason,
+     * audited from → to.
+     */
+    public function rematchUnapplied(UnappliedPayment $unapplied, string $accountId, string $note): UnappliedPayment
+    {
+        $note = trim($note);
+
+        if ($note === '') {
+            throw new InvalidArgumentException('Say why it belongs to this customer instead — the record has to explain it later.');
+        }
+
+        return MoneyWrite::transaction(fn () => MoneyWrite::during(function () use ($unapplied, $accountId, $note) {
+            $u = UnappliedPayment::query()->whereKey($unapplied->getKey())->lockForUpdate()->firstOrFail();
+
+            if (! $u->isOpen()) {
+                throw new InvalidArgumentException('That payment has already been ' . $u->status . ' — it can no longer be moved.');
+            }
+
+            if (! $u->account_id) {
+                throw new InvalidArgumentException('That payment is not matched to anyone yet — use "Whose is it?".');
+            }
+
+            if ($u->account_id === $accountId) {
+                throw new InvalidArgumentException('It is already on that customer.');
+            }
+
+            $from = $u->account_id;
+            $u->forceFill(['account_id' => $accountId, 'charge_id' => null, 'resolution_note' => $note])->save();
+
+            AdminAuditLog::record('payment.unapplied_rematched', '₹' . number_format((float) $u->amount, 2)
+                . " received online moved to another customer: {$note}", null,
+                ['account_id' => $accountId, 'from_account_id' => $from, 'gateway_payment_id' => $u->gateway_payment_id]);
+
+            $unapplied->setRawAttributes($u->getAttributes(), true);
+
+            return $u;
+        }));
+    }
+
     /** E3-D — refunded in the Razorpay dashboard; OSMS records that it was. */
     public function markRefunded(UnappliedPayment $unapplied, string $note): UnappliedPayment
     {

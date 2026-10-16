@@ -3,9 +3,12 @@
 namespace App\Console\Commands;
 
 use App\Mail\TrialStatusMail;
+use App\Models\BillingReminder;
 use App\Models\Subscription;
 use App\Services\SubscriptionLifecycle;
 use Illuminate\Console\Command;
+use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Mail;
 
 /**
@@ -22,9 +25,6 @@ class ReconcileSubscriptions extends Command
     protected $signature = 'subscriptions:reconcile';
 
     protected $description = 'Flip expired trials to a terminal state so subscription reporting stays accurate.';
-
-    /** Days-left thresholds that trigger a "trial ending soon" reminder. */
-    private const REMINDER_DAYS = [3, 1];
 
     /**
      * AUD-01 — how long a locked, unpaid subscription sits at `past_due` before
@@ -68,15 +68,23 @@ class ReconcileSubscriptions extends Command
                 // E1.3 (W6) — through the engine: re-checked under a row lock (an
                 // operator may have acted since this list was read) and audited.
                 if ($lifecycle->expireTrial($sub)) {
-                    $this->notifyAdmins($sub, 0); // trial ended
+                    $this->notifyAdmins($sub, 0, 'trial_0'); // trial ended
                     $expired++;
                 }
 
                 continue;
             }
 
-            if (in_array($sub->trialDaysLeft(), self::REMINDER_DAYS, true)) {
-                $this->notifyAdmins($sub, $sub->trialDaysLeft());
+            // E5-C (O-3) — the stage due today, once per trial (the sent-log): a missed
+            // morning catches up with the CURRENT stage; a doubled one sends nothing more.
+            $daysLeft = $sub->trialDaysLeft();
+            $stage = match (true) {
+                $daysLeft === 2 || $daysLeft === 3 => 'trial_3',
+                $daysLeft === 1 => 'trial_1',
+                default => null,
+            };
+
+            if ($stage !== null && $this->notifyAdmins($sub, $daysLeft, $stage)) {
                 $reminded++;
             }
         }
@@ -156,13 +164,13 @@ class ReconcileSubscriptions extends Command
      * `$sub->tenant` alone, so an account whose original store had been purged
      * (tenant_id NULL, by design since P.1) got no reminder at all.
      */
-    private function notifyAdmins(Subscription $sub, int $daysLeft): void
+    private function notifyAdmins(Subscription $sub, int $daysLeft, string $stage): bool
     {
         $account = $sub->account;
         $tenant = $sub->tenant ?? $account?->openStores()->orderBy('created_at')->first();
 
         if (! $tenant) {
-            return;
+            return false;
         }
 
         $emails = collect([$account?->owner?->email, $account?->billing_email])
@@ -180,9 +188,41 @@ class ReconcileSubscriptions extends Command
         }
 
         if ($emails === []) {
-            return;
+            return false;
         }
 
-        Mail::to($emails)->queue(new TrialStatusMail($tenant, $daysLeft));
+        // Pre-backfill (no account): no sent-log key to hold, sent as before.
+        if (! $account) {
+            Mail::to($emails)->queue(new TrialStatusMail($tenant, $daysLeft));
+
+            return true;
+        }
+
+        $cycleEnd = $sub->current_period_end->toDateString();
+
+        if (BillingReminder::query()->where('account_id', $account->id)->whereDate('cycle_end', $cycleEnd)->where('stage', $stage)->exists()) {
+            return false;   // this stage of this trial has gone already
+        }
+
+        try {
+            // The log row and the queued email commit together (as renewal reminders, E4-C).
+            DB::transaction(function () use ($account, $sub, $cycleEnd, $stage, $emails, $tenant, $daysLeft) {
+                BillingReminder::create([
+                    'account_id' => $account->id,
+                    'subscription_id' => $sub->id,
+                    'cycle_end' => $cycleEnd,
+                    'stage' => $stage,
+                    'channel' => 'email',
+                    'recipients' => mb_substr(implode(', ', $emails), 0, 500),
+                    'sent_at' => now(),
+                ]);
+
+                Mail::to($emails)->queue(new TrialStatusMail($tenant, $daysLeft));
+            });
+        } catch (UniqueConstraintViolationException) {
+            return false;   // another run got there first
+        }
+
+        return true;
     }
 }

@@ -35,8 +35,8 @@ class Phase89ScenarioSeederTest extends TestCase
         Artisan::call('db:seed', ['--class' => BillingScenarioSeeder::class]);
 
         $names = Account::where('display_name', 'like', 'E%test')->pluck('display_name');
-        $this->assertCount(25, $names);   // E1 7 · E2 5 · E3 4 (+ one payment with no customer) · E4 9
-        $this->assertTrue($names->every(fn ($n) => preg_match('/^E[1-4]_[a-z0-9_]+_test$/', $n) === 1));
+        $this->assertCount(29, $names);   // E1 7 · E2 5 · E3 4 (+ one payment with no customer) · E4 9 · E5 4
+        $this->assertTrue($names->every(fn ($n) => preg_match('/^E[1-5]_[a-z0-9_]+_test$/', $n) === 1));
 
         $this->assertSame('canceled', $this->sub('E1_trial_ended_test')->status);
         $this->assertTrue($this->sub('E1_suspended_by_operator_test')->isSuspended());
@@ -45,13 +45,23 @@ class Phase89ScenarioSeederTest extends TestCase
         $this->assertNotNull($this->owed('E2_reversed_payment_reopened_test')->value('reopened_at'));
         $this->assertSame('past_due', $this->sub('E2_lapsed_past_due_test')->status);
         $this->assertNull($this->owed('E3_reversed_online_payment_test')->value('gateway_order_id'), 'F1 — no stale order');
-        $this->assertSame(2, UnappliedPayment::open()->whereNotNull('account_id')->count(), 'known customer + amount mismatch');
+        $this->assertSame(3, UnappliedPayment::open()->whereNotNull('account_id')->count(), 'known customer + amount mismatch + wrong customer');
         $this->assertSame(1, UnappliedPayment::open()->whereNull('account_id')->count());
         $this->assertSame(1, $this->owed('E4_renewal_due_in_7_days_test')->where('raised_via', 'system')->count(), 'the morning run raised it');
         $this->assertSame(0, $this->owed('E4_free_period_ends_tomorrow_test')->count(), 'never billed ahead');
         $this->assertSame(0, $this->owed('E4_renewal_voided_by_operator_test')->count(), 'your void stands');
         $this->assertSame(0, $this->owed('E4_cancels_at_period_end_test')->count());
         $this->assertSame(31, $this->sub('E4_month_end_31st_test')->current_period_end->day);
+
+        // E5
+        $branch = \App\Models\Tenant::where('store_name', 'E5_close_one_of_two_branches_test — Branch 2')->firstOrFail();
+        $impact = app(\App\Services\StoreClosure::class)->impact($branch);
+        $this->assertSame([998.0, 499.0], [$impact['before']['effective'], $impact['after']['effective']]);
+        $this->assertNotNull($impact['open_renewal']);
+        $last = \App\Models\Tenant::where('store_name', 'E5_close_last_store_test')->firstOrFail();
+        $this->assertTrue(app(\App\Services\StoreClosure::class)->impact($last)['last_open']);
+        $this->assertSame('trialing', $this->sub('E5_trial_ends_in_3_days_test')->status);
+        $this->assertSame(3, $this->sub('E5_trial_ends_in_3_days_test')->trialDaysLeft());
     }
 
     public function test_running_it_twice_changes_nothing(): void

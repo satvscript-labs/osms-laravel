@@ -14,8 +14,11 @@ class BillingReminder extends Model
 {
     use HasUuid;
 
-    /** The ladder, in order (E4-C). */
+    /** The renewal ladder, in order (E4-C). */
     public const STAGES = ['due_7', 'due_1', 'due_0', 'grace', 'locked'];
+
+    /** E5-C — the trial emails, on the same log. */
+    public const TRIAL_STAGES = ['trial_3', 'trial_1', 'trial_0'];
 
     protected $fillable = [
         'account_id', 'subscription_id', 'charge_id', 'cycle_end', 'stage', 'channel', 'recipients', 'amount', 'sent_at',
@@ -41,6 +44,9 @@ class BillingReminder extends Model
             'due_0' => 'Due-today reminder',
             'grace' => 'Overdue reminder',
             'locked' => 'Access-paused notice',
+            'trial_3' => 'Trial-ending reminder',
+            'trial_1' => 'Trial-ends-tomorrow reminder',
+            'trial_0' => 'Trial-ended notice',
             default => ucfirst(str_replace('_', ' ', $this->stage)),
         };
     }

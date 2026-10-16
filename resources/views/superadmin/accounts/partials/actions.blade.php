@@ -458,11 +458,71 @@
             <label class="form-label" for="cl-{{ $store->id }}">Why <span style="color:var(--tone-red);">*</span></label>
             <input id="cl-{{ $store->id }}" name="reason" type="text" required maxlength="500"
                    class="form-control" placeholder="e.g. shop sold, moving to another system">
-            <p class="text-muted-foreground text-xs mt-3 mb-0">
-                <i class="bi bi-info-circle me-1"></i>
-                Their subscription is left alone. If this is their last store, cancel the
-                customer separately — closing a branch must never stop the money for the others.
-            </p>
+            {{-- E5-A / FB-14 — what this does to their bill, before you confirm. --}}
+            @php($impact = $closureImpact[$store->id] ?? null)
+            @php($per = ($impact['interval'] ?? 'monthly') === 'yearly' ? 'yr' : 'mo')
+            @if ($impact)
+                <div class="p-3 rounded-3 mt-3" style="background:var(--surface-sunken);">
+                    <p class="section-label mb-2">Their bill</p>
+                    @if ($impact['no_renewal'])
+                        {{-- V9 — nothing is coming to re-price. --}}
+                        <p class="text-sm mb-0">They {{ $subscription?->status === 'canceled' ? 'are cancelled' : 'cancel at the end of the period' }}, so no renewal is coming — closing this store changes nothing about billing.</p>
+                    @elseif ($impact['last_open'])
+                        <p class="text-sm mb-2" style="color:var(--tone-amber);">
+                            <i class="bi bi-exclamation-triangle me-1"></i>
+                            <strong>This is their last open store.</strong> Closing it stops all their access, but does not
+                            cancel the customer: no new renewal is raised while no store is open, so their subscription simply
+                            lapses at the end of its period.
+                            @if ($impact['open_renewal'])
+                                Their open renewal bill {{ $impact['open_renewal']->number }} stays owed until you void it.
+                            @endif
+                            To end it cleanly, cancel the customer.
+                        </p>
+                        @if ($subscription && $subscription->status !== 'canceled')
+                            <button type="button" class="btn btn-light btn-sm" data-bs-toggle="modal" data-bs-target="#m-cancel">
+                                <i class="bi bi-x-circle me-1"></i>Cancel the customer instead…
+                            </button>
+                        @endif
+                    @elseif (! $impact['billable'])
+                        <p class="text-sm mb-0">This store is not billed, so closing it changes nothing about what they pay.</p>
+                    @elseif ($impact['last_billed'])
+                        {{-- V4 — their other stores stay open but none of them is billed. --}}
+                        <p class="text-sm mb-0" style="color:var(--tone-amber);">
+                            <i class="bi bi-exclamation-triangle me-1"></i>
+                            This is the only store they are billed for. Their other stores are excluded from billing, so after
+                            this closes <strong>no renewal is raised</strong> — their subscription runs on until it lapses or you
+                            cancel it. Include another store in billing first if they should keep paying.
+                            @if ($impact['open_renewal'])
+                                Their open renewal bill {{ $impact['open_renewal']->number }} stays owed until you void it.
+                            @endif
+                        </p>
+                    @elseif ($impact['before'] && $impact['after'])
+                        <p class="text-sm mb-1">
+                            From their next renewal:
+                            <strong>₹ {{ number_format($impact['before']['effective'], 2) }}/{{ $per }}</strong>
+                            → <strong>₹ {{ number_format($impact['after']['effective'], 2) }}/{{ $per }}</strong>
+                            ({{ $impact['before']['quantity'] }} → {{ $impact['after']['quantity'] }} {{ Str::plural('branch', $impact['after']['quantity']) }}).
+                        </p>
+                        @if ($impact['tier_changes'])
+                            <p class="text-sm mb-1" style="color:var(--tone-amber);">
+                                <i class="bi bi-arrow-left-right me-1"></i>
+                                The per-branch rate changes: ₹ {{ number_format($impact['before']['unit_price'], 2) }}
+                                → ₹ {{ number_format($impact['after']['unit_price'], 2) }} for the branches that stay.
+                            </p>
+                        @endif
+                        @if ($impact['open_renewal'] && $impact['renewal_in_flight'])
+                            {{-- V7 — E3-B: never re-priced under someone paying it. --}}
+                            <p class="text-sm mb-1">Their open renewal bill {{ $impact['open_renewal']->number }} is being paid online right now, so it
+                                keeps its amount; if that payment doesn't arrive it is re-priced the next morning.</p>
+                        @elseif ($impact['open_renewal'])
+                            <p class="text-sm mb-1">Their open renewal bill {{ $impact['open_renewal']->number }} will be re-priced to match.</p>
+                        @endif
+                    @endif
+                    @if ($impact['branch_owed'] > 0)
+                        <p class="text-sm mb-0 mt-1">₹ {{ number_format($impact['branch_owed'], 2) }} this store owes for its part period stays owed.</p>
+                    @endif
+                </div>
+            @endif
         </x-operator-modal>
     @endif
 @endforeach

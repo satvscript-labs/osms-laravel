@@ -277,14 +277,16 @@ class BillingEngine
                 $stale->forceFill(['status' => 'superseded', 'open_key' => null])->save();
             }
 
-            $charge = BillingCharge::create($fields + [
+            // E5-E — a number is unique; two firsts of a new year at the same instant
+            // could both read "none yet" (O-1). Then the second simply takes the next one.
+            $charge = self::withFreshNumber(fn () => BillingCharge::create($fields + [
                 'account_id' => $s->account_id,
                 'subscription_id' => $s->id,
                 'number' => $this->nextNumber(),
                 'status' => 'pending',
                 'raised_by' => $options['by'] ?? auth()->id(),
                 'raised_via' => $options['via'] ?? 'operator',
-            ]);
+            ]), 'number');
 
             foreach (array_filter([$open, ...$staleTerms]) as $replaced) {
                 $replaced->forceFill(['superseded_by' => $charge->id])->save();
@@ -520,8 +522,28 @@ class BillingEngine
         return $end->max($today);
     }
 
+    /**
+     * E5-E — run a create that mints a sequential number; if that number was taken by a
+     * concurrent create (a unique clash on it), mint again — once. Any other clash, or a
+     * second one, is a real problem and is thrown.
+     */
+    public static function withFreshNumber(\Closure $create, string $column): mixed
+    {
+        try {
+            return DB::transaction($create);   // a savepoint: the failed insert alone is undone
+        } catch (\Illuminate\Database\UniqueConstraintViolationException $e) {
+            // The driver's own error names the violated key / column; the exception message
+            // quotes the whole INSERT (every column), so it cannot be used to tell.
+            if (! str_contains((string) ($e->errorInfo[2] ?? ''), $column)) {
+                throw $e;
+            }
+
+            return DB::transaction($create);
+        }
+    }
+
     /** CHG-2026-0001, minted under a lock (same scheme and AUD-A12 ordering as receipts). */
-    private function nextNumber(): string
+    protected function nextNumber(): string
     {
         $prefix = 'CHG-' . now(config('billing.timezone', 'Asia/Kolkata'))->year . '-';
 

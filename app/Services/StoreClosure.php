@@ -2,7 +2,9 @@
 
 namespace App\Services;
 
+use App\Models\Account;
 use App\Models\AdminAuditLog;
+use App\Models\BillingCharge;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Support\BackupStatus;
@@ -92,6 +94,57 @@ class StoreClosure
         );
 
         return $tenant;
+    }
+
+    /**
+     * E5-A / FB-14 — what closing this store does to the money, before anyone confirms.
+     * Read-only: priced by the engine (PriceResolver) for the branches that would be
+     * billed at the next renewal, at the interval that renewal will use.
+     *
+     * @return array{last_open: bool, billable: bool, interval: string, before: ?array, after: ?array,
+     *               tier_changes: bool, open_renewal: ?BillingCharge, renewal_in_flight: bool,
+     *               last_billed: bool, no_renewal: bool, branch_owed: float}
+     */
+    /** @var array<string, BillingCharge|false> impact()'s per-account memo (false = none open) */
+    private array $openRenewals = [];
+
+    public function impact(Tenant $tenant, ?Account $account = null): array
+    {
+        $account ??= $tenant->account;
+        $sub = $account?->subscription;
+        $openStores = $account ? $account->stores->filter(fn (Tenant $s) => ! $s->isClosed()) : collect([$tenant]);
+        $billable = (bool) $tenant->is_billable;
+        $interval = $sub ? ($sub->pending_interval ?: ($sub->interval ?: 'monthly')) : 'monthly';
+        $countNow = $account ? $account->stores->filter(fn (Tenant $s) => $s->is_billable && ! $s->isClosed())->count() : 1;
+        $countAfter = $billable ? $countNow - 1 : $countNow;
+        $prices = app(PriceResolver::class);
+
+        $before = $sub && $countNow > 0 ? $prices->breakdown($sub, $interval, $countNow) : null;
+        $after = $sub && $countAfter > 0 ? $prices->breakdown($sub, $interval, $countAfter) : null;
+
+        // Per ACCOUNT, so asked once however many of its stores are previewed.
+        $openRenewal = $account
+            ? ($this->openRenewals[$account->id] ??= BillingCharge::query()->where('account_id', $account->id)->pending()
+                ->whereIn('kind', ['first_term', 'renewal'])->whereNull('reopened_at')->first() ?? false) ?: null
+            : null;
+
+        return [
+            // V9 — no renewal is coming: cancelled, or cancelling at the end of the period.
+            'no_renewal' => $sub && ($sub->status === 'canceled' || $sub->cancel_at_period_end),
+            'last_open' => $openStores->count() <= 1,
+            // V4 — other stores stay open but none is billed: the clock then raises no renewal.
+            'last_billed' => $billable && $countAfter === 0 && $openStores->count() > 1,
+            'billable' => $billable,
+            'interval' => $interval,
+            'before' => $before,
+            'after' => $after,
+            'tier_changes' => $before && $after && abs($before['unit_price'] - $after['unit_price']) > 0.005,
+            'open_renewal' => $openRenewal,
+            // V7 — a bill being paid online right now is not re-priced under them (E3-B).
+            'renewal_in_flight' => (bool) $openRenewal?->isBeingPaidOnline(),
+            'branch_owed' => round((float) BillingCharge::query()->where('tenant_id', $tenant->id)
+                ->where('kind', 'branch_join')->pending()->sum('amount'), 2),
+        ];
     }
 
     /** Undo a closure inside the window. Everything is exactly where it was. */
