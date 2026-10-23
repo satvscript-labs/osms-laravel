@@ -28,14 +28,14 @@ final class RenewalNudge
     public static function message(Account $account, ?float $amount, ?Carbon $dueOn, bool $overdue): string
     {
         $first = trim(strtok((string) ($account->owner?->name ?: $account->displayName()), ' ')) ?: 'there';
-        $amountText = $amount !== null ? '₹' . number_format($amount, 2) : 'your renewal';
+        $renewal = $amount !== null ? 'Your renewal of ₹' . number_format($amount, 2) : 'Your renewal';
         $date = $dueOn?->format('j M Y');
         $url = route('tenant.billing.index');
 
         $body = match (true) {
-            $overdue && $date !== null => "Your renewal of {$amountText} was due on {$date}. Please pay it to keep your store running",
-            $date !== null => "Your renewal of {$amountText} is due on {$date}",
-            default => "Your renewal of {$amountText} is due",
+            $overdue && $date !== null => "{$renewal} was due on {$date}. Please pay it to keep your store running",
+            $date !== null => "{$renewal} is due on {$date}",
+            default => "{$renewal} is due",
         };
 
         // Never point at online payment they cannot use (supervised, or no gateway keys).

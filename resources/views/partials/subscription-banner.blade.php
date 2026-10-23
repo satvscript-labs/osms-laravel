@@ -101,8 +101,11 @@
                     @else
                         Your store keeps working until <strong>{{ $r['until']->format('d M Y') }}</strong>.
                     @endif
-                @else
+                @elseif ($amountText)
                     Your renewal of <strong>{{ $amountText }}</strong> is due {{ $when }}.
+                @else
+                    {{-- A-16 — a cycle a person decided about (voided, comp/extension ending): no amount to chase. --}}
+                    Your plan is up for renewal {{ $when }}.
                 @endif
 
                 @if (! auth()->user()->isStoreAdmin())

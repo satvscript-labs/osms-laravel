@@ -12,9 +12,10 @@
         </div>
         <div class="card border-0 shadow-sm rounded-4 overflow-hidden" style="border-left:3px solid var(--tone-amber) !important;">
             @foreach ($unapplied as $u)
-                <div class="person-row" style="cursor:default;">
+                {{-- Wraps on a phone: the buttons drop below the text instead of squeezing it to one letter wide. --}}
+                <div class="person-row flex-wrap" style="cursor:default;">
                     <span class="person-avatar"><i class="bi bi-inbox"></i></span>
-                    <div class="flex-grow-1 min-w-0">
+                    <div class="flex-grow-1 min-w-0" style="flex-basis:12rem;">
                         <div class="d-flex align-items-center gap-2 flex-wrap">
                             <span class="fw-semibold">₹ {{ number_format($u->amount, 2) }}</span>
                             @if ($u->account)
@@ -28,7 +29,7 @@
                             {{ $u->gateway_payment_id }}@if ($u->gateway_order_id) · {{ $u->gateway_order_id }}@endif · {{ ($u->paid_at ?? $u->created_at)->format('d M Y, H:i') }}
                         </div>
                     </div>
-                    <div class="d-flex gap-2 ms-2 flex-shrink-0">
+                    <div class="d-flex flex-wrap gap-2 ms-auto">
                         @if ($u->account)
                             <a href="{{ route('superadmin.accounts.show', $u->account) }}#tab-owed" class="btn btn-primary btn-sm">Apply…</a>
                             {{-- E5-B — matched to the wrong customer? Move it while it is still open. --}}

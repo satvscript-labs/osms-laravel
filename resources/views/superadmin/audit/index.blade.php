@@ -31,6 +31,9 @@
                             <td style="font-size:var(--text-sm);">{{ $log->actorLabel() }}</td>
                             <td style="font-size:var(--text-sm);">
                                 <div class="fw-medium">{{ $log->description }}</div>
+                                @if (is_string($why = data_get($log->meta, 'reason')) && $why !== '')
+                                    <div class="text-muted-foreground" style="font-size:var(--text-xs);">“{{ $why }}”</div>
+                                @endif
                                 <code class="text-muted-foreground" style="font-size:var(--text-xs);">{{ $log->action }}</code>
                             </td>
                             <td style="font-size:var(--text-sm);">
