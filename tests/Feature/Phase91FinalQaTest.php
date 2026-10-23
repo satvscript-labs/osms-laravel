@@ -88,6 +88,22 @@ class Phase91FinalQaTest extends TestCase
             ->assertDontSee('Your renewal of');
     }
 
+    public function test_a_fault_pricing_the_banner_costs_the_banner_never_the_page(): void
+    {
+        [, $owner] = $this->customer('Fault Optical');   // due in 5 days, no bill yet: the banner prices it
+        $this->app->instance(\App\Services\PriceResolver::class, new class extends \App\Services\PriceResolver {
+            public function __construct() {}
+            public function renewalPrice(Subscription $subscription, ?string $interval = null): float
+            {
+                throw new \App\Services\PlanMissing('simulated: no plan row');
+            }
+        });
+        \Illuminate\Support\Facades\Exceptions::fake();
+
+        $this->actingAs($owner)->get(route('tenant.dashboard'))->assertOk()->assertDontSee('Your renewal of');
+        \Illuminate\Support\Facades\Exceptions::assertReported(\App\Services\PlanMissing::class);   // and someone is told
+    }
+
     public function test_money_on_the_wrong_customer_can_be_moved_when_no_unknown_money_is_open(): void
     {
         [$wrong] = $this->customer('Wrong Optical');
