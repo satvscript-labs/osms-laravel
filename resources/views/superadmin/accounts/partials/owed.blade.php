@@ -75,14 +75,14 @@
     <p class="section-label mt-4 mb-2">Received online · not on a bill</p>
     <div class="card border-0 shadow-sm rounded-4 overflow-hidden" style="border-left:3px solid var(--tone-amber) !important;">
         @foreach ($unapplied as $u)
-            <div class="person-row" style="cursor:default;">
+            <div class="person-row flex-wrap" style="cursor:default;">
                 <span class="person-avatar"><i class="bi bi-inbox"></i></span>
-                <div class="flex-grow-1 min-w-0">
+                <div class="flex-grow-1 min-w-0" style="flex-basis:12rem;">
                     <span class="fw-semibold">₹ {{ number_format($u->amount, 2) }}</span>
                     <div class="text-muted-foreground text-sm mt-1">{{ $u->reason }}</div>
                     <div class="text-xs text-faint mt-1 font-monospace">{{ $u->gateway_payment_id }} · {{ ($u->paid_at ?? $u->created_at)->format('d M Y, H:i') }}</div>
                 </div>
-                <div class="d-flex gap-2 ms-2 flex-shrink-0">
+                <div class="d-flex flex-wrap gap-2 ms-auto">
                     <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#m-apply-{{ $u->id }}">Apply to a bill</button>
                     <button type="button" class="btn btn-light btn-sm" data-bs-toggle="modal" data-bs-target="#m-refunded-{{ $u->id }}">Refunded</button>
                 </div>

@@ -347,7 +347,9 @@ class BillingScenarioSeeder extends Seeder
         $this->set($hq, ['status' => 'active', 'interval' => 'monthly',
             'current_period_end' => $paidThrough->copy()->subMonthNoOverflow()->max($this->today)->toDateString()]);
         app(Settlement::class)->payTerm($this->sub($hq), 'renew', ['method' => 'cash', 'reference' => 'SCENARIO-CASH']);
-        $this->set($hq, ['current_period_end' => $paidThrough->toDateString(), 'override_until' => $paidThrough->toDateString()]);
+        // Move the whole period, not just its end: a branch bill's working reads "start → end" from both.
+        $this->set($hq, ['current_period_start' => $paidThrough->copy()->subMonthNoOverflow()->toDateString(),
+            'current_period_end' => $paidThrough->toDateString(), 'override_until' => $paidThrough->toDateString()]);
     }
 
     /** The owner pays online through the real gateway path (a simulated, captured Razorpay payment). */

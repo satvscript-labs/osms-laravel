@@ -587,6 +587,9 @@
                             @forelse ($auditLogs as $log)
                                 <div class="py-2 border-bottom text-sm">
                                     <p class="mb-0 fw-medium">{{ $log->description }}</p>
+                                    @if (is_string($why = data_get($log->meta, 'reason')) && $why !== '')
+                                        <p class="mb-0 text-muted-foreground text-xs">“{{ $why }}”</p>
+                                    @endif
                                     <p class="mb-0 text-muted-foreground text-xs">
                                         {{ $log->actorLabel() }} · {{ $log->created_at?->diffForHumans() }}
                                     </p>

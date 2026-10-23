@@ -21,38 +21,45 @@
         $osmsEnd = \Illuminate\Support\Carbon::parse($osmsSub->current_period_end->toDateString(), $osmsTz);
         $osmsDays = (int) \Illuminate\Support\Carbon::today($osmsTz)->diffInDays($osmsEnd, false);
 
-        if ($osmsState === 'grace' || ($osmsDays >= 0 && $osmsDays <= \App\Services\RenewalClock::LEAD_DAYS)) {
-            $osmsClock = app(\App\Services\RenewalClock::class);
-            // A-22 — a free period you gave is announced on its last two days, like the emails.
-            $osmsChased = $osmsClock->skipReason($osmsSub, $osmsEnd) === null
-                || ($osmsState === 'active' && $osmsDays >= 0 && $osmsDays <= 1 && $osmsClock->freePeriodEnding($osmsSub, $osmsEnd));
-            $osmsBill = $osmsChased
-                ? \App\Models\BillingCharge::query()->where('account_id', $osmsSub->account_id)->pending()
-                    ->whereIn('kind', ['first_term', 'renewal'])->whereNull('reopened_at')->latest()->first()
-                : null;
-            $osmsAccount = $osmsTenant->account;
+        // This runs on every page of every store: a fault working out the renewal (a missing
+        // plan row, say) costs the banner and is reported — it never takes the page down.
+        try {
+            if ($osmsState === 'grace' || ($osmsDays >= 0 && $osmsDays <= \App\Services\RenewalClock::LEAD_DAYS)) {
+                $osmsClock = app(\App\Services\RenewalClock::class);
+                // A-22 — a free period you gave is announced on its last two days, like the emails.
+                $osmsChased = $osmsClock->skipReason($osmsSub, $osmsEnd) === null
+                    || ($osmsState === 'active' && $osmsDays >= 0 && $osmsDays <= 1 && $osmsClock->freePeriodEnding($osmsSub, $osmsEnd));
+                $osmsBill = $osmsChased
+                    ? \App\Models\BillingCharge::query()->where('account_id', $osmsSub->account_id)->pending()
+                        ->whereIn('kind', ['first_term', 'renewal'])->whereNull('reopened_at')->latest()->first()
+                    : null;
+                $osmsAccount = $osmsTenant->account;
 
-            $osmsRenewal = [
-                'grace' => $osmsState === 'grace',
-                'chased' => $osmsChased,
-                'end' => $osmsEnd,
-                'days' => $osmsDays,
-                'until' => $osmsEnd->copy()->addDays($osmsSub->graceDays()),
-                'amount' => $osmsChased
-                    ? (float) ($osmsBill?->amount ?? app(\App\Services\PriceResolver::class)->renewalPrice($osmsSub))
-                    : null,
-                // E3-I — only the account's owner pays; FB-05.
-                'owner' => $osmsAccount && $osmsAccount->owner_user_id === auth()->id(),
-                'ownerName' => $osmsAccount?->owner?->name,
-                'supervised' => (bool) $osmsAccount?->isSupervised(),
-                // No gateway keys: there is no online payment to send them to.
-                'online' => app(\App\Services\BillingService::class)->isConfigured(),
-            ];
+                $osmsRenewal = [
+                    'grace' => $osmsState === 'grace',
+                    'chased' => $osmsChased,
+                    'end' => $osmsEnd,
+                    'days' => $osmsDays,
+                    'until' => $osmsEnd->copy()->addDays($osmsSub->graceDays()),
+                    'amount' => $osmsChased
+                        ? (float) ($osmsBill?->amount ?? app(\App\Services\PriceResolver::class)->renewalPrice($osmsSub))
+                        : null,
+                    // E3-I — only the account's owner pays; FB-05.
+                    'owner' => $osmsAccount && $osmsAccount->owner_user_id === auth()->id(),
+                    'ownerName' => $osmsAccount?->owner?->name,
+                    'supervised' => (bool) $osmsAccount?->isSupervised(),
+                    // No gateway keys: there is no online payment to send them to.
+                    'online' => app(\App\Services\BillingService::class)->isConfigured(),
+                ];
 
-            // Store staff can't act on a renewal that is still to come; grace concerns everyone.
-            if (! $osmsRenewal['grace'] && ! auth()->user()->isStoreAdmin()) {
-                $osmsRenewal = null;
+                // Store staff can't act on a renewal that is still to come; grace concerns everyone.
+                if (! $osmsRenewal['grace'] && ! auth()->user()->isStoreAdmin()) {
+                    $osmsRenewal = null;
+                }
             }
+        } catch (\Throwable $osmsFault) {
+            report($osmsFault);
+            $osmsRenewal = null;
         }
     }
 
@@ -101,8 +108,11 @@
                     @else
                         Your store keeps working until <strong>{{ $r['until']->format('d M Y') }}</strong>.
                     @endif
-                @else
+                @elseif ($amountText)
                     Your renewal of <strong>{{ $amountText }}</strong> is due {{ $when }}.
+                @else
+                    {{-- A-16 — a cycle a person decided about (voided, comp/extension ending): no amount to chase. --}}
+                    Your plan is up for renewal {{ $when }}.
                 @endif
 
                 @if (! auth()->user()->isStoreAdmin())

@@ -59,7 +59,8 @@ class BillingController extends Controller
 
         return view('superadmin.billing.index', [
             'unapplied' => $unapplied,
-            'customers' => $unapplied->contains(fn ($u) => ! $u->account_id)
+            // Unknown money needs "whose is it?", matched money needs "wrong customer?" (E5-B): both list them.
+            'customers' => $unapplied->isNotEmpty()
                 ? \App\Models\Account::query()->orderBy('name')->get(['id', 'name', 'display_name'])
                 : collect(),
             'rows' => $rows,
